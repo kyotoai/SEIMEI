@@ -1,6 +1,7 @@
 <!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
 <a id="readme-top"></a>
 <!--
+*** https://github.com/othneildrew/Best-README-Template/blob/main/BLANK_README.md
 *** Thanks for checking out the Best-README-Template. If you have a suggestion
 *** that would make this better, please fork the repo and create a pull request
 *** or simply open an issue with the tag "enhancement".
@@ -38,12 +39,12 @@
 
   <p align="center">
     Search-Engine-Integrated Multi-Expert Inference (SEIMEI) 
-    SEIMEI is an opensource tool which allows us to freely add LLM inferences - called "Expert" in this system - specifically designed for your own task and database. The biggest feature of SEIMEI is that users don't need to understand the whole LLM system because each inference is integrated and optimized by search engine automatically. Therefore, many people can improve an AI system by adding their own expertise and AI system will integrate and optimize them. Read teh content below to see more detail.
+    SEIMEI is an opensource tool which allows us to freely add LLM inferences - called "Expert" in this system - specifically designed for your own task and database. The biggest feature of SEIMEI is that users don't need to understand the whole LLM system because each inference is integrated and optimized by search engine automatically. Therefore, many people can improve an AI system by adding their own expertise and AI system will integrate and optimize them. Read the below content to see more detail.
     <br />
     <a href="https://github.com/kyotoai/SEIMEI"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/kyotoai/SEIMEI/demo">View Demo</a>
+    <a href="https://youtu.be/V29ONFAYXcA">View Demo</a>
     ·
     <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
@@ -89,7 +90,7 @@
   <img src="images/seimei fig.jpg" alt="seimei" width="640" height="360">
 </div>
 
-Here's a blank template to get started: To avoid retyping too much info. Do a search and replace with your text editor for the following: `github_username`, `repo_name`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `project_title`, `project_description`
+Here's the figure to show overall structure of SEIMEI. Each expert makes inference with the help of search engine and gets answer of a question.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -118,36 +119,43 @@ Here's a blank template to get started: To avoid retyping too much info. Do a se
 <!-- GETTING STARTED -->
 ## Getting Started
 
-This is an example of how you may give instructions on setting up your project locally.
-To get a local copy up and running follow these simple example steps.
+This is an example of how you build SEIMEI on local gpu or rental gpu.
+You can use it by installing seimei using `pip install` or downloading this directory into your local folder.
 
 ### Prerequisites
 
 This is an example of how to list things you need to use the software and how to install them.
-* npm
+* transformers
   ```sh
-  npm install npm@latest -g
+  pip install transformers
+  ```
+* sentence_transformers
+  ```sh
+  pip install sentence_transformers
+  ```
+* vLLM
+  ```sh
+  pip install vllm
+  pip install ray
+  pip install packaging
+  pip install typing
   ```
 
 ### Installation
 
-1. Get a free API Key at [https://example.com](https://example.com)
-2. Clone the repo
+* by `pip install`
+  
+1. Install seimei
    ```sh
-   git clone https://github.com/github_username/repo_name.git
+   pip install seimei
    ```
-3. Install NPM packages
+
+
+* by downloading SEIMEI repository
+  
+1. Download the repo
    ```sh
-   npm install
-   ```
-4. Enter your API in `config.js`
-   ```js
-   const API_KEY = 'ENTER YOUR API';
-   ```
-5. Change git remote url to avoid accidental pushes to base project
-   ```sh
-   git remote set-url origin github_username/repo_name
-   git remote -v # confirm the changes
+   git clone https://github.com/kyotoai/SEIMEI.git
    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -197,8 +205,9 @@ Don't forget to give the project a star! Thanks again!
 
 ### Top contributors:
 
-<a href="https://github.com/github_username/repo_name/graphs/contributors">
-  <img src="https://contrib.rocks/image?repo=github_username/repo_name" alt="contrib.rocks image" />
+<!--<a href="https://github.com/github_username/repo_name/graphs/contributors">-->
+<a href="https://github.com/kyotoai/SEIMEI/graphs/contributors">
+  <img src="https://contrib.rocks/image?repo=kyotoai/SEIMEI" alt="contrib.rocks image" />
 </a>
 
 
@@ -212,14 +221,15 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 
 
 
-<!-- CONTACT -->
+<!-- CONTACT --><!-- [@twitter_handle](https://twitter.com/twitter_handle) -->
 ## Contact
 
-Kentaro Seki - seki.kentaro@kyotoai.org
-Ryu Sugauma - suganuma.ryu@kyotoai.org
+* Kentaro Seki - seki.kentaro@kyotoai.org
+* Ryu Sugauma - suganuma.ryu@kyotoai.org
 
+KyotoAI homepage: [https://kyotoai.org](https://kyotoai.org)
 Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEIMEI)
-<!-- [@twitter_handle](https://twitter.com/twitter_handle) -->
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -229,7 +239,7 @@ Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEI
 
 * [vLLM](https://docs.vllm.ai/en/latest/)
 * [Huggingface](https://huggingface.co)
-* [Kyoto University](https://www.kyoto-u.ac.jp/en)
+* [Kyoto University Library](https://www.kulib.kyoto-u.ac.jp/mainlib/en/)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -241,9 +251,8 @@ Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEI
 [vllm-url]: https://docs.vllm.ai/en/latest/
 [huggingface.co]: https://img.shields.io/badge/huggingface-yellow
 [huggingface-url]: https://huggingface.co
-
 [contributors-shield]: https://img.shields.io/github/contributors/kyotoai/SEIMEI.svg?style=for-the-badge
-[contributors-url]: https://github.com/github_username/repo_name/graphs/contributors
+[contributors-url]: https://github.com/kyotoai/SEIMEI/graphs/contributors
 [license-shield]: https://img.shields.io/github/license/kyotoai/SEIMEI.svg?style=for-the-badge
 [license-url]: https://github.com/kyotoai/SEIMEI/LICENSE.txt
 
