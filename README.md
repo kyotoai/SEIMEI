@@ -44,7 +44,7 @@
     <a href="https://github.com/kyotoai/SEIMEI"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://youtu.be/V29ONFAYXcA">View Demo</a>
+    <a href="https://github.com/kyotoai/SEIMEI/demo">View Demo</a>
     ·
     <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
