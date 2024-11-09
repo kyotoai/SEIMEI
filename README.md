@@ -1,5 +1,5 @@
 <!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
-<a id="readme-top">SEIMEI</a>
+<a id="readme-top"></a>
 <!--
 *** Thanks for checking out the Best-README-Template. If you have a suggestion
 *** that would make this better, please fork the repo and create a pull request
@@ -37,16 +37,17 @@
 <h3 align="center">SEIMEI</h3>
 
   <p align="center">
-    Search-Engine-Integrated Multi-Expert Inference(SEIMEI) is an useful opensource tool that allows us to freely add inference of LLM with your own database and improve the whole AI system.
+    Search-Engine-Integrated Multi-Expert Inference (SEIMEI) 
+    SEIMEI is an opensource tool which allows us to freely add LLM inferences - called "Expert" in this system - specifically designed for your own task and database. The biggest feature of SEIMEI is that users don't need to understand the whole LLM system because each inference is integrated and optimized by search engine automatically. Therefore, many people can improve an AI system by adding their own expertise and AI system will integrate and optimize them. See more detail below.
     <br />
-    <a href="https://github.com/github_username/repo_name"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/kyotoai/SEIMEI"><strong>Explore the docs »</strong></a>
     <br />
     <br />
-    <a href="https://github.com/github_username/repo_name">View Demo</a>
+    <a href="https://github.com/kyotoai/SEIMEI/demo">View Demo</a>
     ·
-    <a href="https://github.com/github_username/repo_name/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
+    <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=bug&template=bug-report---.md">Report Bug</a>
     ·
-    <a href="https://github.com/github_username/repo_name/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
+    <a href="https://github.com/kyotoai/SEIMEI/issues/new?labels=enhancement&template=feature-request---.md">Request Feature</a>
   </p>
 </div>
 
