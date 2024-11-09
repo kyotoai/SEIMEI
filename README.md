@@ -90,7 +90,7 @@
   <img src="images/seimei fig.jpg" alt="seimei" width="640" height="360">
 </div>
 
-Here's the figure to show overall structure of SEIMEI. Each expert makes inference with the help of search engine and gets answer of a question.
+Here's the figure to show overall structure of SEIMEI. Each expert interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -119,7 +119,7 @@ Here's the figure to show overall structure of SEIMEI. Each expert makes inferen
 <!-- GETTING STARTED -->
 ## Getting Started
 
-This is an example of how you build SEIMEI on local gpu or rental gpu.
+This is an example of how you build SEIMEI on local gpu or rental server gpu.
 You can use it by installing seimei using `pip install` or downloading this directory into your local folder.
 
 ### Prerequisites
@@ -228,6 +228,7 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 * Ryu Sugauma - suganuma.ryu@kyotoai.org
 
 KyotoAI homepage: [https://kyotoai.org](https://kyotoai.org)
+
 Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEIMEI)
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -265,6 +266,7 @@ Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEI
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
 [linkedin-url]: https://linkedin.com/in/linkedin_username
 [product-screenshot]: images/screenshot.png
+
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
 [Next-url]: https://nextjs.org/
 [React.js]: https://img.shields.io/badge/React-20232A?style=for-the-badge&logo=react&logoColor=61DAFB
