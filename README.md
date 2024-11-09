@@ -30,7 +30,7 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <a href="https://github.com/kyotoai/SEIMEI">
+  <a href="https://kyotoai.org">
     <img src="images/logo.png" alt="Logo" width="80" height="80">
   </a>
 
@@ -84,7 +84,9 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-<img src="images/seimei fig.jpg" alt="seimei" width="480" height="360">
+<div align="center">
+  <img src="images/seimei fig.jpg" alt="seimei" width="640" height="360">
+</div>
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 
 Here's a blank template to get started: To avoid retyping too much info. Do a search and replace with your text editor for the following: `github_username`, `repo_name`, `twitter_handle`, `linkedin_username`, `email_client`, `email`, `project_title`, `project_description`
