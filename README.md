@@ -147,7 +147,7 @@ This is an example of how to list things you need to use the software and how to
 
 * by `pip install`
   
-1. Install seimei
+1. Install seimei (not prepared yet)
    ```sh
    pip install seimei
    ```
