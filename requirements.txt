@@ -5,3 +5,5 @@ vllm
 ray
 packaging
 typing
+ipywidgets
+IPython
