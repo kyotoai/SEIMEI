@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Full-Screen Text Editor</title>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.62.0/codemirror.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.62.0/codemirror.min.js"></script>
+    <style>
+        body, html { 
+            height: 100%; 
+            margin: 0; 
+            padding: 0; 
+            overflow: hidden;
+        }
+        .CodeMirror {
+            height: 100vh !important;
+        }
+        #submit-btn { 
+            position: fixed; 
+            bottom: 10px; 
+            right: 10px; 
+            padding: 10px 20px; 
+            font-size: 16px;
+            z-index: 1000;
+        }
+    </style>
+</head>
+<body>
+    <textarea id="editor"></textarea>
+    <button id="submit-btn" onclick="sendDataToPython()">Submit to Python</button>
+    <script>
+        var editor;
+        $(document).ready(function() {
+            editor = CodeMirror.fromTextArea(document.getElementById("editor"), {
+                lineNumbers: true,
+                mode: "text/plain",
+                theme: "default",
+                lineWrapping: true
+            });
+            loadInitialData();
+        });
+
+        function loadInitialData() {
+            $.ajax({
+                url: '/send_data',
+                type: 'POST',
+                contentType: 'application/json',
+                success: function(response) {
+                    editor.setValue(response.data);
+                }
+            });
+        }
+
+        function sendDataToPython() {
+            var data = editor.getValue();
+            $.ajax({
+                url: '/receive_data',
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify({"data": data}),
+                success: function(response) {
+                    alert('Data sent successfully!');
+                    editor.setValue(response.new_data);
+                }
+            });
+        }
+    </script>
+</body>
+</html>
