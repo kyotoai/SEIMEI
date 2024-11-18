@@ -1,0 +1,7 @@
+torch
+transformers
+sentence_transformers
+vllm
+ray
+packaging
+typing
