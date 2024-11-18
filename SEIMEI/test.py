@@ -7,5 +7,6 @@ se_restrictions = ["MetaSurvey"]  # search engine only hits classes in this list
 expert_module_names = ["Experts.Code.Modify"]
 
 test_text = "Hello, my name is SEIMEI!"
+SEIMEI.model_name = "gpt2"
 num_token = SEIMEI.get_num_tokens(test_text)
 print(num_token)
