@@ -169,6 +169,101 @@ This is an example of how to list things you need to use the software and how to
 
 We are still developing this library. Please wait for it completing soon!
 
+### Quick Start
+
+1. Prepare chunks of texts
+    ```py
+    from Prepare import Prepare
+
+    # Locate your database folder in data_path below
+    data_path = "(your database path)"
+    save_path = "./processed"
+    
+    # designate all the files with 'extensions' inside 'folder_path'
+    file_info = [
+        {"folder_path":"(relative path for database you want to investigate)", "extensions":[".py"]},
+    ]
+    
+    
+    # about where the key starts to split the text
+    # index : words to be where text should be split
+    # first element(0 to 1): process_text_size * element is the start point of the key splitting. the samller the element is, the more likely it is for the key to split the text.
+    # second element(0 or 1): the first element should become   if 0: <text1><key> | <text2>,  if 1: <text1> | <key><text2>
+    rules = [
+        {
+            "class " : 1,
+        },
+    
+        {
+            "def " : 1,
+        },
+    
+        {
+            "if " : 1,
+        },
+    
+        {
+            "else " : 1,
+            "elif " : 1,
+        },
+        
+    
+        {
+            "\n\n" : 0,
+            "<0x0A><0x0A>" : 0,
+            "\x0A\x0A" : 0,
+        },
+    
+        {
+            "\n" : 0,
+            "<0x0A>" : 0,
+            "\x0A" : 0,
+        },
+    ]
+    
+    prepare = Prepare(
+        database_path = data_path,
+        save_path = save_path,
+        rules = rules, 
+        file_info=file_info, 
+        model_name = "gpt2",
+        max_tokens = 10000,
+        min_tokens = 3000,
+    )
+
+    prepare.make_chunks()
+    ```
+    
+2. Define seimei
+    ```py
+    from SEIMEI import SEIMEI
+    import asyncio
+    
+    processed_path = "./processed"  # input path same as save_path you used in Preparation
+    expert_class_names = ["Answer", "CheckInf", "MetaSurvey2"]
+    se_restrictions = ["MetaSurvey2"]  # search engine only hits classes in this list normally (except when adding expert_restriction in kwargs)
+    expert_module_names = ["Experts.Code.Modify"]
+    
+    seimei = SEIMEI(
+        processed_path = processed_path,
+        expert_class_names = expert_class_names,
+        expert_module_names = expert_module_names,
+        se_restrictions = se_restrictions,
+        max_inference_time = 1000,
+        tensor_parallel_size = 1,
+    )
+    ```
+    
+3. Get answer by seimei
+    ```py
+    original_question = "Give me the whole structure of this code file?"
+    final_answer = await seimei.get_answer(query = original_question) # return final answer
+    
+    print()
+    print()
+    print(final_answer)
+    ```
+
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
