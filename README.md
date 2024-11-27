@@ -171,7 +171,7 @@ We are still developing this library. Please wait for it completing soon!
 
 ### Quick Start
 
-1. Prepare chunks of texts
+1. Prepare chunks of text
     ```py
     from Prepare import Prepare
 
