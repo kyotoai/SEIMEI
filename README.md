@@ -271,10 +271,10 @@ We are still developing this library. Please wait for it completing soon!
 <!-- ROADMAP -->
 ## Roadmap
 
-- [ ] Feature 1
-- [ ] Feature 2
-- [ ] Feature 3
-    - [ ] Nested Feature
+- [ ] Search Integration Mechanism for Experts
+  - [ ] Permanent Expert
+- [ ] Auto Log System in Jupyter Notebook
+- [ ] High Precision Code & Textbook RAG
 
 See the [open issues](https://github.com/github_username/repo_name/issues) for a full list of proposed features (and known issues).
 
