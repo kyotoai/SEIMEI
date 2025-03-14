@@ -43,7 +43,7 @@
   <p align="center">
     SEIMEI is an opensource library which allows us to freely add LLM inferences - called "Expert" in this system - specifically designed for your own task and database. The biggest feature of SEIMEI is that users don't need to understand the whole LLM system because each inference is integrated and optimized by search engine automatically. Therefore, many people can improve an AI system by adding their own expertise. Read the below content to see more detail.
     <br />
-    <a href="https://github.com/kyotoai/SEIMEI"><strong>Explore the docs »</strong></a>
+    <a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
     <br />
     <br />
     <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo">View Demo</a>
