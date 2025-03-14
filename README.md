@@ -320,7 +320,6 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 ## Contact
 
 * Kentaro Seki - seki.kentaro@kyotoai.org
-* Ryu Sugauma - suganuma.ryu@kyotoai.org
 
 KyotoAI homepage: [https://kyotoai.org](https://kyotoai.org)
 
