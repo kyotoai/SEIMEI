@@ -15,6 +15,7 @@
   <h3 align="center">SEIMEI</h3>
   <p align="center">
     Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
+    <br />
     <a href="https://kyotoai-research2503.my.canva.site/"><strong>PDF Slide »</strong></a>
   </p>
 </div>
