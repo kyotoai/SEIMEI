@@ -17,7 +17,7 @@
     <br />
     <a href="https://kyotoai-research2503.my.canva.site/en"><strong>English Canva Slide »</strong></a>
     <br />
-    <a href="https://kyotoai-research2503.my.canva.site/ja"><strong>Japanese Canva Slide »</strong></a>
+    <a href="https://kyotoai-research2503.my.canva.site/jp"><strong>Japanese Canva Slide »</strong></a>
     <br />
     <br />
     Download PDF slides by cloning this repositry or manually downloading the files
