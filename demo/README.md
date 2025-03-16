@@ -12,10 +12,12 @@
 <!-- PROJECT LOGO -->
 <br />
 <div align="center">
-  <h3 align="center">SEIMEI</h3>
+  <h3 align="center">Detailed Canva Slides About SEIMEI</h3>
   <p align="center">
-    Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
     <br />
-    <a href="https://kyotoai-research2503.my.canva.site/"><strong>PDF Slide »</strong></a>
+    <a href="https://kyotoai-research2503.my.canva.site/en"><strong>English Canva Slide »</strong></a>
+    <a href="https://kyotoai-research2503.my.canva.site/ja"><strong>Japanese Canva Slide »</strong></a>
+    <br />
+    Download PDF slides by cloning this repositry or manually downloading the files
   </p>
 </div>
