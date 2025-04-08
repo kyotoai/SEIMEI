@@ -114,7 +114,6 @@ By training search engine, we can optimize the thinking steps like o1 or deepsee
 
 Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrive the best ones!!
 
-<br />
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -127,7 +126,6 @@ Our proprietary search model performs better than semantic embedding model(so ca
 
 We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
 
-<br />
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -148,7 +146,6 @@ We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
 
 SEIMEI can be applied to make these useful functions!!
 
-<br />
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
