@@ -43,7 +43,7 @@
   <p align="center">
     SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achives SOTA results on tasks requring deep reasoning!!
     <br />
-    <a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
+    <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>Explore the docs »</strong></a>
     <br />
     <br />
     <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo">View Demo</a>
@@ -89,11 +89,21 @@
 
 ### Search The Best Agent To Make Deep Reasoning
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
+<br />
 <div align="center">
-  <img src="images/seimei fig.jpg" alt="seimei" width="640" height="360">
+  <img src="images/SEIMEI_example.png" alt="seimei" width="640" height="360">
 </div>
 
-Here's the figure to show overall structure of SEIMEI. Each expert interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
+<br />
+Here's the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
+
+<br />
+<div align="center">
+  <img src="images/SEIMEI_train_example.png" alt="seimei" width="640" height="360">
+</div>
+
+<br />
+By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -105,7 +115,7 @@ Here's the figure to show overall structure of SEIMEI. Each expert interacts wit
 Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrive the best ones!!
 
 <br />
-<a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
+<a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -116,8 +126,30 @@ Our proprietary search model performs better than semantic embedding model(so ca
 </div>
 
 We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
+
 <br />
-<a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
+<a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Applications of SEIMEI
+
+<div align="center">
+  <img src="images/Application1.png" alt="seimei" width="640" height="360">
+</div>
+
+<div align="center">
+  <img src="images/Application2.png" alt="seimei" width="640" height="360">
+</div>
+
+<div align="center">
+  <img src="images/Application3.png" alt="seimei" width="640" height="360">
+</div>
+
+SEIMEI can be applied to make these useful functions!!
+
+<br />
+<a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
