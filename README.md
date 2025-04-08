@@ -32,7 +32,7 @@
 <br />
 <div align="center">
   <a href="https://kyotoai.org">
-    <img src="images/logo.png" alt="Logo" width="80" height="80">
+    <img src="images/SEIMEI_overlook.png" alt="Logo" width="640" height="360">
   </a>
 
 <h3 align="center">SEIMEI</h3>
@@ -41,7 +41,7 @@
     Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
   </p>
   <p align="center">
-    SEIMEI is an opensource library which allows us to freely add LLM inferences - called "Expert" in this system - specifically designed for your own task and database. The biggest feature of SEIMEI is that users don't need to understand the whole LLM system because each inference is integrated and optimized by search engine automatically. Therefore, many people can improve an AI system by adding their own expertise. Read the below content to see more detail.
+    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achives SOTA results on tasks requring deep reasoning!!
     <br />
     <a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
     <br />
@@ -87,6 +87,7 @@
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
+### Search The Best Agent To Make Deep Reasoning
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 <div align="center">
   <img src="images/seimei fig.jpg" alt="seimei" width="640" height="360">
@@ -96,7 +97,29 @@ Here's the figure to show overall structure of SEIMEI. Each expert interacts wit
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
+### The Most Intelligent Search Engine
+<div align="center">
+  <img src="images/Comparison.png" alt="seimei" width="400" height="360">
+</div>
 
+Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrive the best ones!!
+
+<br />
+<a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+### Achives State Of The Art Result
+
+<div align="center">
+  <img src="images/Improvement.png" alt="seimei" width="500" height="360">
+</div>
+
+We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
+<br />
+<a href="https://kyotoai-research2503.my.canva.site"><strong>Explore the docs »</strong></a>
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 ### Built With
 
