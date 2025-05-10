@@ -1,10 +1,11 @@
+
 import ipywidgets as widgets
 from IPython.display import display
 import json
 
 class Log:
     
-    def __init__(self):
+    def __init__(self, log_id = -1):
         self.log_dict_ids = []
         self.selected_id = 0
         self.all_log_dicts = {}
@@ -18,7 +19,7 @@ class Log:
         # for mode 0
         with open("log.json") as json_file:
             self.logs = json.load(json_file)
-        all_log_dict = self.logs[-1]
+        all_log_dict = self.logs[log_id]
         self.all_log_dicts[0] = all_log_dict
 
         # for mode 1
@@ -187,7 +188,6 @@ class Log:
                     self.selected_id = log_dict_ids[-1]
                     self.log_dict_ids = log_dict_ids[:-1]
                     self.log_dict = self.get_log_dict_from_log_dict_ids(self.log_dict_ids)
-                    print(self.log_dict)
                 else:
                     self.log_dict_ids = []
                     self.log_dict = self.all_log_dicts[self.mode]

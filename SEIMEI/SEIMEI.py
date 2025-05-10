@@ -1,10 +1,11 @@
 import torch
-import time, os, re, copy, json, asyncio, ast
+import time, os, re, copy, json, asyncio, ast, warnings
 from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams
 from vllm.utils import random_uuid
 import importlib.util, inspect, traceback
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoTokenizer
+from copy import deepcopy
 device = "cuda" if torch.cuda.is_available else "cpu"
 
 log_file_path = "log.json"
@@ -16,20 +17,368 @@ else:
     with open(log_file_path) as json_file:
         logs = json.load(json_file)
 
+from rmsearch import Search as RMSearch
+
+
+class Expert:
+    
+    def __init__(self, caller): # self here is Subcalss instance
+        self.caller_expert__ = caller
+        self.called_experts__ = []
+        caller.called_experts__.append(self)
+
+        self.kwargs__ = None
+        self.output__ = None
+
+        self.info_dict__ = None
+
+        if hasattr(self, "standby__"):
+            self.is_standby_expert__ = True
+        else:
+            self.is_standby_expert__ = False
+
+        if hasattr(self, "log_off__"):
+            self.is_log_off__ = self.log_off__
+        else:
+            self.is_log_off__ = False
+
+    # kwargs : dict
+    async def __call__(self, *args, **kwargs):
+
+        self.args__ = args
+        self.kwargs__ = kwargs
+
+        if self.is_standby_expert__:
+            while True:  # while loop should be handled here to not let standby continue to run even after AnswerEnd is raised
+                exit = await self.standby__(kwargs)  # until standby returns True, standby continues to run loop
+                if SEIMEI.answer_ends[self.query_id__]: raise AnswerEnd  # if AnswerEnd is called, standby expert is terminated
+                if exit: break
+
+        if SEIMEI.answer_ends[self.query_id__]:
+            raise AnswerEnd
+
+        if not self.is_log_off__:
+            #print()
+            #print(f"Expert {self.__class__} started")
+            pass
+
+        try:
+            result = await self.inference(*args, **kwargs)
+
+        except AnswerEnd:
+            raise AnswerEnd
+            
+        except Exception as e:
+            traceback.print_exc()
+            result = None
+            raise AnswerEnd
+
+
+        if SEIMEI.answer_ends[self.query_id__]:
+            raise AnswerEnd
+
+        if not self.is_log_off__:
+            #print()
+            #print(f"Expert {self.__class__} ended")
+            #print()
+            #print(f"result: {result}")
+            #print()
+            pass
+
+        self.output__ = result
+        return result
+    
+
+
+    def set_info(self, info = None, query = None):
+
+        info_dict = {}
+
+        if info:
+            info_dict["info"] = info
+
+        if query:
+            info_dict["query"] = query
+
+        info_dict["expert_class_name"] = self.__class__.__name__
+        info_dict["expert_instance"] = self
+
+        SEIMEI.info_dicts.append(info_dict)
+        self.info_dict__ = info_dict
+
+    def reset_info(self):
+        SEIMEI.info_dicts = []
+
+
+    def get_info(self, query = None, topk = 3):
+
+        if len(SEIMEI.info_dicts) == 0:
+            return []
+
+        environment = self.get_env()
+
+        search_text = f"""### Environment:
+{environment}
+
+### Query:
+{query}"""
+
+        info_texts = []
+        for info_dict in SEIMEI.info_dicts:  # SEIMEI.info_dicts  : [{"info": ...}]
+            info_texts.append(str(info_dict))
+
+
+        query_embs = torch.tensor(SEIMEI.emb_model.encode([search_text]))
+        inf_embs = torch.tensor(SEIMEI.emb_model.encode(info_texts))
+
+        relevance = torch.matmul(query_embs, inf_embs.T)
+
+        _, info_ids = torch.topk(relevance, k = min(topk, relevance.shape[1]), dim=1)  # [num_q, num_relevance]
+
+        outputs = []
+        for j in range(len(info_ids[0])):
+            info = SEIMEI.info_dicts[info_ids[0,j].item()]
+            outputs.append(info)
+
+        return outputs  # [{"info":, }, ... ]
+    
+
+
+    def get_env(self, depth = 1, inference_code = False):
+        # depth : the number of parent expert included in the inference history
+        # inference_code : include inference code's raw text if this is true
+
+        env = ""
+        expert = self
+
+        for i in range(depth):
+
+            if inference_code:
+                env = f"""**Inference History {depth - i}**
+* Expert Class: {expert.__class__.__name__}
+
+* Description:
+{expert.description}
+
+* Argument:
+{str(expert.kwargs__)}
+
+* Inference Code:
+```
+{inspect.getsource(expert.__class__.inference)}
+```
+
+""" + env
+
+            else:
+                env = f"""**Inference History {depth - i}**
+* Expert Class: {expert.__class__.__name__}
+
+* Description:
+{expert.description}
+
+* Argument:
+{str(expert.kwargs__)}
+
+""" + env
+                
+            try:
+                expert = expert.caller_expert__
+            except:
+                return env
+
+        return env
+
+    def get_origin__(self):
+        instance = self
+        while instance.__class__ != Experts:
+            instance = instance.caller_expert__
+
+        return instance
+
+    def get_doc_path__(self):
+        origin = self.get_origin__()
+        return origin.kwargs__["doc_path"]
+
+    @property
+    def query_id__(self):
+        return self.get_origin__().query_id
+
+
+
+
+
+class LLM:
+
+    def __init__(self, caller, return_history=False, max_new_tokens = 10000, max_length = 50000, temperature = 0.0, num_answers = 1):
+
+        self.caller_expert__ = caller
+        self.called_experts__ = [] # to avoid error for saving logs
+        caller.called_experts__.append(self)
+        self.query_id__ = caller.query_id__
+
+        self.return_history = return_history
+        self.max_new_tokens = max_new_tokens
+        self.max_length = max_length
+        self.temperature = temperature
+        self.num_answers = num_answers
+
+        self.kwargs__ = None
+        self.output__ = None
+
+
+    async def __call__(self, prompt, system=None, msg_history=None):
+
+        self.kwargs__ = prompt
+
+        if SEIMEI.answer_ends[self.query_id__]:
+            raise AnswerEnd
+
+        messages = []
+
+        if system:
+            messages.append({"role":"system", "content":system})
+
+        if msg_history:
+            messages += msg_history
+
+        messages.append({"role":"user", "content":prompt})
+        
+        if type(prompt) == str:
+
+            if self.num_answers == 1:
+                prompt = SEIMEI.tokenizer.apply_chat_template(
+                    messages,
+                    tokenize=False,
+                    add_generation_prompt=True
+                )
+                request_dict = {"prompt": prompt}
+                output = await self.get_output(request_dict)
+                if self.return_history:
+                    messages.append({"role":"assistant", "content":output})
+                    if system: messages.pop(0)  # to delete system message from message history
+                    return output, messages
+                return output
+                
+            else:
+                prompts = [prompt for _ in range(self.num_answers)]
+                get_outputs = [self.get_output({"prompt": prompt_}) for prompt_ in prompts]
+                outputs = await asyncio.gather(*get_outputs)
+                self.output__ = outputs
+                return outputs
+            
+        elif type(prompt) == list:
+            #raise Exception("prompt has to be string now")
+            
+            get_outputs = [self.get_output({"prompt": prompt_}) for prompt_ in prompt]
+            outputs = await asyncio.gather(*get_outputs)
+            self.output__ = outputs
+            
+            return outputs
+
+        else:
+            raise Exception("argument for LLM must be either str or list of str")
+
+    
+    async def standby_llm(self):
+
+        #self.request_dict = request_dict
+        request_id = SEIMEI.request_id
+        SEIMEI.request_id += 1
+        
+        #SEIMEI.request_ids.insert(0, request_id)
+        SEIMEI.request_ids.append(request_id)
+
+        if len(SEIMEI.processing_ids) < SEIMEI.max_request:
+            SEIMEI.request_ids.remove(request_id)
+            SEIMEI.processing_ids.append(request_id)
+        else:
+            while True:
+                if request_id in SEIMEI.processing_ids:
+                    break
+                await asyncio.sleep(1)
+
+        return request_id
+
+    
+    async def finish_llm(self, request_id):
+        if request_id not in SEIMEI.processing_ids:
+            raise Exception("There is no request_id in processing_ids")
+
+        SEIMEI.processing_ids.remove(request_id)
+        SEIMEI.finished_ids.append(request_id)
+
+        #request_dict = SEIMEI.requests.pop(0)
+        if len(SEIMEI.request_ids) != 0:
+            next_request_id = SEIMEI.request_ids.pop(0)
+            SEIMEI.processing_ids.append(next_request_id)
+
+    
+    async def get_output(self, request_dict):
+
+        prompt = request_dict["prompt"]
+
+        request_id = await self.standby_llm()
+
+        if SEIMEI.llm_template != None:
+            prompt = SEIMEI.llm_template(prompt)
+
+        #request_id = random_uuid()
+        results_generator = SEIMEI.engine.generate(prompt, SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens), request_id)
+        
+        final_output = None
+        async for request_output in results_generator:
+            final_output = request_output
+
+        output = final_output.outputs[0].text
+        self.output__ = output
+
+        await self.finish_llm(request_id)
+
+        return output
+
 
 class SEIMEI:
     
-    def __init__(self, processed_path = None, model_name = "mistralai/Ministral-8B-Instruct-2410", expert_class_names = None, expert_module_names = None, se_restrictions = None, max_inference_time = 300, tensor_parallel_size = 1, max_seq_len_to_capture = 128000):
+    def __init__(self,
+             database_path = None,
+             model_name = "/workspace/qwen3b",  #"Qwen/Qwen2.5-3B-Instruct", # for test
+             #model_name = "mistralai/Ministral-8B-Instruct-2410", 
+             expert_config = [{
+                 "dir_path" : "./Experts/Default", # can be either folder or file
+             }],
+             se_restrictions = None,
+             llm_template = None,
+             max_inference_time = 300, 
+             tensor_parallel_size = 1, 
+             max_seq_len_to_capture = 50000,
+             gpu_memory_utilization=0.4,
+             max_request = 20,
+        ):
         
-        SEIMEI.processed_path = processed_path
+        SEIMEI.database_path = database_path
         SEIMEI.model_name = model_name
 
-        self.job_class_names = expert_class_names
-        self.job_module_names = expert_module_names
+        self.expert_config = expert_config
         self.se_restrictions = se_restrictions
+        SEIMEI.llm_template = llm_template
         self.max_inference_time = max_inference_time
         self.tensor_parallel_size = tensor_parallel_size
         self.max_seq_len_to_capture = max_seq_len_to_capture
+        self.max_request= max_request
+
+        #SEIMEI.all_requests = AllRequests(max_request)
+
+        # For managing all LLM requests
+        SEIMEI.max_request = max_request
+        SEIMEI.requests = []
+        SEIMEI.request_ids = []
+        SEIMEI.request_id = 0
+        SEIMEI.results = []
+        SEIMEI.finished_ids = []
+        SEIMEI.processing_ids = []
+
+        SEIMEI.search = RMSearch(model_name = "/workspace/llama3b-rm", tensor_parallel_size = 1, pipeline_parallel_size = 1,)
 
         # Useful OpenScource LLM Models
 
@@ -45,22 +394,29 @@ class SEIMEI:
         engine_args = AsyncEngineArgs(
             model = model_name,
             tensor_parallel_size = tensor_parallel_size,
+            pipeline_parallel_size = 1,
             max_seq_len_to_capture = max_seq_len_to_capture,
+            max_model_len = max_seq_len_to_capture,
+            gpu_memory_utilization = gpu_memory_utilization,
         )
         
         # initialize the engine and the example input
         SEIMEI.engine = AsyncLLMEngine.from_engine_args(engine_args)
+        SEIMEI.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side='left')
 
-        SEIMEI.emb_model = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1").to(device)  # this should be class attribute because self.seimei = seimei in __init__ function in each job duplicates emb_model, which imidiately causes cuda oom
+        # SEIMEI.emb_model = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1").to(device)  # this should be class attribute because self.seimei = seimei in __init__ function in each expert duplicates emb_model, which imidiately causes cuda oom
 
-        # These class attributes should be unique to a user question. If these were instance attributes instead, modifying self.seimei from each job would make multiple non-unique instances.
+        # These class attributes should be unique to a user question. If these were instance attributes instead, modifying self.seimei from each expert would make multiple non-unique instances.
         SEIMEI.infs = []  # [{"inf":, "keep_once":, "keep_permanently":, }]
         SEIMEI.info_dicts = []  # [{"info":str, "query":str, "expert_class_name":str, "expert_instance":inst}, ... ]
 
         self.called_experts__ = []  # To not get an error when showing Log
 
-        SEIMEI.final_answer = None
-        SEIMEI.answer_end = False
+        #SEIMEI.final_answer = None
+        #SEIMEI.answer_end = False
+        SEIMEI.final_answers = []
+        SEIMEI.answer_ends = []
+        
         SEIMEI.log_dict = {}
 
         # for making reinforcement learning dataset
@@ -69,9 +425,11 @@ class SEIMEI:
 
         SEIMEI.queries = []
 
+        SEIMEI.data = {}  # { expert_class1:{}, ... }
+
         SEIMEI.inference_start_time = None
 
-        self.set_jobs()  # job_classes : [str] name list of job class in ./jobs directory
+        self.set_experts()  # expert_classes : [str] name list of expert class in ./Experts directory
 
 
 
@@ -79,34 +437,52 @@ class SEIMEI:
 
         SEIMEI.kwargs = kwargs
 
-        if "query" in kwargs:
-            query = kwargs["query"]
-        else:
+        if not ("query" in kwargs or "queries" in kwargs):
             raise Exception("argument for get_answer must include 'query'")
+        
+        queries = kwargs["queries"]
+        SEIMEI.queries = queries
+
+        SEIMEI.final_answers = [None for _ in range(len(queries))]
+        SEIMEI.answer_ends = [False for _ in range(len(queries))]
+        
+
+        #save_log_task = asyncio.create_task(self.save_log())
 
         # task for being ready for ending inference
         end_inference_task = asyncio.create_task(self.end_inference())
 
         # task for multi-expert inference
-        self.experts = Experts(self)
-        expert_task = asyncio.create_task(self.experts(kwargs))
+        #self.experts = Experts(self)
+        #expert_task = asyncio.create_task(self.experts(kwargs))
 
         # task for making log regularly
-        save_log_task = asyncio.create_task(self.save_log())
+        
 
+        await asyncio.gather(
+            *[self.expert_tasks(query_dict, query_id) for query_id, query_dict in enumerate(queries)]
+        )
         
         #await permanent_experts_task
         await end_inference_task
-        await save_log_task
+        
         #await inference_task
 
+        #await save_log_task
+
+        return SEIMEI.final_answers
+
+
+    async def expert_tasks(self, query_dict, query_id):
+        
+        # Need to modify save_log and this
+        experts = Experts(self, query_id)
+        expert_task = asyncio.create_task(experts(**query_dict))
+        
         try:
             await expert_task
         except AnswerEnd:
-            pass
-
-        return SEIMEI.final_answer
-
+            SEIMEI.answer_ends[query_id] = True
 
 
     async def end_inference(self):
@@ -115,18 +491,19 @@ class SEIMEI:
         
         while True:
             await asyncio.sleep(5)
-            if SEIMEI.answer_end:
+            if all(SEIMEI.answer_ends):
                 break
             elif time.time() - SEIMEI.inference_start_time > self.max_inference_time:
                 print()
                 print(time.time() - SEIMEI.inference_start_time, " passed")
                 print()
-                SEIMEI.answer_end = True
-                inf = ""
-                for i in range(len(SEIMEI.infs)):
-                    inf_to_add = f"**information {i}:** \n{SEIMEI.infs[i]['inf']}\n\n\n"
-                    inf += inf_to_add
-                SEIMEI.final_answer = f"The answer was not clear but seimei got the following information from the database. \n\n\n{inf}"
+                for i in range(len(SEIMEI.answer_ends)):
+                    SEIMEI.answer_ends[i] = True
+                #inf = ""
+                #for i in range(len(SEIMEI.info_dicts)):
+                #    inf_to_add = f"**information {i}:** \n{SEIMEI.info_dicts[i]['info']}\n\n\n"
+                #    inf += inf_to_add
+                #SEIMEI.final_answer = f"The answer was not clear but seimei got the following information from the database. \n\n\n{inf}"
                 break
 
 
@@ -160,37 +537,46 @@ class SEIMEI:
 
     # make log dict
     def make_log_dict(self, first_instance):
-        return {"expert_class_name":first_instance.__class__.__name__, "args":first_instance.kwargs__, "return":first_instance.output__, "called_experts":self.get_called_jobs(first_instance.called_experts__)}
+        return {"expert_class_name":first_instance.__class__.__name__, "args":first_instance.kwargs__, "return":first_instance.output__, "called_experts":SEIMEI.get_called_experts(first_instance.called_experts__)}
 
     # recursive function
-    def get_called_jobs(self, called_experts):
+    @staticmethod
+    def get_called_experts(called_experts):
         if called_experts == []:
             return []
         else:
-            return [{"expert_class_name":called_experts[i].__class__.__name__, "args":called_experts[i].kwargs__, "return":called_experts[i].output__, "called_experts":self.get_called_jobs(called_experts[i].called_experts__)} for i in range(len(called_experts))]
+            return [{"expert_class_name":called_experts[i].__class__.__name__, "args":SEIMEI.convert_to_string(called_experts[i].kwargs__), "return":SEIMEI.convert_to_string(called_experts[i].output__), "called_experts":SEIMEI.get_called_experts(called_experts[i].called_experts__)} for i in range(len(called_experts))]
+
+    @staticmethod
+    def convert_to_string(obj):
+        if isinstance(obj, dict):
+            return {str(key): SEIMEI.convert_to_string(value) for key, value in obj.items()}
+        elif isinstance(obj, list):
+            return [SEIMEI.convert_to_string(element) for element in obj]
+        else:
+            return str(obj)
 
 
+    def set_experts(self):
 
-    def set_jobs(self):  # job_classes:[str]
-
-        SEIMEI.job_classes = self.find_class(".")  #[job classes]: all classes in ./job directory
+        #SEIMEI.expert_classes = self.get_expert_classes()  # [ expert_class1, ... ] : all expert classes designated by self.expert_config
+        SEIMEI.start_expert_classes = self.get_expert_classes(key="start_class")
 
         print()
-        print("SEIMEI.job_classes: ", self.job_classes)
+        print("SEIMEI.start_expert_classes: ", self.start_expert_classes)
         print()
+
+        """
+
+        if self.expert_classes == []:
+            raise Exception("There is no expert to make inference with.")
         
-        self.job_instances = [] #[job instances]: all instances of classes in self.job_classes
-
-        # following lists are for `global_key_id => job_key, local_key_id, job_id`
-        SEIMEI.job_keys = [] #[str]: list of keys to trigger jobs
-        SEIMEI.local_key_ids = [] #[int]: list of local ids defined in each job
-        SEIMEI.job_class_ids = [] #[id1, id1, ..., id2, ...]: list of job class ids corresponds to self.job_keys
-        SEIMEI.job_classes2 = []  #[class1, class1, ..., class2, ...]: list of job classes corresponds to SEIMEI.job_class_ids
+        # following lists are for `global_key_id => expert_key, local_key_id, expert_id`
+        expert_keys = [] #[str]: list of keys to trigger experts
+        expert_class_ids = [] #[id1, id1, ..., id2, ...]: list of expert class ids corresponds to self.expert_keys
+        SEIMEI.expert_classes2 = []  #[class1, class1, ..., class2, ...]: list of expert classes corresponds to SEIMEI.expert_class_ids
         SEIMEI.se_restriction_classes = []
-        #self.every_step_job_classes = []
-
-        # new
-        SEIMEI.job_keys_embs_dict = {} # {class:torch.tensor}
+        SEIMEI.expert_keys_embs_dict = {} # {class:torch.tensor}
         SEIMEI.local_key_ids_dict = {} # {class:[int]}
         global_key_ids_dict = {} # {class:[int]}
 
@@ -198,41 +584,39 @@ class SEIMEI:
         SEIMEI.permanent_expert_classes = []
 
         global_id_start = 0
-        for i in range(len(self.job_classes)):
-            job_instance = self.job_classes[i](self)
-            self.job_instances.append(job_instance)
+        for i in range(len(self.expert_classes)):
+            expert_instance = self.expert_classes[i](self)
 
-            job_keys_for_instance = job_instance.get_keys()
+            if hasattr(expert_instance, "get_keys"):
+                expert_keys_for_instance = expert_instance.get_keys()
+            elif hasattr(expert_instance, "description"):
+                expert_keys_for_instance = {"keys":[expert_instance.description], "ids":[0]}
+            else:
+                continue
+                
+            expert_keys += expert_keys_for_instance["keys"]
+            expert_class_ids += [i for _ in range(len(expert_keys_for_instance["keys"]))]
 
-            # old
-            SEIMEI.job_keys += job_keys_for_instance["keys"]
-            SEIMEI.local_key_ids += job_keys_for_instance["ids"]
-            SEIMEI.job_class_ids += [i for _ in range(len(job_keys_for_instance["keys"]))]
-            SEIMEI.job_classes2 += [SEIMEI.job_classes[id] for id in SEIMEI.job_class_ids]
-
+            global_ids = [j for j in range(global_id_start, global_id_start+len(expert_keys_for_instance["keys"]))]
+            global_id_start += len(expert_keys_for_instance["keys"])
+            global_key_ids_dict[SEIMEI.expert_classes[i]] = global_ids
+            SEIMEI.local_key_ids_dict[SEIMEI.expert_classes[i]] = expert_keys_for_instance["ids"]
+            SEIMEI.expert_classes2 += [SEIMEI.expert_classes[id] for id in expert_class_ids]
             if self.se_restrictions != None:
-                if self.job_classes[i].__name__ in self.se_restrictions:
-                    SEIMEI.se_restriction_classes.append(self.job_classes[i])
+                if self.expert_classes[i].__name__ in self.se_restrictions:
+                    SEIMEI.se_restriction_classes.append(self.expert_classes[i])
+            
 
-            # new
-            global_ids = [j for j in range(global_id_start, global_id_start+len(job_keys_for_instance["keys"]))]
-            global_id_start += len(job_keys_for_instance["keys"])
-            global_key_ids_dict[SEIMEI.job_classes[i]] = global_ids
-            SEIMEI.local_key_ids_dict[SEIMEI.job_classes[i]] = job_keys_for_instance["ids"]
-            #self.job_keys_dict[self.job_classes[i]] = job_keys_for_instance["keys"]
-
-            if hasattr(job_instance, 'permanent_call_wait__'):
-                SEIMEI.permanent_expert_classes.append(SEIMEI.job_classes[i])
+            if hasattr(expert_instance, 'permanent_call_wait__'):
+                SEIMEI.permanent_expert_classes.append(SEIMEI.expert_classes[i])
 
         
         # This shouldn't be class attribute
-        SEIMEI.job_keys_embs = torch.tensor(SEIMEI.emb_model.encode(SEIMEI.job_keys)).to("cpu")
+        expert_keys_embs = torch.tensor(SEIMEI.emb_model.encode(expert_keys)).to("cpu")
 
-
-        for job_class in SEIMEI.job_classes:
-            SEIMEI.job_keys_embs_dict[job_class] = SEIMEI.job_keys_embs[global_key_ids_dict[job_class]]
-
-
+        for expert_class in SEIMEI.expert_classes:
+            SEIMEI.expert_keys_embs_dict[expert_class] = expert_keys_embs[global_key_ids_dict[expert_class]]
+        """
     
     # Sub functions
 
@@ -249,6 +633,7 @@ class SEIMEI:
         else:
             return None
 
+    '''
     @staticmethod
     def search(query, topk = 1, expert_restriction = None, prohibited_ids = None):
         if type(query) == str:
@@ -257,19 +642,20 @@ class SEIMEI:
         query_embs = torch.tensor(SEIMEI.emb_model.encode(query))
 
         if expert_restriction==None:
-            local_key_ids = SEIMEI.local_key_ids
-            job_class_list = SEIMEI.job_classes2
-            key_embs = SEIMEI.job_keys_embs
+            for expert_class in SEIMEI.expert_keys_embs_dict:
+                key_embs = torch.cat((key_embs, SEIMEI.expert_keys_embs_dict[expert_class]), dim=0)
+                local_key_ids += SEIMEI.local_key_ids_dict[expert_class]
+                expert_class_list += [expert_class for _ in range(len(local_key_ids))]
 
         else:
-            job_class_list = []
+            expert_class_list = []
             local_key_ids = []
             key_embs = torch.tensor([])
-            for job_class in expert_restriction:
-                if job_class in SEIMEI.job_keys_embs_dict:
-                    key_embs = torch.cat((key_embs, SEIMEI.job_keys_embs_dict[job_class]), dim=0)
-                    local_key_ids += SEIMEI.local_key_ids_dict[job_class]
-                    job_class_list += [job_class for _ in range(len(local_key_ids))]
+            for expert_class in expert_restriction:
+                if expert_class in SEIMEI.expert_keys_embs_dict:
+                    key_embs = torch.cat((key_embs, SEIMEI.expert_keys_embs_dict[expert_class]), dim=0)
+                    local_key_ids += SEIMEI.local_key_ids_dict[expert_class]
+                    expert_class_list += [expert_class for _ in range(len(local_key_ids))]
 
         
         relevance = torch.matmul(query_embs, key_embs.T)
@@ -295,8 +681,8 @@ class SEIMEI:
             for i in range(len(modified_expert_ids)):
                 output = []
                 for j in range(len(modified_expert_ids[i])):
-                    new_job_class = job_class_list[modified_expert_ids[i][j]]
-                    output.append((new_job_class, local_key_ids[modified_expert_ids[i][j]]))
+                    new_expert_class = expert_class_list[modified_expert_ids[i][j]]
+                    output.append((new_expert_class, local_key_ids[modified_expert_ids[i][j]]))
                 outputs.append(output)
             
         else:
@@ -307,11 +693,11 @@ class SEIMEI:
             for i in range(len(expert_ids)):
                 output = []
                 for j in range(len(expert_ids[i])):
-                    new_job_class = job_class_list[expert_ids[i,j].item()]
-                    outputs.append((new_job_class, local_key_ids[expert_ids[i,j].item()]))
+                    new_expert_class = expert_class_list[expert_ids[i,j].item()]
+                    outputs.append((new_expert_class, local_key_ids[expert_ids[i,j].item()]))
 
         return outputs  #[[(expert_class, local_key_id), ...], ...] : [len(query), topk]
-
+    '''
 
     @staticmethod
     def search_inf(query, topk = 1):
@@ -400,17 +786,12 @@ class SEIMEI:
         input_ids = tokenizer.encode(text, add_special_tokens=add_special_tokens)
         
         return len(input_ids)
-        
+    
 
-    @staticmethod
-    def get_job_class(global_key_id):
-        job_class_id = SEIMEI.job_class_ids[global_key_id]
-        job_class = SEIMEI.job_classes[job_class_id]
-        return job_class
+    def get_expert_classes(self, key = "class_names"):
 
-
-    def find_class(self, directory):
         classes = []
+
         def get_defined_classes(file_path):
             # Parse the file to get the syntax tree
             with open(file_path, "r") as file:
@@ -444,548 +825,62 @@ class SEIMEI:
 
             return class_objects
 
-        
-        if (self.job_class_names != None) and (self.job_module_names == None):
-            for root, _, files in os.walk(directory):
-                if not ".ipynb_checkpoints" in root:
-                    for file in files:
-                        if file.endswith('.py'):
-                            file_path = root+"/"+file
-                            classes_ = get_defined_classes(file_path)
     
-                            for class_ in classes_:
-                                if class_.__name__ in self.job_class_names:
-                                    classes.append(class_)
-                                    
-        elif (self.job_class_names == None) and (self.job_module_names != None):
-            for root, _, files in os.walk(directory):
-                if not ".ipynb_checkpoints" in root:
-                    for file in files:
-                        if file.endswith('.py'):
-                            file_path = root+"/"+file
+        for config_dict in self.expert_config:
 
-                            job_in_module_list = False
-                            for job_module_name in self.job_module_names:
-                                job_module_name = job_module_name.replace(".","/")
-                                if job_module_name in file_path:
-                                    job_in_module_list = True
-                                    break
+            if os.path.isfile(config_dict["dir_path"]):
+                classes_ = get_defined_classes(config_dict["dir_path"])
+                for class_ in classes_:
+                    if not key in config_dict:
+                        classes.append(class_)
+                    elif class_.__name__ in config_dict[key]:
+                        classes.append(class_)
 
-                            if job_in_module_list:
+            else:
+                for root, _, files in os.walk(config_dict["dir_path"]):
+                    if not ".ipynb_checkpoints" in root:
+                        for file in files:
+                            if file.endswith('.py'):
+                                file_path = root+"/"+file
                                 classes_ = get_defined_classes(file_path)
+        
                                 for class_ in classes_:
-                                    classes.append(class_)
-
-        elif (self.job_class_names != None) and (self.job_module_names != None):
-            for root, _, files in os.walk(directory):
-                if not ".ipynb_checkpoints" in root:
-                    for file in files:
-                        if file.endswith('.py'):
-                            file_path = root+"/"+file
-
-                            job_in_module_list = False
-                            for job_module_name in self.job_module_names:
-                                job_module_name = job_module_name.replace(".","/")
-                                if job_module_name in file_path:
-                                    job_in_module_list = True
-                                    break
-
-                            if job_in_module_list:
-                                classes_ = get_defined_classes(file_path)
-                                for class_ in classes_:
-                                    if class_.__name__ in self.job_class_names:
+                                    if not key in config_dict:
                                         classes.append(class_)
-                                    
-        else:
-            raise Exception("either self.job_class_names or self.job_module_names should be not None at least.")
+                                    elif class_.__name__ in config_dict[key]:
+                                        classes.append(class_)
 
         return classes
 
 
-
-
-class Expert:
-    
-    def __init__(self, caller): # self here is Subcalss instance
-        self.caller_expert__ = caller
-        self.called_experts__ = []
-        caller.called_experts__.append(self)
-
-        self.kwargs__ = None
-        self.output__ = None
-
-        self.info_dict__ = None
-
-    # kwargs : dict
-    async def __call__(self, kwargs):
-
-        self.kwargs__ = kwargs
-
-        if SEIMEI.answer_end:
-            raise AnswerEnd
-
-        if not hasattr(self, "log_off__"):
-            print()
-            print(f"Expert {self.__class__} started")
-            print()
-
-        try:
-            result = await self.inference(kwargs)
-
-        except AnswerEnd:
-            raise AnswerEnd
-            
-        except Exception as e:
-            traceback.print_exc()
-            result = None
-
-
-        if SEIMEI.answer_end:
-            raise AnswerEnd
-
-        if not hasattr(self, "log_off__"):
-            print()
-            print()
-            print(f"Expert {self.__class__} ended")
-            print()
-            print(f"result: {result}")
-            print()
-            print()
-
-        self.output__ = result
-        return result
-    
-
-
-    def set_info(self, info = None, query = None):
-
-        info_dict = {}
-
-        if info:
-            info_dict["info"] = info
-
-        if query:
-            info_dict["query"] = query
-
-        info_dict["expert_class_name"] = self.__class__.__name__
-        info_dict["expert_instance"] = self
-
-        SEIMEI.info_dicts.append(info_dict)
-        self.info_dict__ = info_dict
-
-    def reset_info(self):
-        SEIMEI.info_dicts = []
-
-
-    def get_info(self, query = None, topk = 3):
-
-        if len(SEIMEI.info_dicts) == 0:
-            return []
-
-        environment = ""  # later
-
-        search_text = f"""### Environment:
-{environment}
-
-### Query:
-{query}"""
-
-        info_texts = []
-        for info_dict in SEIMEI.info_dicts:  # SEIMEI.info_dicts  : [{"info": ...}]
-            info_texts.append(str(info_dict))
-
-
-        query_embs = torch.tensor(SEIMEI.emb_model.encode([search_text]))
-        inf_embs = torch.tensor(SEIMEI.emb_model.encode(info_texts))
-
-        relevance = torch.matmul(query_embs, inf_embs.T)
-
-        _, info_ids = torch.topk(relevance, k = min(topk, relevance.shape[1]), dim=1)  # [num_q, num_relevance]
-
-        outputs = []
-        for j in range(len(info_ids[0])):
-            info = SEIMEI.info_dicts[info_ids[0,j].item()]
-            outputs.append(info)
-
-        return outputs  # [{"info":, }, ... ]
-
-
-
-
-
-
-class Search(Expert):
-
-    def __init__(self, caller, num_expert = 3):
-        super().__init__(caller)
-        self.log_off__ = True
-        self.num_expert = num_expert # number of called experts per question
-
-    def get_keys(self):
-        return {"ids":[], "keys":[]}
-
-
-    # kwargs : {"queries":str, "job_restriction":[], "avoid_overlapping":str, "prohibited_ids":[]}
-    async def inference(self, kwargs):
-
-        if kwargs["queries"] == []:
-            return None
-
-        # summarize overlapping queries
-        summarize_search_queries = SummarizeSearchQueries(self)
-        
-        if "avoid_overlapping" in kwargs:
-            if kwargs["avoid_overlapping"]:
-                kwargs = await summarize_search_queries(kwargs)
-        else:  # avoid overlapping in default
-            kwargs = await summarize_search_queries(kwargs)
-
-        if kwargs["queries"] == []:
-            return None
-
-        query_embs = torch.tensor(SEIMEI.emb_model.encode(kwargs["queries"]))
-
-        if not "job_restriction" in kwargs:
-            if SEIMEI.se_restriction_classes == []:
-                local_key_ids = SEIMEI.local_key_ids
-                job_class_list = SEIMEI.job_classes2
-                key_embs = SEIMEI.job_keys_embs
-            else:
-                job_class_list = []
-                local_key_ids = []
-                key_embs = torch.tensor([])
-                job_classes = SEIMEI.se_restriction_classes
-                for job_class in job_classes:
-                    if job_class in SEIMEI.job_keys_embs_dict:
-                        key_embs = torch.cat((key_embs, SEIMEI.job_keys_embs_dict[job_class]), dim=0)
-                        local_key_ids += SEIMEI.local_key_ids_dict[job_class]
-                        job_class_list += [job_class for _ in range(len(local_key_ids))]
-
-
-        else:
-            job_class_list = []
-            local_key_ids = []
-            key_embs = torch.tensor([])
-            job_classes = kwargs["job_restriction"]
-            for job_class in job_classes:
-                if job_class in SEIMEI.job_keys_embs_dict:
-                    key_embs = torch.cat((key_embs, SEIMEI.job_keys_embs_dict[job_class]), dim=0)
-                    local_key_ids += SEIMEI.local_key_ids_dict[job_class]
-                    job_class_list += [job_class for _ in range(len(local_key_ids))]
-
-        
-        relevance = torch.matmul(query_embs, key_embs.T)
-
-        if "prohibited_ids" in kwargs:
-
-            relevance_values, expert_ids = torch.topk(relevance, k = min(self.num_expert + len(kwargs["prohibited_ids"]), relevance.shape[1]), dim=1)  # [num_q, min(self.num_expert + len(kwargs["prohibited_ids"]), relevance.shape[1])]
-            
-            modified_expert_ids = []
-            for i in range(len(expert_ids)):
-                expert_ids_ids = []
-                for j in range(len(expert_ids[i])):
-                    if not expert_ids[i,j].item() in kwargs["prohibited_ids"]:
-                        expert_ids_ids.append(j)
-                rest_expert_ids = expert_ids[i][expert_ids_ids]
-                _, rest_expert_ids_ids = torch.topk(relevance_values[i][expert_ids_ids], k=min(self.num_inf, relevance_values[i][expert_ids_ids].shape[0]), dim=0)
-                modified_expert_ids_row = []
-                for j in range(len(rest_expert_ids_ids)):
-                    modified_expert_ids_row.append(rest_expert_ids[rest_expert_ids_ids[j].item()].item())
-                modified_expert_ids.append(modified_expert_ids_row)
-
-            outputs = []
-            for i in range(len(modified_expert_ids)):
-                for j in range(len(modified_expert_ids[i])):
-                    new_job_class = job_class_list[modified_expert_ids[i][j]]
-                    kwargs = copy.deepcopy(kwargs)
-                    kwargs["query"] = kwargs["queries"][i]
-                    kwargs["local_key_id"] = local_key_ids[modified_expert_ids[i][j]]
-                    outputs.append((kwargs, new_job_class))
-            
-        else:
-            
-            relevance_values, expert_ids = torch.topk(relevance, k = min(self.num_expert, relevance.shape[1]), dim=1)  # [num_q, num_relevance]
-
-            outputs = []
-            for i in range(len(expert_ids)):
-                for j in range(len(expert_ids[i])):
-                    new_job_class = job_class_list[expert_ids[i,j].item()]
-                    kwargs = copy.deepcopy(kwargs)
-                    kwargs["query"] = kwargs["queries"][i]
-                    kwargs["local_key_id"] = local_key_ids[expert_ids[i,j].item()]
-                    outputs.append((kwargs, new_job_class))
-
-        # outputs : [(kwargs, job_class), ...]
-        expert_inferences = [expert_class(self)(kwargs) for kwargs, expert_class in outputs]
-        
-        await asyncio.gather(*expert_inferences)
-
-
-
-
-
-
-class Search2(Expert):  # queries are summed up
-
-    num_inf = 3
-    
-    def __init__(self, caller):
-        super().__init__(caller)
-        self.log_off__ = True
-
-    def get_keys(self):
-        return {"ids":[], "keys":[]}
-
-    
-    async def inference(self, kwargs):  # kwargs : {"queries":, }
-
-        if kwargs["queries"] == []:
-            return []
-
-        # summarize overlapping queries
-        summarize_search_queries = SummarizeSearchQueries(self)
-        
-        if "avoid_overlapping" in kwargs:
-            if kwargs["avoid_overlapping"]:
-                kwargs = await summarize_search_queries(kwargs)
-        else:  # avoid overlapping in default
-            kwargs = await summarize_search_queries(kwargs)
-
-
-        query_embs = torch.tensor(SEIMEI.emb_model.encode(kwargs["queries"]))
-
-        if not "job_restriction" in kwargs:
-            relevance = torch.matmul(query_embs, SEIMEI.job_keys_embs.T)
-            if relevance.shape[1] < self.num_inf: self.num_inf = relevance.shape[1] # to avoid error in topk sentence
-            relevance_values, inf_ids = torch.topk(relevance, k = self.num_inf, dim=1)  # [num_q, num_relevance]
-            top_inf_mask = self.get_2d_top_mask(relevance_values, inf_ids)
-
-            outputs = []
-            for i in range(len(inf_ids)):
-                for j in range(len(inf_ids[i])):
-                    if top_inf_mask[i,j]:
-                        new_job_class = SEIMEI.get_job_class(inf_ids[i,j].item())
-                        kwargs = copy.deepcopy(kwargs)
-                        kwargs["query"] = kwargs["queries"][i]
-                        kwargs["local_key_id"] = SEIMEI.local_key_ids[inf_ids[i,j].item()]
-                        outputs.append((kwargs, new_job_class))
-
-        else:
-            job_class_list = []
-            local_key_ids = []
-            key_embs = torch.tensor([])
-            job_classes = kwargs["job_restriction"]
-            for job_class in job_classes:
-                if job_class in SEIMEI.job_keys_embs_dict:
-                    key_embs = torch.cat((key_embs, SEIMEI.job_keys_embs_dict[job_class]), dim=0)
-                    local_key_ids += SEIMEI.local_key_ids_dict[job_class]
-                    job_class_list += [job_class for _ in range(len(local_key_ids))]
-                    #job_keys += self.seimei.job_keys_dict[job_class]
-
-            relevance = torch.matmul(query_embs, key_embs.T)
-            if relevance.shape[1] < self.num_inf: self.num_inf = relevance.shape[1] # to avoid error in topk sentence
-            relevance_values, inf_ids = torch.topk(relevance, k = self.num_inf, dim=1)  # [num_q, num_relevance]
-            top_inf_mask = self.get_2d_top_mask(relevance_values, inf_ids)
-
-            outputs = []
-            for i in range(len(inf_ids)):
-                for j in range(len(inf_ids[i])):
-                    if top_inf_mask[i,j]:
-                        new_job_class = job_class_list[inf_ids[i,j].item()]
-                        kwargs = copy.deepcopy(kwargs)
-                        kwargs["query"] = kwargs["queries"][i]
-                        kwargs["local_key_id"] = local_key_ids[inf_ids[i,j].item()]
-                        outputs.append((kwargs, new_job_class))
-
-        # outputs : [(kwargs, job_class), ...]
-        expert_inferences = [expert_class(self)(kwargs) for kwargs, expert_class in outputs]
-        
-        await asyncio.gather(*expert_inferences)
-
-
-    # Sub functions
-
-    def get_2d_top_mask(self, values, indices):
-        
-        def reshape_2d_to_1d_with_indices(tensor_2d):
-            # Reshape the 2D tensor to 1D
-            tensor_1d = tensor_2d.reshape(-1)
-            
-            # Create a tensor of indices
-            rows, cols = tensor_2d.shape
-            row_indices = torch.arange(rows).repeat_interleave(cols)
-            col_indices = torch.arange(cols).repeat(rows)
-            
-            # Combine row and column indices
-            indices = torch.stack((row_indices, col_indices), dim=1)
-            
-            return tensor_1d, indices
-
-        relevance_values_1d, reshape_indices = reshape_2d_to_1d_with_indices(values)  # [num_q*num_relevance], [num_q*num_relevance, 2]
-
-        _, topk_1d_indices = torch.topk(relevance_values_1d, k=self.num_inf)
-        #reshape_indices[topk_1d_indices] : [self.max_inf_num, 2]
-
-        reshape_indices = reshape_indices.to(device)
-        
-        top_mask = torch.zeros(indices.shape, dtype=torch.bool).to(device)
-        top_mask[reshape_indices[topk_1d_indices].T[0], reshape_indices[topk_1d_indices].T[1]] = True
-
-        return top_mask
-
-
-class SummarizeSearchQueries(Expert):
-    
-    def __init__(self, caller):
-        super().__init__(caller)
-        self.log_off__ = True
-
-    def get_keys(self):
-        return {"ids":[], "keys":[]}
-
-    async def inference(self, kwargs):
-        
-        past_query_text = ""
-        for i, query in enumerate(kwargs["queries"]):
-            past_query_text += f"query {i}: {query}\n\n"
-
-        new_query_text = ""
-        for i, query in enumerate(SEIMEI.queries):
-            new_query_text += f"query {i}: {query}\n\n"
-
-
-        prompt = f"""<s>[INST]You are an excellent help assistant. You will be provided with two types of queries: a list of past queries and a list of new queries. In the new queries list, there may be some queries that have overlapping meanings with queries in both the new queries list and the past queries list. Your task is to identify and remove those overlapping queries from the new queries list, and then return a modified list of non-overlapping new queries. Note that even if some of the queries are not exactly the same sentence, queries that convey almost the same meaning should be considered as overlapping.
-
-
-### Past Queries List:
-'''
-{past_query_text}
-'''
-
-
-### New Queries List:
-'''
-{new_query_text}
-'''
-
-
-Please return the result in the following JSON format:
-{{
-    "new_queries": ["(non-overlapping query)", ...]
-}}[/INST]"""
-
-
-        llm = LLM(self)
-        output = await llm(prompt)
-
-        try:
-
-            # Find the positions of the first '{' and the last '}'
-            start_index = output.find('{')
-            end_index = output.rfind('}')
-
-            if start_index != -1 and end_index != -1 and start_index < end_index:
-                # Extract the JSON part
-                json_text = output[start_index:end_index+1]
-                json_text = json_text.replace("\n", "").replace("\\", "")
-
-                json_answer = json.loads(json_text)
-                queries = json_answer["queries"]
-                json_success = True
-
-        except:
-            queries = kwargs["queries"]
-            json_success = False
-
-        SEIMEI.queries += queries
-
-        kwargs["queries"] = queries
-        kwargs["json_success"] = json_success
-
-        return kwargs
-
-
-
-class LLM:
-
-    def __init__(self, caller, max_new_tokens = 4000, max_length = 128000, temperature = 0.0, num_answers = 1):
-
-        self.caller_expert__ = caller
-        self.called_experts__ = [] # to avoid error for saving logs
-        caller.called_experts__.append(self)
-        
-        self.max_new_tokens = max_new_tokens
-        self.max_length = max_length
-        self.temperature = temperature
-        self.num_answers = num_answers
-
-        self.kwargs__ = None
-        self.output__ = None
-
-
-    async def __call__(self, prompt):
-
-        self.kwargs__ = prompt
-
-        if SEIMEI.answer_end:
-            raise AnswerEnd
-
-        if type(prompt) == str:
-            
-            if self.num_answers == 1:
-                output = await self.get_output(prompt)
-                self.output__ = output
-                return output
-                
-            else:
-                prompts = [prompt for _ in range(self.num_answers)]
-                get_outputs = [self.get_output(prompt_) for prompt_ in prompts]
-                outputs = await asyncio.gather(*get_outputs)
-                self.output__ = outputs
-                return outputs
-            
-        elif type(prompt) == list:
-            get_outputs = [self.get_output(prompt_) for prompt_ in prompt]
-            outputs = await asyncio.gather(*get_outputs)
-            self.output__ = outputs
-            return outputs
-
-        else:
-            raise Exception("argument for LLM must be either str or list of str")
-
-    
-    async def get_output(self, prompt):
-        request_id = random_uuid()
-        results_generator = SEIMEI.engine.generate(prompt, SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens), request_id)
-        
-        final_output = None
-        async for request_output in results_generator:
-            final_output = request_output
-
-        return final_output.outputs[0].text
-
-
 class Experts(Expert):
-    def __init__(self, caller):  # caller : None
+    def __init__(self, caller, query_id):  # caller : None
         super().__init__(caller)
+        self.query_id = query_id
 
-    async def inference(self, kwargs):
+    async def inference(self, *args, **kwargs):
 
-        specific_expert_task = asyncio.create_task(SpecificExperts(self)(kwargs))
-        permanent_expert_task = asyncio.create_task(PermanentExperts(self)(kwargs))
+        specific_expert_task = asyncio.create_task(SpecificExperts(self)(*args, **kwargs))
+        #permanent_expert_task = asyncio.create_task(PermanentExperts(self)(kwargs))
 
         await specific_expert_task
-        await permanent_expert_task
+        #await permanent_expert_task
 
 
 class SpecificExperts(Expert):
     def __init__(self, caller):  # caller : Experts
         super().__init__(caller)
 
-    async def inference(self, kwargs):
-        query = kwargs["query"]
-        first_job_instance = Search(self)
-        await first_job_instance({"queries":[query]})
+    async def inference(self, *args, **kwargs):
+        print(args, kwargs)
+        if "query" in kwargs:
+            inference_functions = []
+            for first_expert_class in SEIMEI.start_expert_classes:
+                first_expert_instance = first_expert_class(self)
+                inference_functions.append(first_expert_instance(*args, **kwargs))
+            await asyncio.gather(*inference_functions)
+        else:
+            raise Exception("kwargs for SpecificExperts must include either query or queries")
 
 
 class PermanentExperts(Expert):
@@ -1011,4 +906,8 @@ class PermanentExpert(Expert):
 
 class AnswerEnd(Exception):
     pass
+
+
+
+
 
