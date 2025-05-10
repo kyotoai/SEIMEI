@@ -410,7 +410,7 @@ Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEI
 [issues-shield]: https://img.shields.io/github/issues/kyotoai/SEIMEI.svg?style=for-the-badge
 [issues-url]: https://github.com/kyotoai/SEIMEI/issues
 [linkedin-shield]: https://img.shields.io/badge/-LinkedIn-black.svg?style=for-the-badge&logo=linkedin&colorB=555
-[linkedin-url]: www.linkedin.com/in/kentaro-seki-b12000339
+[linkedin-url]: https://linkedin.com/in/kentaro-seki-b12000339
 [product-screenshot]: images/screenshot.png
 
 [Next.js]: https://img.shields.io/badge/next.js-000000?style=for-the-badge&logo=nextdotjs&logoColor=white
