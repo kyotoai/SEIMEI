@@ -178,30 +178,21 @@ You can use it by installing seimei using `pip install` or downloading this dire
 
 ### Prerequisites
 
-This is an example of how to list things you need to use the software and how to install them.
-* transformers
+You need to install RMSearch and SEIMEI library on Cuda & PyTorch Environment.
+* RMSearch
   ```sh
-  pip install transformers
-  ```
-* sentence_transformers
-  ```sh
-  pip install sentence_transformers
-  ```
-* vLLM
-  ```sh
-  pip install vllm
-  pip install ray
-  pip install packaging
-  pip install typing
+  git clone https://github.com/kyotoai/RMSearch.git
+  cd RMSearch
+  pip install -e .
   ```
 
 ### Installation
 
 * by `pip install`
   
-1. Install seimei (not prepared yet)
+1. Install SEIMEI (not prepared yet)
    ```sh
-   pip install seimei
+   pip install SEIMEI
    ```
 
 
@@ -210,6 +201,8 @@ This is an example of how to list things you need to use the software and how to
 1. Download the repo
    ```sh
    git clone https://github.com/kyotoai/SEIMEI.git
+   cd SEIMEI
+   pip install -e .
    ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
@@ -219,101 +212,69 @@ This is an example of how to list things you need to use the software and how to
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-We are still developing this library. Please wait for it completing soon!
+Here's an usage example using /Experts/Math module. This module answers mathmatical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
 
 ### Quick Start
 
-1. Prepare chunks of text
-    ```py
-    from Prepare import Prepare
-
-    # Locate your database folder in data_path below
-    data_path = "(your database path)"
-    save_path = "./processed"
-    
-    # designate all the files with 'extensions' inside 'folder_path'
-    file_info = [
-        {"folder_path":"(relative path for database you want to investigate)", "extensions":[".py"]},
-    ]
-    
-    
-    # about where the key starts to split the text
-    # index : words to be where text should be split
-    # first element(0 to 1): process_text_size * element is the start point of the key splitting. the samller the element is, the more likely it is for the key to split the text.
-    # second element(0 or 1): the first element should become   if 0: <text1><key> | <text2>,  if 1: <text1> | <key><text2>
-    rules = [
-        {
-            "class " : 1,
-        },
-    
-        {
-            "def " : 1,
-        },
-    
-        {
-            "if " : 1,
-        },
-    
-        {
-            "else " : 1,
-            "elif " : 1,
-        },
-        
-    
-        {
-            "\n\n" : 0,
-            "<0x0A><0x0A>" : 0,
-            "\x0A\x0A" : 0,
-        },
-    
-        {
-            "\n" : 0,
-            "<0x0A>" : 0,
-            "\x0A" : 0,
-        },
-    ]
-    
-    prepare = Prepare(
-        database_path = data_path,
-        save_path = save_path,
-        rules = rules, 
-        file_info=file_info, 
-        model_name = "gpt2",
-        max_tokens = 10000,
-        min_tokens = 3000,
-    )
-
-    prepare.make_chunks()
+1. Download LLMs in local directory
+    ```sh
+    cd /workspace
+    pip install "huggingface_hub[hf_transfer]"
+    pip install hf_transfer
+    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen2.5-3B-Instruct --local-dir ./qwen3b/
+    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Ray2333/GRM-Llama3.2-3B-rewardmodel-ft --local-dir ./llama3b-rm/
     ```
     
 2. Define seimei
     ```py
     from SEIMEI import SEIMEI
-    import asyncio
-    
-    processed_path = "./processed"  # input path same as save_path you used in Preparation
-    expert_class_names = ["Answer", "CheckInf", "MetaSurvey2"]
-    se_restrictions = ["MetaSurvey2"]  # search engine only hits classes in this list normally (except when adding expert_restriction in kwargs)
-    expert_module_names = ["Experts.Code.Modify"]
-    
+
+    # problems from Kaggle/AIMO2
+    problems = [
+        "Three airline companies operate flights from Dodola island. Each company has a different schedule of departures. The first company departs every 100 days, the second every 120 days and the third every 150 days. What is the greatest positive integer $d$ for which it is true that there will be $d$ consecutive days without a flight from Dodola island, regardless of the departure times of the various airlines?",
+        "Fred and George take part in a tennis tournament with $4046$ other players. In each round, the players are paired into $2024$ matches. How many ways are there to arrange the first round such that Fred and George do not have to play each other? (Two arrangements for the first round are \textit{different} if there is a player with a different opponent in the two arrangements.)",
+        "Triangle $ABC$ has side length $AB = 120$ and circumradius $R = 100$. Let $D$ be the foot of the perpendicular from $C$ to the line $AB$. What is the greatest possible length of segment $CD$?",
+        "Find the three-digit number $n$ such that writing any other three-digit number $10^{2024}$ times in a row and $10^{2024}+2$ times in a row results in two numbers divisible by $n$.",
+        "We call a sequence $a_1, a_2, \ldots$ of non-negative integers \textit{delightful} if there exists a positive integer $N$ such that for all $n > N$, $a_n = 0$, and for all $i \geq 1$, $a_i$ counts the number of multiples of $i$ in $a_1, a_2, \ldots, a_N$. How many delightful sequences of non-negative integers are there?",
+        "Let $ABC$ be a triangle with $BC=108$, $CA=126$, and $AB=39$. Point $X$ lies on segment $AC$ such that $BX$ bisects $\angle CBA$. Let $\omega$ be the circumcircle of triangle $ABX$. Let $Y$ be a point on $\omega$ different from $X$ such that $CX=CY$. Line $XY$ meets $BC$ at $E$. The length of the segment $BE$ can be written as $\frac{m}{n}$, where $m$ and $n$ are coprime positive integers. Find $m+n$.",
+        "For a positive integer $n$, let $S(n)$ denote the sum of the digits of $n$ in base 10. Compute $S(S(1)+S(2)+\cdots+S(N))$ with $N=10^{100}-2$.",
+        """For positive integers $x_1,\ldots, x_n$ define $G(x_1, \ldots, x_n)$ to be the sum of their $\frac{n(n-1)}{2}$ pairwise greatest common divisors. We say that an integer $n \geq 2$ is \emph{artificial} if there exist $n$ different positive integers $a_1, ..., a_n$ such that 
+    \[a_1 + \cdots + a_n = G(a_1, \ldots, a_n) +1.\]
+    Find the sum of all artificial integers $m$ in the range $2 \leq m \leq 40$.""",
+        "The Fibonacci numbers are defined as follows: $F_0 = 0$, $F_1 = 1$, and $F_{n+1} = F_n + F_{n-1}$ for $n \geq 1$. There are $N$ positive integers $n$ strictly less than $10^{101}$ such that $n^2 + (n+1)^2$ is a multiple of 5 but $F_{n-1}^2 + F_n^2$ is not. How many prime factors does $N$ have, counted with multiplicity?",
+        "Alice writes all positive integers from $1$ to $n$ on the board for some positive integer $n \geq 11$. Bob then erases ten of them. The mean of the remaining numbers is $3000/37$. The sum of the numbers Bob erased is $S$. What is the remainder when $n \times S$ is divided by $997$?",
+    ]
+
+    # Make input to SEIMEI
+    queries = []
+    for problem in problems:
+        queries.append({"query":problem})
+
+    expert_config = [
+        {
+            "dir_path" : "../Experts/Math", # can be either folder or file
+            "start_class" : ["Brainstorming"]
+        }
+    ]
+
+    # Define seimei object
     seimei = SEIMEI(
-        processed_path = processed_path,
-        expert_class_names = expert_class_names,
-        expert_module_names = expert_module_names,
-        se_restrictions = se_restrictions,
+        model_name = "/workspace/qwen3b",
+        expert_config = expert_config,
         max_inference_time = 1000,
         tensor_parallel_size = 1,
+        max_seq_len_to_capture = 10000,
+        gpu_memory_utilization = 0.4,
     )
     ```
     
 3. Get answer by seimei
     ```py
-    original_question = "Give me the whole structure of this code file?"
-    final_answer = await seimei.get_answer(query = original_question) # return final answer
+    answers = await seimei.get_answer(queries = queries)
     
     print()
     print()
-    print(final_answer)
+    print(answers)
     ```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
