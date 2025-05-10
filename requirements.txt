@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 torch
 transformers
 sentence_transformers
@@ -7,3 +8,12 @@ packaging
 typing
 ipywidgets
 IPython
+=======
+transformers
+numpy
+pandas
+matplotlib
+sentence_transformers
+huggingface_hub
+vllm
+>>>>>>> 64441fd (Organize SEIMEI)
