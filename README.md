@@ -41,7 +41,7 @@
     Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
   </p>
   <p align="center">
-    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achives SOTA results on tasks requiring deep reasoning!!
+    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
     <br />
     <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>Explore the docs »</strong></a>
     <br />
