@@ -154,6 +154,7 @@ SEIMEI can be applied to make these useful functions!!
 
 * [![vLLM][vllm.ai]][vllm-url]
 * [![Hugging Face][huggingface.co]][huggingface-url]
+* [OpenAI](https://platform.openai.com/docs/overview)
   
 <!--
 * [![Next][Next.js]][Next-url]
@@ -265,6 +266,7 @@ Here's an usage example using /Experts/Math module. This module answers mathemat
         tensor_parallel_size = 1,
         max_seq_len_to_capture = 10000,
         gpu_memory_utilization = 0.4,
+        llm_backend = "vllm",  # set to "openai" to call the OpenAI API instead of vLLM
     )
     ```
     
@@ -276,6 +278,31 @@ Here's an usage example using /Experts/Math module. This module answers mathemat
     print()
     print(answers)
     ```
+
+### Using the OpenAI API backend
+
+SEIMEI can run entirely through the OpenAI API, which removes the requirement for a local GPU or vLLM runtime.
+
+1. Install the optional dependencies:
+   ```sh
+   pip install openai python-dotenv
+   ```
+2. Provide your API key via environment variable. The project auto-loads a `.env` file when `python-dotenv` is installed:
+   ```dotenv
+   OPENAI_API_KEY=sk-your-key
+   ```
+3. Initialize SEIMEI with the OpenAI backend. Pick the model you want to call and (optionally) keep a Hugging Face tokenizer for tasks such as document chunking:
+   ```py
+   seimei = SEIMEI(
+       expert_config = expert_config,
+       llm_backend = "openai",
+       openai_model = "gpt-4o-mini",
+       tokenizer_name = "Qwen/Qwen2.5-3B-Instruct",  # optional but recommended for chunking utilities
+   )
+   ```
+   - Pass `openai_api_key="..."` at initialization if you prefer not to use environment variables.
+   - Use `openai_base_url="https://..."` when routing requests through Azure OpenAI or a compatible proxy.
+4. Call `await seimei.get_answer(...)` exactly as in the GPU setup. Requests are queued using the same scheduling logic as the vLLM backend.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

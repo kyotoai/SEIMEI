@@ -1,11 +1,29 @@
 import torch
 import time, os, re, copy, json, asyncio, ast, warnings
-from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams
-from vllm.utils import random_uuid
 import importlib.util, inspect, traceback
+from copy import deepcopy
+
+try:
+    from dotenv import load_dotenv
+except ImportError:
+    load_dotenv = None
+
+try:
+    from openai import AsyncOpenAI
+except ImportError:
+    AsyncOpenAI = None
+
+try:
+    from vllm import AsyncLLMEngine, AsyncEngineArgs, SamplingParams
+    from vllm.utils import random_uuid
+except ImportError:
+    AsyncLLMEngine = AsyncEngineArgs = SamplingParams = random_uuid = None
+
 from sentence_transformers import SentenceTransformer, util
 from transformers import AutoTokenizer
-from copy import deepcopy
+if load_dotenv:
+    load_dotenv()
+
 device = "cuda" if torch.cuda.is_available else "cpu"
 
 log_file_path = "log.json"
@@ -234,43 +252,41 @@ class LLM:
         if SEIMEI.answer_ends[self.query_id__]:
             raise AnswerEnd
 
-        messages = []
-
-        if system:
-            messages.append({"role":"system", "content":system})
-
-        if msg_history:
-            messages += msg_history
-
-        messages.append({"role":"user", "content":prompt})
+        def build_messages(prompt_content):
+            messages = []
+            if system:
+                messages.append({"role": "system", "content": system})
+            if msg_history:
+                messages += deepcopy(msg_history)
+            messages.append({"role": "user", "content": prompt_content})
+            return messages
         
-        if type(prompt) == str:
+        if isinstance(prompt, str):
 
             if self.num_answers == 1:
-                prompt = SEIMEI.tokenizer.apply_chat_template(
-                    messages,
-                    tokenize=False,
-                    add_generation_prompt=True
-                )
-                request_dict = {"prompt": prompt}
+                messages = build_messages(prompt)
+                request_dict = self._build_request(messages)
                 output = await self.get_output(request_dict)
                 if self.return_history:
-                    messages.append({"role":"assistant", "content":output})
-                    if system: messages.pop(0)  # to delete system message from message history
+                    messages.append({"role": "assistant", "content": output})
+                    if system:
+                        messages.pop(0)  # to delete system message from message history
                     return output, messages
                 return output
                 
             else:
-                prompts = [prompt for _ in range(self.num_answers)]
-                get_outputs = [self.get_output({"prompt": prompt_}) for prompt_ in prompts]
+                request_dicts = [self._build_request(build_messages(prompt)) for _ in range(self.num_answers)]
+                get_outputs = [self.get_output(request_dict) for request_dict in request_dicts]
                 outputs = await asyncio.gather(*get_outputs)
                 self.output__ = outputs
                 return outputs
             
-        elif type(prompt) == list:
-            #raise Exception("prompt has to be string now")
-            
-            get_outputs = [self.get_output({"prompt": prompt_}) for prompt_ in prompt]
+        elif isinstance(prompt, list):
+            get_outputs = []
+            for prompt_ in prompt:
+                messages = build_messages(prompt_)
+                request_dict = self._build_request(messages)
+                get_outputs.append(self.get_output(request_dict))
             outputs = await asyncio.gather(*get_outputs)
             self.output__ = outputs
             
@@ -278,6 +294,35 @@ class LLM:
 
         else:
             raise Exception("argument for LLM must be either str or list of str")
+
+    
+    def _build_request(self, messages):
+        backend = getattr(SEIMEI, "llm_backend", "vllm")
+        request_dict = {}
+
+        if backend == "vllm":
+            if SEIMEI.tokenizer is None:
+                raise RuntimeError("Tokenizer is not initialized for llm_backend='vllm'.")
+            prompt = SEIMEI.tokenizer.apply_chat_template(
+                messages,
+                tokenize=False,
+                add_generation_prompt=True
+            )
+            if SEIMEI.llm_template is not None:
+                prompt = SEIMEI.llm_template(prompt)
+            request_dict["prompt"] = prompt
+        elif backend == "openai":
+            convo = deepcopy(messages)
+            if not convo:
+                raise ValueError("OpenAI backend requires at least one message to send.")
+            if SEIMEI.llm_template is not None:
+                convo[-1]["content"] = SEIMEI.llm_template(convo[-1]["content"])
+            request_dict["messages"] = convo
+            request_dict["prompt"] = convo[-1]["content"]
+        else:
+            raise ValueError(f"Unsupported llm_backend '{backend}'.")
+
+        return request_dict
 
     
     async def standby_llm(self):
@@ -316,26 +361,76 @@ class LLM:
     
     async def get_output(self, request_dict):
 
-        prompt = request_dict["prompt"]
+        backend = getattr(SEIMEI, "llm_backend", "vllm")
+        prompt = request_dict.get("prompt")
 
         request_id = await self.standby_llm()
 
-        if SEIMEI.llm_template != None:
-            prompt = SEIMEI.llm_template(prompt)
+        try:
+            if backend == "openai":
+                if SEIMEI.openai_client is None:
+                    raise RuntimeError("OpenAI client is not initialized.")
+                messages = request_dict.get("messages")
+                if not messages:
+                    raise ValueError("OpenAI backend expects 'messages' in request_dict.")
 
-        #request_id = random_uuid()
-        results_generator = SEIMEI.engine.generate(prompt, SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens), request_id)
-        
-        final_output = None
-        async for request_output in results_generator:
-            final_output = request_output
+                response = await SEIMEI.openai_client.chat.completions.create(
+                    model=SEIMEI.openai_model,
+                    messages=messages,
+                    temperature=self.temperature,
+                    max_tokens=self.max_new_tokens,
+                )
 
-        output = final_output.outputs[0].text
-        self.output__ = output
+                choice = response.choices[0]
+                message = getattr(choice, "message", None)
+                if message is None and isinstance(choice, dict):
+                    message = choice.get("message")
+                if message is None:
+                    raise RuntimeError("Unexpected response format from OpenAI API.")
 
-        await self.finish_llm(request_id)
+                content = getattr(message, "content", None)
+                if content is None and isinstance(message, dict):
+                    content = message.get("content")
 
-        return output
+                if isinstance(content, list):
+                    text_chunks = []
+                    for part in content:
+                        if isinstance(part, str):
+                            text_chunks.append(part)
+                        elif hasattr(part, "text"):
+                            text_chunks.append(part.text)
+                        elif isinstance(part, dict):
+                            text_chunks.append(part.get("text", ""))
+                    output = "".join(text_chunks)
+                else:
+                    output = content if content is not None else ""
+
+            elif backend == "vllm":
+                if SEIMEI.engine is None:
+                    raise RuntimeError("vLLM engine is not initialized.")
+
+                results_generator = SEIMEI.engine.generate(
+                    prompt,
+                    SamplingParams(temperature=self.temperature, max_tokens=self.max_new_tokens),
+                    request_id
+                )
+
+                final_output = None
+                async for request_output in results_generator:
+                    final_output = request_output
+
+                if final_output is None or not final_output.outputs:
+                    raise RuntimeError("vLLM did not return any outputs.")
+
+                output = final_output.outputs[0].text
+            else:
+                raise ValueError(f"Unsupported llm_backend '{backend}'.")
+
+            self.output__ = output
+            return output
+
+        finally:
+            await self.finish_llm(request_id)
 
 
 class SEIMEI:
@@ -349,6 +444,11 @@ class SEIMEI:
              }],
              se_restrictions = None,
              llm_template = None,
+             llm_backend = "vllm",
+             tokenizer_name = None,
+             openai_model = None,
+             openai_api_key = None,
+             openai_base_url = None,
              max_inference_time = 300, 
              tensor_parallel_size = 1, 
              max_seq_len_to_capture = 50000,
@@ -356,6 +456,14 @@ class SEIMEI:
              max_request = 20,
         ):
         
+        backend = (llm_backend or "vllm").lower()
+        if backend not in {"vllm", "openai"}:
+            raise ValueError(f"Unsupported llm_backend '{llm_backend}'. Choose from ['vllm', 'openai'].")
+
+        SEIMEI.llm_backend = backend
+        SEIMEI.openai_client = None
+        SEIMEI.openai_model = openai_model or "gpt-4o-mini"
+
         SEIMEI.database_path = database_path
         SEIMEI.model_name = model_name
 
@@ -391,18 +499,41 @@ class SEIMEI:
         # model = "mistralai/Ministral-8B-Instruct-2410"
         # model = "meta-llama/Llama-3.1-8B-Instruct"
 
-        engine_args = AsyncEngineArgs(
-            model = model_name,
-            tensor_parallel_size = tensor_parallel_size,
-            pipeline_parallel_size = 1,
-            max_seq_len_to_capture = max_seq_len_to_capture,
-            max_model_len = max_seq_len_to_capture,
-            gpu_memory_utilization = gpu_memory_utilization,
-        )
-        
-        # initialize the engine and the example input
-        SEIMEI.engine = AsyncLLMEngine.from_engine_args(engine_args)
-        SEIMEI.tokenizer = AutoTokenizer.from_pretrained(model_name, padding_side='left')
+        if backend == "vllm":
+            if AsyncLLMEngine is None or AsyncEngineArgs is None or SamplingParams is None:
+                raise ImportError("vLLM is required for llm_backend='vllm'. Install vllm or choose llm_backend='openai'.")
+
+            engine_args = AsyncEngineArgs(
+                model = model_name,
+                tensor_parallel_size = tensor_parallel_size,
+                pipeline_parallel_size = 1,
+                max_seq_len_to_capture = max_seq_len_to_capture,
+                max_model_len = max_seq_len_to_capture,
+                gpu_memory_utilization = gpu_memory_utilization,
+            )
+            
+            # initialize the engine and the example input
+            SEIMEI.engine = AsyncLLMEngine.from_engine_args(engine_args)
+        else:
+            SEIMEI.engine = None
+            if AsyncOpenAI is None:
+                raise ImportError("The openai package is required for llm_backend='openai'. Install it with `pip install openai`.")
+
+            api_key = openai_api_key or os.getenv("OPENAI_API_KEY")
+            if not api_key:
+                raise ValueError("OPENAI_API_KEY is not set. Define it in a .env file or pass openai_api_key when initializing SEIMEI.")
+
+            client_kwargs = {"api_key": api_key}
+            if openai_base_url:
+                client_kwargs["base_url"] = openai_base_url
+
+            SEIMEI.openai_client = AsyncOpenAI(**client_kwargs)
+
+        tokenizer_target = tokenizer_name or (model_name if backend == "vllm" else None)
+        if tokenizer_target:
+            SEIMEI.tokenizer = AutoTokenizer.from_pretrained(tokenizer_target, padding_side='left')
+        else:
+            SEIMEI.tokenizer = None
 
         # SEIMEI.emb_model = SentenceTransformer("mixedbread-ai/mxbai-embed-large-v1").to(device)  # this should be class attribute because self.seimei = seimei in __init__ function in each expert duplicates emb_model, which imidiately causes cuda oom
 
@@ -906,8 +1037,3 @@ class PermanentExpert(Expert):
 
 class AnswerEnd(Exception):
     pass
-
-
-
-
-
