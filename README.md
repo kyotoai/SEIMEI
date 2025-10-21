@@ -41,7 +41,7 @@
     Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
   </p>
   <p align="center">
-    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achives SOTA results on tasks requring deep reasoning!!
+    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
     <br />
     <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>Explore the docs »</strong></a>
     <br />
@@ -112,13 +112,13 @@ By training search engine, we can optimize the thinking steps like o1 or deepsee
   <img src="images/Comparison.png" alt="seimei" width="400" height="360">
 </div>
 
-Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrive the best ones!!
+Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrieve the best ones!!
 
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Achives State Of The Art Result
+### Achieves State Of The Art Result
 
 <div align="center">
   <img src="images/Improvement.png" alt="seimei" width="500" height="360">
@@ -212,7 +212,7 @@ You need to install RMSearch and SEIMEI library on Cuda & PyTorch Environment.
 <!-- USAGE EXAMPLES -->
 ## Usage
 
-Here's an usage example using /Experts/Math module. This module answers mathmatical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
+Here's an usage example using /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
 
 ### Quick Start
 
