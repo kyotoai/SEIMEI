@@ -1,7 +1,0 @@
-transformers
-numpy
-pandas
-matplotlib
-sentence_transformers
-huggingface_hub
-vllm
