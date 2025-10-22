@@ -279,6 +279,69 @@ Here's an usage example using /Experts/Math module. This module answers mathemat
     print(answers)
     ```
 
+### Built-in Agent Demos
+
+SEIMEI ships with two lightweight reference agents under `seimei/agents`. The snippets below show end-to-end runs for each agent with sample questions you can adapt.
+
+#### `code_act`: controlled shell execution
+
+Sample question — *"Run `ls` in the workspace and report the output."*
+
+```python
+import asyncio
+from seimei import seimei
+
+async def demo_code_act():
+    orchestrator = seimei(
+        agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+        llm_kwargs={"model": "gpt-4o-mini"},
+        allow_code_exec=True,
+        allowed_commands=["ls", "echo"],
+        agent_log_head_lines=1,
+        max_tokens_per_question=2000,
+    )
+
+    result = await orchestrator(
+        messages=[
+            {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
+            {"role": "user", "content": "Run ```bash\nls\n``` and summarize the stdout."},
+        ]
+    )
+    # The code_act reply is stored as the last agent message
+    print(result["msg_history"][-2]["content"])
+
+asyncio.run(demo_code_act())
+```
+
+#### `web_search`: fast fact gathering
+
+Sample question — *"What are three recent applications of perovskite solar cells?"*
+
+> Requires `pip install duckduckgo_search`.
+
+```python
+import asyncio
+from seimei import seimei
+
+async def demo_web_search():
+    orchestrator = seimei(
+        agent_config=[{"file_path": "seimei/agents/web_search.py"}],
+        llm_kwargs={"model": "gpt-4o-mini"},
+        agent_log_head_lines=2,
+        max_tokens_per_question=4000,
+    )
+
+    result = await orchestrator(
+        messages=[
+            {"role": "system", "content": "You gather concise search summaries."},
+            {"role": "user", "content": "Search the web for recent applications of perovskite solar cells."},
+        ]
+    )
+    print(result["msg_history"][-2]["content"])
+
+asyncio.run(demo_web_search())
+```
+
 ### Using the OpenAI API backend
 
 SEIMEI can run entirely through the OpenAI API, which removes the requirement for a local GPU or vLLM runtime.

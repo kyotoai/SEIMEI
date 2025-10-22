@@ -20,7 +20,8 @@ llm = llm_module
 agent = agent_module
 
 from .agent import Agent, get_agent_subclasses
-from .llm import LLMClient
+from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
+from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
 
 try:
     # Optional: your reward-model-based search (rmsearch) package
@@ -46,6 +47,8 @@ class seimei:
         allow_code_exec: bool = False,
         allowed_commands: Optional[Sequence[str]] = None,
         approval_callback: Optional[Callable[[str], bool]] = None,
+        agent_log_head_lines: int = 3,
+        max_tokens_per_question: Optional[int] = None,
     ) -> None:
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -57,11 +60,13 @@ class seimei:
         self.rm_kwargs = rm_kwargs or {}
         self.max_steps = max_steps
         self._rm_warned_missing_base_url = False
+        self.max_tokens_per_question = max_tokens_per_question
 
         # Safety for code_act
         self.allow_code_exec = allow_code_exec
         self.allowed_commands = list(allowed_commands) if allowed_commands else None
         self.approval_callback = approval_callback
+        self.agent_log_head_lines = max(int(agent_log_head_lines), 0)
 
         # Load agents
         self.agents: Dict[str, Agent] = {}
@@ -189,6 +194,18 @@ class seimei:
                 f.write(json.dumps(step, ensure_ascii=False) + "\n")
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
+        token_limiter: Optional[TokenLimiter] = None
+        run_shared_ctx = dict(self.shared_ctx)
+        if self.max_tokens_per_question and self.max_tokens_per_question > 0:
+            token_limiter = TokenLimiter(self.max_tokens_per_question)
+            run_shared_ctx["token_limiter"] = token_limiter
+            run_llm = self.llm.bind_token_limiter(token_limiter)
+        else:
+            run_llm = self.llm
+        run_shared_ctx["llm"] = run_llm
+
+        token_limit_hit = False
+        token_limit_error: Optional[TokenLimitExceeded] = None
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
@@ -201,11 +218,25 @@ class seimei:
                 break
 
             # Call agent
+            print(f"[seimei] -> agent {agent_obj.name}")
+
             try:
                 step_res = await agent_obj(
                     messages=msg_history,
-                    shared_ctx=self.shared_ctx,
+                    shared_ctx=run_shared_ctx,
                 )
+            except TokenLimitExceeded as err:
+                token_limit_hit = True
+                token_limit_error = err
+                print(
+                    f"[seimei] !! Token limit exceeded by agent {agent_obj.name}: "
+                    f"limit={err.limit}, consumed={err.consumed}"
+                )
+                step_res = {
+                    "content": f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens.",
+                    "stop": True,
+                    "log": {"limit": err.limit, "consumed": err.consumed, "last_usage": err.last_usage},
+                }
             except Exception as e:
                 step_res = {"content": f"[agent_error] {type(e).__name__}: {e}"}
 
@@ -229,6 +260,13 @@ class seimei:
                 "time": time.time(),
             })
 
+            content = step_res.get("content", "")
+            if self.agent_log_head_lines:
+                head = "\n".join(content.splitlines()[: self.agent_log_head_lines]) if content else ""
+                print(f"[seimei] <- agent {agent_obj.name} head[{self.agent_log_head_lines}]: {head or '[no content]'}")
+            else:
+                print(f"[seimei] <- agent {agent_obj.name} completed")
+
             # Optional termination predicate
             if stop_when and stop_when(msg_history):
                 break
@@ -237,14 +275,34 @@ class seimei:
             if step_res.get("stop", False):
                 break
 
-        # Final assistant call
-        answer, usage = await self.llm.chat(messages=msg_history, system=system)
-        msg_history.append({"role": "assistant", "content": answer})
+            if token_limit_hit:
+                break
 
-        # Aggregate usage
-        if usage:
-            for k, v in usage.items():
-                usage_agg[k] = usage_agg.get(k, 0) + int(v)
+        # Final assistant call
+        if not token_limit_hit:
+            try:
+                answer, usage = await run_llm.chat(messages=msg_history, system=system)
+            except TokenLimitExceeded as err:
+                token_limit_hit = True
+                token_limit_error = err
+                print(
+                    f"[seimei] !! Token limit exceeded during final response: "
+                    f"limit={err.limit}, consumed={err.consumed}"
+                )
+                answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
+                usage = {}
+            msg_history.append({"role": "assistant", "content": answer})
+            if usage:
+                for k, v in usage.items():
+                    usage_agg[k] = usage_agg.get(k, 0) + int(v)
+        else:
+            answer = (
+                msg_history[-1].get("content", "")
+                if msg_history and msg_history[-1].get("role") == "agent"
+                else "[token_limit] Token limit exceeded before final response."
+            )
+            msg_history.append({"role": "assistant", "content": answer})
+            usage = {}
 
         # Save run artifacts
         with open(os.path.join(run_dir, "messages.json"), "w", encoding="utf-8") as f:
@@ -259,6 +317,7 @@ class seimei:
             "timings": {"total_sec": time.time() - t0},
             "usage": usage_agg,
             "max_steps": self.max_steps,
+            "token_limit_hit": token_limit_hit,
         }
         with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
@@ -272,6 +331,16 @@ class seimei:
             "steps": self._read_jsonl(steps_path),
             "model_info": {"name": self.llm.model, "kwargs": self.llm.kwargs},
             "timestamps": {"started": t0, "ended": time.time()},
+            "token_limit": {
+                "limit": getattr(token_limiter, "limit", None),
+                "consumed": getattr(token_limiter, "consumed", None),
+                "hit": token_limit_hit,
+                "last_error": {
+                    "limit": getattr(token_limit_error, "limit", None),
+                    "consumed": getattr(token_limit_error, "consumed", None),
+                    "last_usage": getattr(token_limit_error, "last_usage", None),
+                } if token_limit_error else None,
+            },
         }
         self._append_dataset(dataset_record)
 
