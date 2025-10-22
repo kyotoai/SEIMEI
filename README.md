@@ -296,7 +296,7 @@ SEIMEI can run entirely through the OpenAI API, which removes the requirement fo
    seimei = SEIMEI(
        expert_config = expert_config,
        llm_backend = "openai",
-       openai_model = "gpt-4o-mini",
+       openai_model = "gpt-5-nano",
        tokenizer_name = "Qwen/Qwen2.5-3B-Instruct",  # optional but recommended for chunking utilities
    )
    ```
