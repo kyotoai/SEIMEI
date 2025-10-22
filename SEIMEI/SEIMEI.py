@@ -142,8 +142,20 @@ class seimei:
             print("[seimei] rmsearch skipped: rm_kwargs['base_url'] not set.", file=sys.stderr)
             self._rm_warned_missing_base_url = True
 
-        # Fallback heuristic
-        lower = (messages[-1].get("content", "") if messages else "").lower()
+        # If the last message wasn't from the user, let the assistant respond next.
+        if messages and messages[-1].get("role") != "user":
+            return None
+
+        # Fallback heuristic based on the most recent user turn
+        last_user = None
+        for m in reversed(messages):
+            if m.get("role") == "user":
+                last_user = m
+                break
+        if last_user is None:
+            return None
+
+        lower = last_user.get("content", "").lower()
         if "search" in lower or "web" in lower:
             for a in self.agents.values():
                 if a.name.endswith("web_search") or a.name == "web_search":
