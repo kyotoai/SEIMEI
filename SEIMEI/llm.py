@@ -127,10 +127,10 @@ class LLMClient:
         token_limiter: Optional[TokenLimiter] = None,
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
-        payload_msgs: List[Dict[str, str]] = []
+        payload_msgs: List[Dict[str, Any]] = []
         if system:
             payload_msgs.append({"role": "system", "content": system})
-        payload_msgs.extend([{"role": m.get("role","user"), "content": m.get("content","")} for m in messages])
+        payload_msgs.extend([self._normalize_message(m) for m in messages])
 
         payload = {
             "model": self.model,
@@ -199,6 +199,38 @@ class LLMClient:
             )
             self._warned_filtered_kwargs = True
         return filtered
+
+    @staticmethod
+    def _normalize_message(message: Dict[str, Any]) -> Dict[str, Any]:
+        """Map internal message schema to OpenAI-compatible payload."""
+        role = (message or {}).get("role") or "user"
+        content = (message or {}).get("content", "")
+        name = (message or {}).get("name")
+
+        role_map = {
+            "agent": "assistant",
+        }
+        normalized_role = role_map.get(role, role)
+        if normalized_role not in {"system", "assistant", "user", "tool", "function", "developer"}:
+            normalized_role = "user"
+
+        payload: Dict[str, Any] = {"role": normalized_role, "content": content}
+
+        if name and isinstance(name, str):
+            payload["name"] = name[:64]
+
+        # Pass along tool/function-specific fields if present
+        if normalized_role == "tool" and message.get("tool_call_id"):
+            payload["tool_call_id"] = message["tool_call_id"]
+        if normalized_role == "assistant":
+            tool_calls = message.get("tool_calls")
+            if tool_calls:
+                payload["tool_calls"] = tool_calls
+            function_call = message.get("function_call")
+            if function_call:
+                payload["function_call"] = function_call
+
+        return payload
 
     @staticmethod
     def _extract_content(data: Dict[str, Any]) -> str:

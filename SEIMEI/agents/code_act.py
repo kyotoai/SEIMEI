@@ -6,7 +6,7 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
-from ..agent import Agent, register
+from seimei.agent import Agent, register
 
 _SAFE_DEFAULTS = ["echo", "python", "pip", "ls", "cat", "pwd", "whoami", "dir", "type"]
 

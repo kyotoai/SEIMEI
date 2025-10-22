@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from ..agent import Agent, register
+from seimei.agent import Agent, register
 
 
 @register
