@@ -14,13 +14,13 @@ from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # Re-export convenience (allows: `from seimei import seimei, llm, agent`)
-import llm as llm_module
-import agent as agent_module
+from . import llm as llm_module
+from . import agent as agent_module
 llm = llm_module
 agent = agent_module
 
-from agent import Agent, get_agent_subclasses
-from llm import LLMClient
+from .agent import Agent, get_agent_subclasses
+from .llm import LLMClient
 
 try:
     # Optional: your reward-model-based search (rmsearch) package
@@ -56,6 +56,7 @@ class seimei:
         # Routing
         self.rm_kwargs = rm_kwargs or {}
         self.max_steps = max_steps
+        self._rm_warned_missing_base_url = False
 
         # Safety for code_act
         self.allow_code_exec = allow_code_exec
@@ -115,21 +116,26 @@ class seimei:
 
     # -------------------------- Routing --------------------------
 
-    def _select_next_agent(self, messages: List[Dict[str, Any]]) -> Optional[Agent]:
+    async def _select_next_agent(self, messages: List[Dict[str, Any]]) -> Optional[Agent]:
         # If rmsearch is available, use it over agent descriptions.
-        if rmsearch_fn and self.agents:
+        if rmsearch_fn and self.agents and self.rm_kwargs.get("base_url"):
             keys = [{"key": f"{a.name}: {a.description}"} for a in self.agents.values()]
             try:
                 query = json.dumps(messages, ensure_ascii=False)
-                top = asyncio.get_event_loop().run_until_complete(  # ensure sync context
-                    rmsearch_fn(query=query, keys=keys, k_key=1, **self.rm_kwargs)
-                )
+                rm_result = rmsearch_fn(query=query, keys=keys, k_key=1, **self.rm_kwargs)
+                if asyncio.iscoroutine(rm_result):
+                    top = await rm_result
+                else:
+                    top = rm_result
                 if top and isinstance(top, list):
                     key = top[0]["key"]
                     agent_name = key.split(":", 1)[0].strip()
                     return self.agents.get(agent_name)
             except Exception as e:
                 print(f"[seimei] rmsearch selection failed: {e}", file=sys.stderr)
+        elif rmsearch_fn and self.agents and not self.rm_kwargs.get("base_url") and not self._rm_warned_missing_base_url:
+            print("[seimei] rmsearch skipped: rm_kwargs['base_url'] not set.", file=sys.stderr)
+            self._rm_warned_missing_base_url = True
 
         # Fallback heuristic
         lower = (messages[-1].get("content", "") if messages else "").lower()
@@ -158,7 +164,7 @@ class seimei:
     def _append_dataset(self, record: Dict[str, Any]) -> None:
         path = os.path.join(self.log_dir, "dataset.jsonl")
         with open(path, "a", encoding="utf-8") as f:
-            f.write(json.dumps(record, ensure_ascii=False) + "n")
+            f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
     # -------------------------- Inference --------------------------
@@ -180,7 +186,7 @@ class seimei:
 
         def write_step(step: Dict[str, Any]) -> None:
             with open(steps_path, "a", encoding="utf-8") as f:
-                f.write(json.dumps(step, ensure_ascii=False) + "n")
+                f.write(json.dumps(step, ensure_ascii=False) + "\n")
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
 
@@ -190,7 +196,7 @@ class seimei:
             step_idx += 1
 
             # Decide which agent to run
-            agent_obj = self._select_next_agent(msg_history)
+            agent_obj = await self._select_next_agent(msg_history)
             if agent_obj is None:
                 break
 

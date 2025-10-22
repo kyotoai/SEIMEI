@@ -3,11 +3,11 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from agent import Agent, register
+from .agent import Agent, register
 
 @register
 class web_search(Agent):
-    \"\"\"Search the web and summarize results.\"\"\"
+    """Search the web and summarize results."""
 
     description = "Perform web search and return concise findings with sources."
 

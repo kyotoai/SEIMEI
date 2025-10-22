@@ -12,3 +12,5 @@ numpy
 pandas
 matplotlib
 huggingface_hub
+duckduckgo_search
+requests

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import asyncio
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
 
@@ -17,15 +16,25 @@ def _register_agent(subcls: Type['Agent']) -> None:
 
 @dataclass
 class Agent:
-    \"\"\"Base Agent with friendly async call and step logging.
+    """Base Agent with friendly async call and step logging.
 
     Subclasses should override `inference` and optionally set:
       - `name`: short identifier (default = class name)
       - `description`: routing hint for rmsearch/heuristics
-    \"\"\"
+    """
 
-    name: str = field(default_factory=lambda: type("X",(object,),{}).__name__)
-    description: str = ""
+    name: str = field(init=False)
+    description: str = field(init=False, default="")
+
+    def __post_init__(self) -> None:
+        cls = type(self)
+        cls_name = getattr(cls, "name", None) or cls.__name__
+        setattr(cls, "name", cls_name)
+        self.name = cls_name
+
+        cls_desc = getattr(cls, "description", "")
+        setattr(cls, "description", cls_desc)
+        self.description = cls_desc
 
     async def __call__(
         self,

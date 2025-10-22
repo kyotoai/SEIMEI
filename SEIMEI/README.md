@@ -105,7 +105,7 @@ asyncio.run(main())
 
 ```python
 # my_agents/think.py
-from agent import Agent
+from seimei import Agent
 
 class think(Agent):
     """Think about the current message and plan a next action."""
