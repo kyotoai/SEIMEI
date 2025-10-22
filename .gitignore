@@ -42,3 +42,6 @@ rmsearch/train/__pycache__/
 # notes
 notes
 seimei_runs
+
+# pytest
+.pytest_cache
