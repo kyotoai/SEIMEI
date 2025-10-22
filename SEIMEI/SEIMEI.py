@@ -80,6 +80,7 @@ class seimei:
             "allow_code_exec": self.allow_code_exec,
             "allowed_commands": self.allowed_commands,
             "approval_callback": self.approval_callback,
+            "search": None,
         }
 
     # -------------------------- Agent loading --------------------------
@@ -119,32 +120,213 @@ class seimei:
             sys.modules[mod_name] = module
             spec.loader.exec_module(module)  # type: ignore
 
+    # -------------------------- Shared search --------------------------
+
+    def _make_search_fn(self, run_llm: LLMClient) -> Callable[..., Any]:
+        async def _search(
+            query: str,
+            keys: Sequence[Dict[str, Any]],
+            *,
+            k: int = 1,
+            context: Optional[Dict[str, Any]] = None,
+        ) -> List[Dict[str, Any]]:
+            return await self._search_with_backends(
+                query=query,
+                keys=keys,
+                k=k,
+                run_llm=run_llm,
+                context=context or {},
+            )
+
+        return _search
+
+    async def _search_with_backends(
+        self,
+        query: str,
+        keys: Sequence[Dict[str, Any]],
+        *,
+        k: int,
+        run_llm: Optional[LLMClient],
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        if not keys:
+            return []
+
+        limit = max(int(k), 1)
+        key_map = {item.get("key"): item for item in keys if isinstance(item, dict) and item.get("key")}
+
+        if rmsearch_fn:
+            base_url = self.rm_kwargs.get("base_url")
+            if base_url:
+                try:
+                    rm_result = rmsearch_fn(
+                        query=query,
+                        keys=list(keys),
+                        k_key=limit,
+                        **self.rm_kwargs,
+                    )
+                    if asyncio.iscoroutine(rm_result):
+                        rm_result = await rm_result
+                    results = self._attach_payloads(rm_result or [], key_map)
+                    if results:
+                        return results[:limit]
+                except Exception as exc:
+                    print(f"[seimei] rmsearch selection failed: {exc}", file=sys.stderr)
+            elif not self._rm_warned_missing_base_url:
+                print("[seimei] rmsearch skipped: rm_kwargs['base_url'] not set.", file=sys.stderr)
+                self._rm_warned_missing_base_url = True
+
+        return await self._llm_route_search(
+            query=query,
+            keys=keys,
+            k=limit,
+            run_llm=run_llm or self.llm,
+            context=context or {},
+        )
+
+    @staticmethod
+    def _attach_payloads(results: Sequence[Dict[str, Any]], key_map: Dict[str, Dict[str, Any]]) -> List[Dict[str, Any]]:
+        enriched: List[Dict[str, Any]] = []
+        for item in results:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key")
+            enriched.append({**item, "payload": key_map.get(key)})
+        return enriched
+
+    async def _llm_route_search(
+        self,
+        query: str,
+        keys: Sequence[Dict[str, Any]],
+        *,
+        k: int,
+        run_llm: LLMClient,
+        context: Optional[Dict[str, Any]] = None,
+    ) -> List[Dict[str, Any]]:
+        candidates = [item for item in keys if isinstance(item, dict) and item.get("key")]
+        if not candidates:
+            return []
+
+        context = context or {}
+        reason_hint = context.get("reason_hint", "")
+        purpose = context.get("purpose", "selection")
+        numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
+        system_prompt = (
+            "You rank candidate keys for relevance. "
+            "Return a JSON array, each element containing: "
+            "{"
+            "\"index\": <1-based index of the candidate>, "
+            "\"score\": optional float between 0 and 1, "
+            "\"reason\": short string"
+            "}. "
+            "Only return up to the requested number of entries. Respond with JSON only."
+        )
+        user_prompt = (
+            f"Purpose: {purpose}\n"
+            f"Query:\n{query}\n\n"
+            f"Candidates:\n{numbered}\n\n"
+            f"Select up to {k} candidates most relevant to the query."
+        )
+        if reason_hint:
+            user_prompt += f"\nAdditional context: {reason_hint}"
+
+        try:
+            reply, _usage = await run_llm.chat(
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ]
+            )
+        except Exception as exc:
+            print(f"[seimei] LLM routing failed: {exc}", file=sys.stderr)
+            return [
+                {"key": item["key"], "payload": item, "source": "llm-fallback", "score": None}
+                for item in candidates[:k]
+            ]
+
+        data = self._parse_llm_ranking(reply)
+        selected: List[Dict[str, Any]] = []
+        for entry in data:
+            try:
+                idx = int(entry.get("index", 0))
+            except (TypeError, ValueError):
+                continue
+            if idx < 1 or idx > len(candidates):
+                continue
+            candidate = candidates[idx - 1]
+            result = {
+                "key": candidate["key"],
+                "payload": candidate,
+                "score": entry.get("score"),
+                "reason": entry.get("reason"),
+                "source": "llm-routing",
+            }
+            selected.append(result)
+            if len(selected) >= k:
+                break
+
+        if not selected:
+            return [
+                {"key": item["key"], "payload": item, "source": "llm-fallback", "score": None}
+                for item in candidates[:k]
+            ]
+        return selected
+
+    @staticmethod
+    def _parse_llm_ranking(text: str) -> List[Dict[str, Any]]:
+        if not text:
+            return []
+        try:
+            return json.loads(text)
+        except json.JSONDecodeError:
+            pass
+        try:
+            start = text.index("[")
+            end = text.rindex("]") + 1
+            return json.loads(text[start:end])
+        except Exception:
+            return []
+
     # -------------------------- Routing --------------------------
 
-    async def _select_next_agent(self, messages: List[Dict[str, Any]]) -> Optional[Agent]:
-        # If rmsearch is available, use it over agent descriptions.
-        if rmsearch_fn and self.agents and self.rm_kwargs.get("base_url"):
-            keys = [{"key": f"{a.name}: {a.description}"} for a in self.agents.values()]
-            try:
-                query = json.dumps(messages, ensure_ascii=False)
-                rm_result = rmsearch_fn(query=query, keys=keys, k_key=1, **self.rm_kwargs)
-                if asyncio.iscoroutine(rm_result):
-                    top = await rm_result
-                else:
-                    top = rm_result
-                if top and isinstance(top, list):
-                    key = top[0]["key"]
-                    agent_name = key.split(":", 1)[0].strip()
-                    return self.agents.get(agent_name)
-            except Exception as e:
-                print(f"[seimei] rmsearch selection failed: {e}", file=sys.stderr)
-        elif rmsearch_fn and self.agents and not self.rm_kwargs.get("base_url") and not self._rm_warned_missing_base_url:
-            print("[seimei] rmsearch skipped: rm_kwargs['base_url'] not set.", file=sys.stderr)
-            self._rm_warned_missing_base_url = True
+    async def _select_next_agent(
+        self,
+        messages: List[Dict[str, Any]],
+        search_fn: Callable[..., Any],
+    ) -> Optional[Agent]:
+        if not self.agents:
+            return None
 
-        # If the last message wasn't from the user, let the assistant respond next.
         if messages and messages[-1].get("role") != "user":
             return None
+
+        keys = [
+            {"key": f"{agent.name}: {agent.description}", "agent_name": agent.name}
+            for agent in self.agents.values()
+        ]
+        try:
+            query = json.dumps(messages, ensure_ascii=False)
+        except Exception:
+            query = str(messages)
+
+        if search_fn:
+            try:
+                ranked = await search_fn(
+                    query=query,
+                    keys=keys,
+                    k=1,
+                    context={"purpose": "agent_routing"},
+                )
+                if ranked:
+                    agent_name = ranked[0].get("payload", {}).get("agent_name")
+                    if agent_name and agent_name in self.agents:
+                        return self.agents[agent_name]
+                    key = ranked[0].get("key", "")
+                    agent_name = key.split(":", 1)[0].strip()
+                    if agent_name in self.agents:
+                        return self.agents[agent_name]
+            except Exception as exc:
+                print(f"[seimei] search-based routing failed: {exc}", file=sys.stderr)
 
         # Fallback heuristic based on the most recent user turn
         last_user = None
@@ -164,8 +346,7 @@ class seimei:
             for a in self.agents.values():
                 if a.name.endswith("code_act") or a.name == "code_act":
                     return a
-        # Otherwise pick any agent named 'think' or the first one
-        for pref in ("think", "default",):
+        for pref in ("think", "default"):
             if pref in self.agents:
                 return self.agents[pref]
         return next(iter(self.agents.values()), None)
@@ -192,9 +373,12 @@ class seimei:
         system: Optional[str] = None,
         stop_when: Optional[Callable[[List[Dict[str, Any]]], bool]] = None,
         return_usage: bool = True,
+        run_name: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
+        run_label = (run_name or "").strip()
+        log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
 
         run_id = str(uuid.uuid4())
         run_dir = self._make_run_dirs(run_id)
@@ -204,6 +388,20 @@ class seimei:
         def write_step(step: Dict[str, Any]) -> None:
             with open(steps_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(step, ensure_ascii=False) + "\n")
+
+        def log_step_blocks(blocks: Sequence[Tuple[str, Optional[str]]]) -> None:
+            printed_any = False
+            for label, value in blocks:
+                if value is None:
+                    continue
+                text = str(value).strip("\n")
+                lines = text.splitlines() if text else [""]
+                print(f"    <{label}>")
+                for line in lines:
+                    print(f"        {line}")
+                printed_any = True
+            if printed_any:
+                print()
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         token_limiter: Optional[TokenLimiter] = None
@@ -215,9 +413,13 @@ class seimei:
         else:
             run_llm = self.llm
         run_shared_ctx["llm"] = run_llm
+        search_fn = self._make_search_fn(run_llm)
+        run_shared_ctx["search"] = search_fn
 
         token_limit_hit = False
         token_limit_error: Optional[TokenLimitExceeded] = None
+        final_agent_output: Optional[str] = None
+        final_agent_name: Optional[str] = None
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
@@ -225,12 +427,12 @@ class seimei:
             step_idx += 1
 
             # Decide which agent to run
-            agent_obj = await self._select_next_agent(msg_history)
+            agent_obj = await self._select_next_agent(msg_history, search_fn)
             if agent_obj is None:
                 break
 
-            # Call agent
-            print(f"[seimei] -> agent {agent_obj.name}")
+            step_label = f"{log_prefix} Step {step_idx}"
+            print(f"{step_label}: Running {agent_obj.name} agent")
 
             try:
                 step_res = await agent_obj(
@@ -241,7 +443,7 @@ class seimei:
                 token_limit_hit = True
                 token_limit_error = err
                 print(
-                    f"[seimei] !! Token limit exceeded by agent {agent_obj.name}: "
+                    f"{log_prefix} !! Token limit exceeded by agent {agent_obj.name}: "
                     f"limit={err.limit}, consumed={err.consumed}"
                 )
                 step_res = {
@@ -251,6 +453,10 @@ class seimei:
                 }
             except Exception as e:
                 step_res = {"content": f"[agent_error] {type(e).__name__}: {e}"}
+
+            if step_res.get("final_output"):
+                final_agent_output = str(step_res.get("final_output"))
+                final_agent_name = agent_obj.name
 
             # Append to history
             agent_msg = {
@@ -272,12 +478,54 @@ class seimei:
                 "time": time.time(),
             })
 
+            print(f"{step_label}: Done {agent_obj.name} agent")
+
             content = step_res.get("content", "")
+            blocks: List[Tuple[str, Optional[str]]] = []
+
+            code_text = step_res.get("code")
+            if code_text:
+                blocks.append(("command", str(code_text)))
+
+            log_data = step_res.get("log")
+            if isinstance(log_data, dict):
+                if isinstance(log_data.get("query"), str):
+                    blocks.append(("query", log_data["query"]))
+                if isinstance(log_data.get("user_input"), str):
+                    blocks.append(("user input", log_data["user_input"]))
+                if isinstance(log_data.get("seimei_output"), str):
+                    blocks.append(("seimei output", log_data["seimei_output"]))
+                remaining = {
+                    k: v for k, v in log_data.items() if k not in {"query", "user_input", "seimei_output"}
+                }
+                if remaining:
+                    try:
+                        blocks.append(("log", json.dumps(remaining, ensure_ascii=False, indent=2)))
+                    except TypeError:
+                        blocks.append(("log", str(remaining)))
+            elif log_data is not None:
+                try:
+                    blocks.append(("log", json.dumps(log_data, ensure_ascii=False, indent=2)))
+                except TypeError:
+                    blocks.append(("log", str(log_data)))
+
+            output_text: Optional[str]
             if self.agent_log_head_lines:
-                head = "\n".join(content.splitlines()[: self.agent_log_head_lines]) if content else ""
-                print(f"[seimei] <- agent {agent_obj.name} head[{self.agent_log_head_lines}]: {head or '[no content]'}")
+                if self.agent_log_head_lines > 0:
+                    lines = content.splitlines()
+                    preview = lines[: self.agent_log_head_lines] if lines else []
+                    output_text = "\n".join(preview)
+                    if lines and len(lines) > self.agent_log_head_lines:
+                        output_text = (output_text + "\n..." if output_text else "...").rstrip()
+                else:
+                    output_text = None
             else:
-                print(f"[seimei] <- agent {agent_obj.name} completed")
+                output_text = content
+
+            if output_text is not None:
+                blocks.append(("output", output_text if output_text else "[no content]"))
+
+            log_step_blocks(blocks)
 
             # Optional termination predicate
             if stop_when and stop_when(msg_history):
@@ -292,21 +540,28 @@ class seimei:
 
         # Final assistant call
         if not token_limit_hit:
-            try:
-                answer, usage = await run_llm.chat(messages=msg_history, system=system)
-            except TokenLimitExceeded as err:
-                token_limit_hit = True
-                token_limit_error = err
-                print(
-                    f"[seimei] !! Token limit exceeded during final response: "
-                    f"limit={err.limit}, consumed={err.consumed}"
-                )
-                answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
+            if final_agent_output is not None:
+                answer = final_agent_output
                 usage = {}
-            msg_history.append({"role": "assistant", "content": answer})
-            if usage:
-                for k, v in usage.items():
-                    usage_agg[k] = usage_agg.get(k, 0) + int(v)
+                msg_history.append({"role": "assistant", "content": answer})
+                if final_agent_name:
+                    print(f"{log_prefix} Final output provided by {final_agent_name} agent")
+            else:
+                try:
+                    answer, usage = await run_llm.chat(messages=msg_history, system=system)
+                except TokenLimitExceeded as err:
+                    token_limit_hit = True
+                    token_limit_error = err
+                    print(
+                        f"{log_prefix} !! Token limit exceeded during final response: "
+                        f"limit={err.limit}, consumed={err.consumed}"
+                    )
+                    answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
+                    usage = {}
+                msg_history.append({"role": "assistant", "content": answer})
+                if usage:
+                    for k, v in usage.items():
+                        usage_agg[k] = usage_agg.get(k, 0) + int(v)
         else:
             answer = (
                 msg_history[-1].get("content", "")
@@ -331,6 +586,8 @@ class seimei:
             "max_steps": self.max_steps,
             "token_limit_hit": token_limit_hit,
         }
+        if run_name is not None:
+            meta["run_name"] = run_name
         with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
             json.dump(meta, f, ensure_ascii=False, indent=2)
 
@@ -354,11 +611,15 @@ class seimei:
                 } if token_limit_error else None,
             },
         }
+        if run_name is not None:
+            dataset_record["run_name"] = run_name
         self._append_dataset(dataset_record)
 
         out = {"run_id": run_id, "output": answer, "msg_history": msg_history}
         if return_usage:
             out["usage"] = usage_agg
+        if run_name:
+            out["run_name"] = run_name
         return out
 
     @staticmethod

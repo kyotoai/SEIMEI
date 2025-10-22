@@ -7,11 +7,13 @@ It loads pluggable *agents* from a folder/file, routes steps using `rmsearch` (i
 
 ## Overview
 
-1. `seimei.py` — orchestrator that ties everything together (agent loading, step routing, dataset logging)
+1. `seimei.py` — orchestrator that ties everything together (agent loading, routing, shared search, dataset logging)
 2. `llm.py` — minimal LLM client (OpenAI-compatible API or local vLLM-compatible base_url)
 3. `agent.py` — base `Agent` class with logging + a tiny registry
-4. `agents/web_search.py` — example agent that performs web search (uses `duckduckgo_search` if available, or returns a graceful message)
-5. `agents/code_act.py` — example agent that executes *whitelisted* shell commands with a timeout
+4. `agents/think.py` — planner agent that selects instructions via the shared search API
+5. `agents/web_search.py` — example agent that performs web search (uses `duckduckgo_search` if available, or returns a graceful message)
+6. `agents/code_act.py` — example agent that executes *whitelisted* shell commands with a timeout
+7. `agents/answer.py` — finalizer agent that summarizes findings into the user-facing reply
 
 > You can add more agents by dropping Python files that define subclasses of `Agent` into a directory and pointing `agent_config` to it.
 
@@ -105,33 +107,53 @@ asyncio.run(main())
 ### Execution Flow
 
 Each call to `seimei(...)` proceeds with these steps:
-1. **Setup** — a run-specific directory is created and the shared context is copied. If `max_tokens_per_question` is set, a `TokenLimiter` is attached to the run-specific LLM proxy before agents execute.
-2. **Agent selection** — `rmsearch` (when available) or a heuristic picks the next agent. The orchestrator prints `"[seimei] -> agent <name>"` so you can follow execution in the terminal.
-3. **Agent execution** — the agent receives the message history and shared context, then returns a dict payload. The orchestrator prints the first `agent_log_head_lines` lines of the content (or a completion notice) as soon as the agent finishes.
+1. **Setup** — a run-specific directory is created and the shared context is copied. If `max_tokens_per_question` is set, a `TokenLimiter` is attached to the run-specific LLM proxy before agents execute. Provide `run_name` to have logs show up as `[seimei your-label]`.
+2. **Agent selection** — the shared search helper prefers `rmsearch` when configured, and automatically falls back to an LLM router to rank agent descriptions when `rmsearch` is unavailable. Results feed into the agent registry (with a heuristic fallback if everything else fails).
+3. **Agent execution** — the agent receives the message history and shared context, then returns a dict payload. The orchestrator logs structured blocks such as `<command>`, `<query>`, `<user input>`, and `<output>` under numbered steps so multi-agent traces remain easy to scan.
 4. **Safety checks** — if an agent triggers the token limiter, execution stops immediately, the last step is logged with `[token_limit]`, and the run is paused before the final LLM turn.
-5. **Final response** — the run-specific LLM proxy calls `chat` (obeying the concurrency semaphore and token limiter) to produce the assistant answer. Usage stats are aggregated as they arrive.
-6. **Persistence** — `messages.json`, `steps.jsonl`, `output.txt`, `meta.json`, and an entry in `dataset.jsonl` are written so the run can be replayed or used for training.
+5. **Final response** — if an agent (e.g., the built-in `answer`) returns `final_output`, that text becomes the assistant reply. Otherwise, the run-specific LLM proxy calls `chat` (obeying the concurrency semaphore and token limiter) to produce the final answer.
+6. **Persistence** — `messages.json`, `steps.jsonl`, `output.txt`, `meta.json`, and an entry in `dataset.jsonl` (including `run_name` when provided) are written so the run can be replayed or used for training.
 
 ---
 
 ## Create an agent
 
+The built-in `think` and `answer` agents cover planning and final summarisation out of the box.  
+If you need something custom, you can still create your own agents and take advantage of the shared search helper:
+
 ```python
-# my_agents/think.py
+# my_agents/prioritise_docs.py
 from seimei import Agent
 
-class think(Agent):
-    """Think about the current message and plan a next action."""
+class prioritise_docs(Agent):
+    """Rank documentation chunks that should be read next."""
 
-    description = "This agent plans the next action given the current conversation state."
+    description = "Select document chunks relevant to the latest user request."
 
-    async def inference(self, messages, **kwargs):
-        # Minimal demo: echo a planning thought
-        plan = "I'll analyze the question, then either search the web or compute, then answer."
-        return {"content": plan, "log": {"plan": plan}}
+    async def inference(self, messages, shared_ctx, **kwargs):
+        search = shared_ctx.get("search")
+        if not search:
+            return {"content": "search helper unavailable", "log": {}}
+
+        question = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        candidates = [{"key": text, "section": name} for name, text in kwargs.get("docs", [])]
+
+        ranked = await search(
+            query=question,
+            keys=candidates,
+            k=3,
+            context={"purpose": "doc_ranking"},
+        )
+        plan = "\n".join(f"- {item['payload']['section']}" for item in ranked if item.get("payload"))
+        return {"content": f"Review next:\n{plan}", "log": {"query": question, "sections": ranked}}
 ```
 
-You can run this agent by adding its folder to `agent_config` and letting `rmsearch` (or the heuristic) pick it.
+Drop this file into a directory referenced by `agent_config` and SEIMEI will register it automatically.
+
+Key shared context entries exposed to agents:
+- `shared_ctx["search"]`: async helper that routes to `rmsearch` when available or falls back to LLM-based ranking. Accepts `query`, `keys`, optional `k`, and a `context` dict.
+- `shared_ctx["instruction_list"]`: optional sequence of instruction dicts consumed by the built-in `think` planner. Override it (e.g., `orchestrator.shared_ctx["instruction_list"] = [...]`) to customise planning behaviour.
+- `shared_ctx["llm"]`: run-scoped LLM client already bound to the active token limiter.
 
 ---
 
@@ -192,6 +214,7 @@ This gives you a clean training/eval dataset with full provenance.
 - `system: Optional[str]` — Optional system instruction to pin for the LLM call.
 - `stop_when: Optional[Callable[[list[dict]], bool]]` — Optional predicate to terminate early based on `messages`.
 - `return_usage: bool` — If `True`, returns token usage if available.
+- `run_name: Optional[str]` — Optional label shown in terminal logs (e.g., `[seimei question-1]`) and persisted to `meta.json` / `dataset.jsonl`.
 - The orchestrator prints agent start/finish markers to stdout so you can follow progress in real time.
 
 **Outputs**
