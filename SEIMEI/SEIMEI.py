@@ -495,35 +495,18 @@ class seimei:
                     blocks.append(("user input", log_data["user_input"]))
                 if isinstance(log_data.get("seimei_output"), str):
                     blocks.append(("seimei output", log_data["seimei_output"]))
-                remaining = {
-                    k: v for k, v in log_data.items() if k not in {"query", "user_input", "seimei_output"}
-                }
-                if remaining:
-                    try:
-                        blocks.append(("log", json.dumps(remaining, ensure_ascii=False, indent=2)))
-                    except TypeError:
-                        blocks.append(("log", str(remaining)))
-            elif log_data is not None:
-                try:
-                    blocks.append(("log", json.dumps(log_data, ensure_ascii=False, indent=2)))
-                except TypeError:
-                    blocks.append(("log", str(log_data)))
-
-            output_text: Optional[str]
+            output_text: Optional[str] = None
             if self.agent_log_head_lines:
-                if self.agent_log_head_lines > 0:
-                    lines = content.splitlines()
-                    preview = lines[: self.agent_log_head_lines] if lines else []
-                    output_text = "\n".join(preview)
-                    if lines and len(lines) > self.agent_log_head_lines:
-                        output_text = (output_text + "\n..." if output_text else "...").rstrip()
+                if content:
+                    preview = content[:1000]
+                    if len(content) > 1000:
+                        preview = preview.rstrip() + "..."
+                    output_text = preview
                 else:
-                    output_text = None
-            else:
-                output_text = content
+                    output_text = "[no content]"
 
-            if output_text is not None:
-                blocks.append(("output", output_text if output_text else "[no content]"))
+            if output_text:
+                blocks.append(("output", output_text))
 
             log_step_blocks(blocks)
 
