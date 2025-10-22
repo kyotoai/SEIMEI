@@ -6,13 +6,13 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
-from agent import Agent, register
+from .agent import Agent, register
 
 _SAFE_DEFAULTS = ["echo", "python", "pip", "ls", "cat", "pwd", "whoami", "dir", "type"]
 
 @register
 class code_act(Agent):
-    \"\"\"Execute *whitelisted* shell commands chosen from the conversation.\"\"\"
+    """Execute *whitelisted* shell commands chosen from the conversation."""
 
     description = "Safely run whitelisted shell commands and return stdout/stderr."
 
