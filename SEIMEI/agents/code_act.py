@@ -6,9 +6,10 @@ import shlex
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
-from .agent import Agent, register
+from ..agent import Agent, register
 
 _SAFE_DEFAULTS = ["echo", "python", "pip", "ls", "cat", "pwd", "whoami", "dir", "type"]
+
 
 @register
 class code_act(Agent):
@@ -36,12 +37,11 @@ class code_act(Agent):
             return {"content": f"Command '{cmd0}' is not in allowlist: {list(allowed)}", "code": code}
 
         if not allow:
-            return {"content": f"Execution disabled. (set allow_code_exec=True to enable)", "code": code}
+            return {"content": "Execution disabled. (set allow_code_exec=True to enable)", "code": code}
 
         if approve_cb and not approve_cb(code):
             return {"content": "Execution denied by approval callback.", "code": code}
 
-        # Execute in a subprocess with timeout
         try:
             loop = asyncio.get_event_loop()
             proc_out = await loop.run_in_executor(
@@ -51,8 +51,8 @@ class code_act(Agent):
                     shell=True,
                     capture_output=True,
                     text=True,
-                    timeout=timeout
-                )
+                    timeout=timeout,
+                ),
             )
         except subprocess.TimeoutExpired:
             return {"content": f"Timed out after {timeout}s.", "code": code}
@@ -63,19 +63,19 @@ class code_act(Agent):
         summary = f"$ {code}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
         return {"content": summary, "code": code, "log": {"returncode": rc, "stdout": stdout, "stderr": stderr}}
 
-_CODE_BLOCK_RE = re.compile(r"```(?:bash|sh|zsh|shell)?\s*(.*?)```", re.DOTALL|re.IGNORECASE)
+
+_CODE_BLOCK_RE = re.compile(r"```(?:bash|sh|zsh|shell)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _PROMPT_LINE_RE = re.compile(r"^\$\s*(.*)$")
 
+
 def _extract_code(messages: List[Dict[str, Any]]) -> Optional[str]:
-    # Look for a fenced block in the last user message
     for m in reversed(messages):
         if m.get("role") != "user":
             continue
-        text = m.get("content","")
+        text = m.get("content", "")
         m1 = _CODE_BLOCK_RE.search(text)
         if m1:
             return m1.group(1).strip()
-        # Else fall back to a leading '$ ' line
         for line in text.splitlines():
             m2 = _PROMPT_LINE_RE.match(line.strip())
             if m2:

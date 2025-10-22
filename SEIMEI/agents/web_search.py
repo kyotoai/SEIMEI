@@ -3,7 +3,8 @@ from __future__ import annotations
 import asyncio
 from typing import Any, Dict, List, Optional
 
-from .agent import Agent, register
+from ..agent import Agent, register
+
 
 @register
 class web_search(Agent):
@@ -16,7 +17,6 @@ class web_search(Agent):
         if not query:
             return {"content": "No query found in the last user message."}
 
-        # Try duckduckgo_search if available; else graceful fallback
         try:
             from duckduckgo_search import DDGS  # type: ignore
         except Exception:
@@ -30,22 +30,24 @@ class web_search(Agent):
 
         async def _search() -> List[Dict[str, str]]:
             loop = asyncio.get_event_loop()
+
             def _run():
                 with DDGS() as ddgs:
                     return list(ddgs.text(query, max_results=5))
+
             return await loop.run_in_executor(None, _run)
 
         results = await _search()
-        # Format a compact summary
         lines = [f"Query: {query}", "Top results:"]
         for i, r in enumerate(results[:5], 1):
-            title = r.get("title","").strip()
-            href = r.get("href","").strip()
-            body = (r.get("body","") or "").strip()
+            title = r.get("title", "").strip()
+            href = r.get("href", "").strip()
+            body = (r.get("body", "") or "").strip()
             lines.append(f"{i}. {title} — {href}")
             if body:
                 lines.append(f"   {body[:160]}...")
         return {"content": "\n".join(lines), "log": {"query": query, "results": results}}
+
 
 def _extract_last_user_query(messages: List[Dict[str, Any]]) -> Optional[str]:
     for m in reversed(messages):

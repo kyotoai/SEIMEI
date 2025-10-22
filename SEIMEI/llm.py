@@ -39,6 +39,45 @@ _OPENAI_CHAT_FIELDS = {
     "function_call",
 }
 
+
+class TokenLimitExceeded(RuntimeError):
+    """Raised when a token limiter is exceeded during an LLM call."""
+
+    def __init__(self, limit: int, consumed: int, last_usage: Dict[str, int]) -> None:
+        self.limit = limit
+        self.consumed = consumed
+        self.last_usage = last_usage
+        super().__init__(f"Token limit {limit} exceeded with {consumed} tokens.")
+
+
+class TokenLimiter:
+    """Track cumulative token usage and enforce an upper bound."""
+
+    def __init__(self, limit: int) -> None:
+        self.limit = max(int(limit), 0)
+        self.consumed = 0
+
+    def record(self, usage: Dict[str, int]) -> None:
+        if not self.limit:
+            return
+        delta = self._extract_usage(usage)
+        self.consumed += delta
+        if self.consumed > self.limit:
+            raise TokenLimitExceeded(self.limit, self.consumed, usage)
+
+    @staticmethod
+    def _extract_usage(usage: Dict[str, int]) -> int:
+        total = usage.get("total_tokens")
+        if isinstance(total, int):
+            return max(total, 0)
+        prompt = usage.get("prompt_tokens", 0) or 0
+        completion = usage.get("completion_tokens", 0) or 0
+        try:
+            return max(int(prompt) + int(completion), 0)
+        except (TypeError, ValueError):
+            return 0
+
+
 class LLMClient:
     """Minimal OpenAI-compatible chat client.
 
@@ -53,6 +92,7 @@ class LLMClient:
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: int = 120,
+        max_concurrent_requests: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
         api_key_env = kwargs.pop("api_key_env", None)
@@ -73,6 +113,9 @@ class LLMClient:
         self.extra_headers = extra_headers
         self.last_response: Optional[Dict[str, Any]] = None
         self._warned_filtered_kwargs = False
+        self._semaphore: Optional[asyncio.Semaphore] = None
+        if max_concurrent_requests and int(max_concurrent_requests) > 0:
+            self._semaphore = asyncio.Semaphore(int(max_concurrent_requests))
 
         # If using official API and no key, leave requests to fail with a clear error
         # If using local base_url, API key may not be required
@@ -81,6 +124,7 @@ class LLMClient:
         self,
         messages: List[Dict[str, Any]],
         system: Optional[str] = None,
+        token_limiter: Optional[TokenLimiter] = None,
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
         payload_msgs: List[Dict[str, str]] = []
@@ -106,34 +150,42 @@ class LLMClient:
                 "LLMClient: OPENAI_API_KEY not set. Provide an API key or set `base_url` to a local server."
             )
 
-        def _send_request() -> requests.Response:
-            try:
-                return requests.post(url, headers=headers, json=payload, timeout=self.timeout)
-            except requests.exceptions.RequestException as exc:
-                raise RuntimeError(
-                    f"LLMClient request to {url} failed: {exc}"
-                ) from exc
+        async def _execute() -> Tuple[str, Dict[str, int]]:
+            def _send_request() -> requests.Response:
+                try:
+                    return requests.post(url, headers=headers, json=payload, timeout=self.timeout)
+                except requests.exceptions.RequestException as exc:
+                    raise RuntimeError(
+                        f"LLMClient request to {url} failed: {exc}"
+                    ) from exc
 
-        loop = asyncio.get_running_loop()
-        resp = await loop.run_in_executor(
-            None,
-            _send_request
-        )
+            loop = asyncio.get_running_loop()
+            resp = await loop.run_in_executor(
+                None,
+                _send_request
+            )
 
-        if resp.status_code != 200:
-            raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:500]}")
+            if resp.status_code != 200:
+                raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:500]}")
 
-        data = resp.json()
-        self.last_response = data
-        content = self._extract_content(data)
-        usage_raw = data.get("usage") or {}
-        usage: Dict[str, int] = {}
-        for k, v in usage_raw.items():
-            try:
-                usage[k] = int(v)
-            except (TypeError, ValueError):
-                continue
-        return content, usage
+            data = resp.json()
+            self.last_response = data
+            content = self._extract_content(data)
+            usage_raw = data.get("usage") or {}
+            usage: Dict[str, int] = {}
+            for k, v in usage_raw.items():
+                try:
+                    usage[k] = int(v)
+                except (TypeError, ValueError):
+                    continue
+            if token_limiter:
+                token_limiter.record(usage)
+            return content, usage
+
+        if self._semaphore is None:
+            return await _execute()
+        async with self._semaphore:
+            return await _execute()
 
     def _filter_payload(self, params: Dict[str, Any]) -> Dict[str, Any]:
         if not self.using_openai:
@@ -169,3 +221,23 @@ class LLMClient:
         if text:
             return text
         return ""
+
+    def bind_token_limiter(self, limiter: Optional[TokenLimiter]) -> "LLMClient":
+        if limiter is None:
+            return self
+        return _BoundLLMClient(self, limiter)
+
+
+class _BoundLLMClient:
+    """Lightweight proxy that binds a token limiter to LLM calls."""
+
+    def __init__(self, client: LLMClient, limiter: TokenLimiter) -> None:
+        self._client = client
+        self._limiter = limiter
+
+    async def chat(self, *args: Any, **kwargs: Any) -> Tuple[str, Dict[str, int]]:
+        kwargs.setdefault("token_limiter", self._limiter)
+        return await self._client.chat(*args, **kwargs)
+
+    def __getattr__(self, item: str) -> Any:
+        return getattr(self._client, item)

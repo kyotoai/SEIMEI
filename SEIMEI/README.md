@@ -10,8 +10,8 @@ It loads pluggable *agents* from a folder/file, routes steps using `rmsearch` (i
 1. `seimei.py` — orchestrator that ties everything together (agent loading, step routing, dataset logging)
 2. `llm.py` — minimal LLM client (OpenAI-compatible API or local vLLM-compatible base_url)
 3. `agent.py` — base `Agent` class with logging + a tiny registry
-4. `web_search.py` — example agent that performs web search (uses `duckduckgo_search` if available, or returns a graceful message)
-5. `code_act.py` — example agent that executes *whitelisted* shell commands with a timeout
+4. `agents/web_search.py` — example agent that performs web search (uses `duckduckgo_search` if available, or returns a graceful message)
+5. `agents/code_act.py` — example agent that executes *whitelisted* shell commands with a timeout
 
 > You can add more agents by dropping Python files that define subclasses of `Agent` into a directory and pointing `agent_config` to it.
 
@@ -52,6 +52,7 @@ agent_config = [
 llm_kwargs = {
     "model": "gpt-5-nano",
     "max_inference_time": 1000,
+    "max_concurrent_requests": 4,
     # OR talk to a local OpenAI-compatible server:
     # "base_url": "http://localhost:7000/v1"
 }
@@ -65,6 +66,8 @@ sm = seimei(
     llm_kwargs=llm_kwargs,
     rm_kwargs=rm_kwargs,
     log_dir="./seimei_runs",
+    agent_log_head_lines=2,
+    max_tokens_per_question=6000,
 )
 
 async def main():
@@ -98,6 +101,16 @@ asyncio.run(main())
   "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...},
 }
 ```
+
+### Execution Flow
+
+Each call to `seimei(...)` proceeds with these steps:
+1. **Setup** — a run-specific directory is created and the shared context is copied. If `max_tokens_per_question` is set, a `TokenLimiter` is attached to the run-specific LLM proxy before agents execute.
+2. **Agent selection** — `rmsearch` (when available) or a heuristic picks the next agent. The orchestrator prints `"[seimei] -> agent <name>"` so you can follow execution in the terminal.
+3. **Agent execution** — the agent receives the message history and shared context, then returns a dict payload. The orchestrator prints the first `agent_log_head_lines` lines of the content (or a completion notice) as soon as the agent finishes.
+4. **Safety checks** — if an agent triggers the token limiter, execution stops immediately, the last step is logged with `[token_limit]`, and the run is paused before the final LLM turn.
+5. **Final response** — the run-specific LLM proxy calls `chat` (obeying the concurrency semaphore and token limiter) to produce the assistant answer. Usage stats are aggregated as they arrive.
+6. **Persistence** — `messages.json`, `steps.jsonl`, `output.txt`, `meta.json`, and an entry in `dataset.jsonl` are written so the run can be replayed or used for training.
 
 ---
 
@@ -143,6 +156,7 @@ Each JSON record in `dataset.jsonl` has fields:
 - `steps` (array)
 - `model_info`
 - `timestamps`
+- `token_limit` (limit, consumed, hit flag, and last_error snapshot if a cap was triggered)
 
 This gives you a clean training/eval dataset with full provenance.
 
@@ -152,13 +166,15 @@ This gives you a clean training/eval dataset with full provenance.
 
 **Arguments**
 - `agent_config: list[dict]` — A list of entries like `{"dir_path": "path/to/agents"}` or `{"file_path": "path/to/agent.py"}`.
-- `llm_kwargs: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url`.
+- `llm_kwargs: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url` and options like `max_concurrent_requests` for throttling.
 - `rm_kwargs: dict` — Optional; forwarded to `rmsearch` if you use it.
 - `log_dir: str` — Directory to store dataset logs. Default: `./seimei_runs`.
 - `max_steps: int` — Hard cap on agent steps per call. Default: 8.
 - `allow_code_exec: bool` — If `True`, enables `code_act` to actually run whitelisted commands.
 - `allowed_commands: list[str] | None` — Optional allowlist for `code_act` (e.g., `["python", "pip", "ls", "cat"]`).
 - `approval_callback: Optional[Callable[[str], bool]]` — Optional function invoked before running a command; return `True` to allow.
+- `agent_log_head_lines: int` — How many lines from each agent's reply to echo to stdout. Set to `0` to suppress previews. Default: `3`.
+- `max_tokens_per_question: int | None` — Optional per-run token budget applied across all LLM calls. When exceeded, execution pauses and the run is marked with `[token_limit]`.
 
 **Outputs**
 - Creates orchestrator instance.
@@ -176,6 +192,7 @@ This gives you a clean training/eval dataset with full provenance.
 - `system: Optional[str]` — Optional system instruction to pin for the LLM call.
 - `stop_when: Optional[Callable[[list[dict]], bool]]` — Optional predicate to terminate early based on `messages`.
 - `return_usage: bool` — If `True`, returns token usage if available.
+- The orchestrator prints agent start/finish markers to stdout so you can follow progress in real time.
 
 **Outputs**
 - Dict with `run_id`, `output`, `msg_history`, and optional `usage`.
