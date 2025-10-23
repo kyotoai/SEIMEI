@@ -12,23 +12,24 @@ The three Python entry points form an end-to-end loop: create datasets → run S
 
 generate_dataset_excel.py
 -------------------------
-**Purpose** Generate a library of Python scripts + CSV files (one per topic) and capture matching question/answer pairs.
+**Purpose** Generate multiple Python generator modules per topic and, for each module, multiple CSVs that explore distinct hyper-parameter configurations. Each (topic, sample_index, hyper_param_index) triple becomes one dataset row with a shared reference QA pair.
 
 **Algorithm**
-- Load the prompt template from `data_generators/excel.md` and inject the topic name plus numeric parameters.
-- Call `seimei.llm.LLMClient` to request a JSON payload containing the module, question, and reference answer.
-- Persist the module to disk, execute its `generate()` function (with a subprocess fallback), and validate the resulting CSV.
-- If execution fails or validation detects issues (missing rows, invalid header, etc.), send structured feedback to the LLM and retry.
-- Store the validated assets under `<exp_dir>/python/` and `<exp_dir>/csv/`, then append a record to `dataset.json`.
+- Load the prompt template from `data_generators/excel.md`, injecting the topic name, the requested sample index, and the total hyper-parameter count.
+- Ask `seimei.llm.LLMClient` for a JSON payload containing the module source code plus the question/answer pair.
+- Persist the module, then execute it once per hyper-parameter index (naming CSVs `topic_sample_hyper.csv`).
+- Optionally run an iterative validation loop (`--enable-validation`) that re-prompts the LLM with structured feedback when execution or CSV checks fail.
+- Save the validated modules under `<exp_dir>/python/`, store the generated CSVs beneath `<exp_dir>/csv/`, and append a row per CSV to `dataset.json`.
 
 **Key Arguments**
 - `--exp-dir` root directory for artifacts (defaults to `exp1`).
-- `--model` and `--llm-kw` forwarded to `LLMClient`.
-- `--n-samples-per-topic`, `--n-hyper-params` control dataset size and variation (required).
+- `--model`, `--temperature`, and `--llm-kw` (repeat `--llm-kw key=value` to forward multiple OpenAI-style parameters) configure the dataset LLM client.
+- `--n-samples-per-topic` controls how many Python modules to request per topic.
+- `--n-hyper-params` sets the number of CSVs (hyper-parameter variations) generated from each module.
 - `--topics` optional list of topic names (defaults to the bundled five).
 - `--prompt-path`, `--python-dir`, `--csv-dir`, `--output-file-path` override file locations.
-- `--max-attempts` retry budget per topic.
-- `--prefer-subprocess`, `--exec-timeout` switch execution mode and cap runtime.
+- `--prefer-subprocess`, `--exec-timeout` select execution mode and timeout for generated scripts.
+- `--enable-validation` toggles the slower retry loop; `--max-attempts` only applies when this flag is set.
 
 **Output Structure**
 `<exp_dir>/dataset.json` — list of objects:
@@ -36,10 +37,12 @@ generate_dataset_excel.py
 [
   {
     "Topic": "ecommerce_orders",
+    "SampleIndex": 1,
+    "HyperParamIndex": 2,
     "Question": "...?",
     "CorrectAnswer": "A. ...",
-    "PythonPath": "exp1/python/ecommerce_orders_001.py",
-    "CSVPath": "exp1/csv/ecommerce_orders_001.csv",
+    "PythonPath": "exp1/python/ecommerce_orders_1.py",
+    "CSVPath": "exp1/csv/ecommerce_orders_1_2.csv",
     "CSVPreview": [
       ["topic", "sample_id", "..."],
       ["ecommerce_orders", "...", "..."]
@@ -52,15 +55,18 @@ generate_dataset_excel.py
 ```bash
 python seimei/eval/generate_dataset_excel.py \
   --n-samples-per-topic 3 \
-  --n-hyper-params 3 \
+  --n-hyper-params 4 \
   --exp-dir exp1 \
-  --model gpt-5-nano 
+  --model gpt-5 \
+  --temperature 0.3 \
+  --llm-kw top_p=0.7
 ```
 
 **Notices**
-- The generated modules must remain pure Python (no network access, no side effects outside the provided CSV path).
-- Validation is intentionally conservative; repeated failures surface clear feedback to the LLM.
-- All paths written to `dataset.json` mirror the `--exp-dir` argument, preserving relative layouts.
+- By default the script runs a single-shot generation pass; add `--enable-validation` when you need automatic retries with feedback.
+- Repeat `--llm-kw key=value` to forward multiple parameters (e.g., `--llm-kw top_p=0.8 --llm-kw presence_penalty=0.2`).
+- The generated modules must remain pure Python (no network access, no writes outside the requested CSV path).
+- All paths recorded in `dataset.json` mirror the `--exp-dir` argument.
 
 inference.py
 ------------
@@ -80,7 +86,7 @@ inference.py
 - `--agent-dir`, `--agent-file` add custom agents; `--allow-code-exec`/`--allowed-command` control shell access.
 - `--system-prompt`, `--name`, `--max-steps`, `--max-tokens-per-question`, `--log-dir` mirror orchestrator options.
 - `--preview-rows`, `--script-excerpt-chars` cap contextual snippets embedded in user prompts.
-- `--llm-kw`, `--rm-kw` forward extra configuration to `LLMClient` or rmsearch.
+- `--model`, `--temperature`, and repeated `--llm-kw key=value` configure the inference LLM; `--rm-kw` forwards optional rmsearch parameters.
 
 **Output Structure**
 Each dataset record gains:
@@ -117,7 +123,7 @@ evaluation.py
 
 **Key Arguments**
 - `--result-path`, `--output-path` locate the inference output and destination.
-- `--model`, `--llm-kw` configure the judging LLM.
+- `--model`, `--temperature`, and repeated `--llm-kw key=value` configure the judging LLM.
 - `--script-excerpt-chars`, `--max-attempts` tune prompt size and retry behaviour.
 - `--force` recomputes every label regardless of whether `Correctness` is already present.
 
@@ -147,4 +153,4 @@ python seimei/eval/evaluation.py \
 
 Prompt Template
 ---------------
-`data_generators/excel.md` is a lightweight template consumed by `generate_dataset_excel.py`. It exposes the topic, dataset dimensions, and recommended naming stub so human editors can adjust instructions without editing code. Review it before launching large batches to ensure the guidance matches the evaluation goals.
+`data_generators/excel.md` is a lightweight template consumed by `generate_dataset_excel.py`. It surfaces the topic, the current sample index, total samples, and hyper-parameter count so humans can tweak instructions without editing code. Review it before launching large batches to ensure the guidance matches the evaluation goals.

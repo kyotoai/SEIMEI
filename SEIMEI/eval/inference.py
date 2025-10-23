@@ -97,17 +97,31 @@ def build_user_prompt(
 ) -> str:
     preview_text = to_table(csv_preview) if csv_preview else "Preview unavailable."
     code_block = f"```python\n{script_excerpt}\n```" if script_excerpt else "Python generator file unavailable."
-    return (
-        "Evaluate the following synthetic dataset scenario.\n\n"
-        f"Question:\n{record.get('Question', '').strip()}\n\n"
-        f"CSV file path: {csv_path}\n"
-        f"Python generator path: {python_path}\n\n"
-        "CSV preview (top rows):\n"
-        f"{preview_text}\n\n"
-        f"{code_block}\n\n"
-        "Use the available tools (including the code_act agent if permitted) to inspect the resources as needed. "
-        "Provide a clear answer to the question, citing the hyper-parameters or data characteristics that justify it."
-    )
+    metadata_lines: List[str] = []
+    topic = record.get("Topic")
+    if topic:
+        metadata_lines.append(f"Topic: {topic}")
+    sample_idx = record.get("SampleIndex")
+    if sample_idx is not None:
+        metadata_lines.append(f"Sample index: {sample_idx}")
+    hyper_idx = record.get("HyperParamIndex")
+    if hyper_idx is not None:
+        metadata_lines.append(f"Hyper-parameter index: {hyper_idx}")
+    metadata_block = "\n".join(metadata_lines)
+    parts: List[str] = ["Evaluate the following synthetic dataset scenario.\n\n"]
+    if metadata_block:
+        parts.append(f"{metadata_block}\n\n")
+    parts.extend([
+        f"Question:\n{record.get('Question', '').strip()}\n\n",
+        f"CSV file path: {csv_path}\n",
+        f"Python generator path: {python_path}\n\n",
+        "CSV preview (top rows):\n",
+        f"{preview_text}\n\n",
+        f"{code_block}\n\n",
+        "Use the available tools (including the code_act agent if permitted) to inspect the resources as needed. ",
+        "Provide a clear answer to the question, citing the hyper-parameters or data characteristics that justify it.",
+    ])
+    return "".join(parts)
 
 
 async def run_inference(args: argparse.Namespace) -> List[Dict[str, Any]]:
@@ -214,7 +228,12 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--llm-kw",
         action="append",
         default=[],
-        help="Additional key=value pairs forwarded to seimei.llm.LLMClient.",
+        help="Repeatable key=value pairs forwarded to seimei.llm.LLMClient (e.g., --llm-kw top_p=0.9).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        help="Shortcut for setting the LLM sampling temperature.",
     )
     parser.add_argument(
         "--rm-kw",
@@ -246,6 +265,8 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parsed = parser.parse_args(argv)
     parsed.llm_kwargs = parse_kv_pairs(parsed.llm_kw or [])
     parsed.rm_kwargs = parse_kv_pairs(parsed.rm_kw or [])
+    if parsed.temperature is not None:
+        parsed.llm_kwargs.setdefault("temperature", parsed.temperature)
     return parsed
 
 
