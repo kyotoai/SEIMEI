@@ -10,9 +10,9 @@ import subprocess
 import sys
 import textwrap
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from seimei.llm import LLMClient
 
@@ -39,15 +39,18 @@ SYSTEM_PROMPT = textwrap.dedent(
     The `topic` must exactly match the value provided in the latest user request.
     The `python` string must contain a valid Python module that defines:
 
-        def generate(csv_output_path: str, n_samples_per_topic: int, n_hyper_params: int) -> None:
+        def generate(csv_output_path: str, hyper_param_index: int, total_hyper_params: int) -> None:
             ...
 
     That function must write a UTF-8 CSV file to `csv_output_path` and may create helper functions.
     Within the module, include a `if __name__ == "__main__":` entrypoint that accepts
-    --csv-output-path, --n-samples-per-topic, and --n-hyper-params CLI flags delegating to `generate`.
+    --csv-output-path, --hyper-param-index, and --total-hyper-params CLI flags delegating to `generate`.
 
-    The produced question has to focus on the meaning of the generated data and its hyper-parameters.
-    The correct_answer must concisely explain the true answer using those hyper-parameters.
+    We will execute the module multiple times for the same topic, passing hyper_param_index values
+    from 1..total_hyper_params. Use that index to pick distinct parameterisations so each CSV differs.
+
+    The produced question must focus on the meaning of the generated data and the hyper-parameters.
+    The correct_answer must concisely explain the truth grounded in those hyper-parameters.
     """
 ).strip()
 
@@ -102,13 +105,15 @@ def build_prompt(
     base_prompt: str,
     *,
     topic: str,
-    n_samples_per_topic: int,
+    sample_index: int,
+    total_samples: int,
     n_hyper_params: int,
     file_stub: str,
 ) -> str:
     return base_prompt.format(
         topic=topic,
-        n_samples_per_topic=n_samples_per_topic,
+        sample_index=sample_index,
+        total_samples=total_samples,
         n_hyper_params=n_hyper_params,
         file_stub=file_stub,
     )
@@ -141,7 +146,12 @@ def write_module(path: Path, code: str) -> None:
     path.write_text(code.rstrip() + "\n", encoding="utf-8")
 
 
-def _import_and_generate(module_path: Path, csv_path: Path, n_samples: int, n_hyper: int) -> Tuple[bool, str]:
+def _import_and_generate(
+    module_path: Path,
+    csv_path: Path,
+    hyper_index: int,
+    total_hyper_params: int,
+) -> Tuple[bool, str]:
     module_name = f"_seimei_dataset_{uuid.uuid4().hex}"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if not spec or not spec.loader:
@@ -162,7 +172,7 @@ def _import_and_generate(module_path: Path, csv_path: Path, n_samples: int, n_hy
 
     try:
         csv_path.parent.mkdir(parents=True, exist_ok=True)
-        generate_fn(str(csv_path), int(n_samples), int(n_hyper))
+        generate_fn(str(csv_path), int(hyper_index), int(total_hyper_params))
     except Exception as exc:  # pragma: no cover - best effort logging
         sys.modules.pop(module_name, None)
         return False, f"generate(...) raised an exception: {exc}"
@@ -171,16 +181,22 @@ def _import_and_generate(module_path: Path, csv_path: Path, n_samples: int, n_hy
     return True, ""
 
 
-def _run_via_subprocess(module_path: Path, csv_path: Path, n_samples: int, n_hyper: int, timeout: int) -> Tuple[bool, str]:
+def _run_via_subprocess(
+    module_path: Path,
+    csv_path: Path,
+    hyper_index: int,
+    total_hyper_params: int,
+    timeout: int,
+) -> Tuple[bool, str]:
     cmd = [
         sys.executable,
         str(module_path),
         "--csv-output-path",
         str(csv_path),
-        "--n-samples-per-topic",
-        str(n_samples),
-        "--n-hyper-params",
-        str(n_hyper),
+        "--hyper-param-index",
+        str(hyper_index),
+        "--total-hyper-params",
+        str(total_hyper_params),
     ]
     try:
         proc = subprocess.run(
@@ -203,22 +219,34 @@ def _run_via_subprocess(module_path: Path, csv_path: Path, n_samples: int, n_hyp
 def run_generated_module(
     module_path: Path,
     csv_path: Path,
-    n_samples: int,
-    n_hyper: int,
+    hyper_index: int,
+    total_hyper_params: int,
     *,
     prefer_import: bool = True,
     timeout: int = 120,
 ) -> Tuple[bool, str]:
     if prefer_import:
-        ok, message = _import_and_generate(module_path, csv_path, n_samples, n_hyper)
+        ok, message = _import_and_generate(module_path, csv_path, hyper_index, total_hyper_params)
         if ok:
             return True, ""
         fallback = message
-        ok, message = _run_via_subprocess(module_path, csv_path, n_samples, n_hyper, timeout)
+        ok, message = _run_via_subprocess(
+            module_path,
+            csv_path,
+            hyper_index,
+            total_hyper_params,
+            timeout,
+        )
         if ok:
             return True, ""
         return False, "; ".join(filter(None, [fallback, message]))
-    return _run_via_subprocess(module_path, csv_path, n_samples, n_hyper, timeout)
+    return _run_via_subprocess(
+        module_path,
+        csv_path,
+        hyper_index,
+        total_hyper_params,
+        timeout,
+    )
 
 
 def preview_csv(csv_path: Path, limit: int = 5) -> Tuple[bool, str, List[List[str]]]:
@@ -257,24 +285,45 @@ def format_dataset_path(base_arg: Path, exp_dir: Path, file_path: Path) -> str:
 
 
 @dataclass
+class HyperArtifact:
+    index: int
+    csv_path: Path
+    csv_preview: List[List[str]] = field(default_factory=list)
+
+    def to_record(
+        self,
+        base_entry: Dict[str, Any],
+        exp_dir_arg: Path,
+        exp_dir_path: Path,
+    ) -> Dict[str, Any]:
+        record = dict(base_entry)
+        record["HyperParamIndex"] = self.index
+        record["CSVPath"] = format_dataset_path(exp_dir_arg, exp_dir_path, self.csv_path)
+        record["CSVPreview"] = self.csv_preview
+        return record
+
+
+@dataclass
 class DatasetEntry:
     topic: str
+    sample_index: int
     question: str
     correct_answer: str
     python_path: Path
-    csv_path: Path
     llm_response: Dict[str, Any]
-    csv_preview: List[List[str]]
+    hyper_artifacts: List[HyperArtifact] = field(default_factory=list)
 
-    def to_dict(self, exp_dir_arg: Path, exp_dir_path: Path) -> Dict[str, Any]:
-        return {
+    def to_records(self, exp_dir_arg: Path, exp_dir_path: Path) -> List[Dict[str, Any]]:
+        base = {
             "Topic": self.topic,
+            "SampleIndex": self.sample_index,
             "Question": self.question,
             "CorrectAnswer": self.correct_answer,
             "PythonPath": format_dataset_path(exp_dir_arg, exp_dir_path, self.python_path),
-            "CSVPath": format_dataset_path(exp_dir_arg, exp_dir_path, self.csv_path),
-            "CSVPreview": self.csv_preview,
         }
+        return [
+            artifact.to_record(base, exp_dir_arg, exp_dir_path) for artifact in self.hyper_artifacts
+        ]
 
 
 async def request_valid_artifact(
@@ -284,8 +333,8 @@ async def request_valid_artifact(
     *,
     max_attempts: int,
     module_path: Path,
-    csv_path: Path,
-    n_samples_per_topic: int,
+    csv_paths: Sequence[Path],
+    sample_index: int,
     n_hyper_params: int,
     prefer_import: bool,
     exec_timeout: int,
@@ -326,50 +375,139 @@ async def request_valid_artifact(
 
         write_module(module_path, python_code)
 
-        ok, exec_error = run_generated_module(
-            module_path,
-            csv_path,
-            n_samples_per_topic,
-            n_hyper_params,
-            prefer_import=prefer_import,
-            timeout=exec_timeout,
-        )
-        if not ok:
-            last_error = exec_error or "Unknown execution failure."
-            feedback = (
-                "Executing your module did not succeed.\n"
-                f"Problem: {last_error}\n"
-                "Please revise the entire JSON response (module + QA) to fix the issue."
+        hyper_artifacts: List[HyperArtifact] = []
+        generation_failed = False
+        for hyper_index, csv_path in enumerate(csv_paths, start=1):
+            if csv_path.exists():
+                try:
+                    csv_path.unlink()
+                except OSError:
+                    pass
+
+            ok, exec_error = run_generated_module(
+                module_path,
+                csv_path,
+                hyper_index,
+                n_hyper_params,
+                prefer_import=prefer_import,
+                timeout=exec_timeout,
             )
-            messages.append({"role": "user", "content": feedback})
+            if not ok:
+                last_error = exec_error or "Unknown execution failure."
+                feedback = (
+                    "Executing your module did not succeed.\n"
+                    f"Hyper-parameter index: {hyper_index}/{n_hyper_params}\n"
+                    f"Problem: {last_error}\n"
+                    "Please revise the entire JSON response (module + QA) to fix the issue."
+                )
+                messages.append({"role": "user", "content": feedback})
+                generation_failed = True
+                break
+
+            valid, validation_message, preview = preview_csv(csv_path)
+            if not valid:
+                last_error = validation_message
+                feedback = (
+                    "The generated CSV failed validation.\n"
+                    f"Hyper-parameter index: {hyper_index}/{n_hyper_params}\n"
+                    f"Problem: {validation_message}\n"
+                    f"Preview rows:\n{rows_to_table(preview) if preview else '[empty]'}\n"
+                    "Please send a new JSON response that fixes the module."
+                )
+                messages.append({"role": "user", "content": feedback})
+                generation_failed = True
+                break
+
+            hyper_artifacts.append(
+                HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
+            )
+
+        if generation_failed:
             continue
 
-        valid, validation_message, preview = preview_csv(csv_path)
-        if not valid:
-            last_error = validation_message
-            feedback = (
-                "The generated CSV failed validation.\n"
-                f"Problem: {validation_message}\n"
-                f"Preview rows:\n{rows_to_table(preview) if preview else '[empty]'}\n"
-                "Please send a new JSON response that fixes the module."
-            )
-            messages.append({"role": "user", "content": feedback})
-            continue
-
-        print(f"[{topic}] Artifact validated successfully.")
+        print(f"[{topic}] Artifact validated successfully (sample {sample_index}).")
         return DatasetEntry(
             topic=topic,
+            sample_index=sample_index,
             question=question,
             correct_answer=correct_answer,
             python_path=module_path,
-            csv_path=csv_path,
             llm_response=payload,
-            csv_preview=preview,
+            hyper_artifacts=hyper_artifacts,
         )
 
     raise DatasetGenerationError(
         f"Failed to obtain a valid artifact for topic '{topic}' after {max_attempts} attempts. "
         f"Last error: {last_error}"
+    )
+
+
+async def request_artifact_once(
+    llm: LLMClient,
+    prompt: str,
+    topic: str,
+    *,
+    module_path: Path,
+    csv_paths: Sequence[Path],
+    sample_index: int,
+    n_hyper_params: int,
+    prefer_import: bool,
+    exec_timeout: int,
+) -> DatasetEntry:
+    response_text, _ = await llm.chat(messages=[{"role": "user", "content": prompt}], system=SYSTEM_PROMPT)
+    payload = extract_json_object(response_text)
+    if payload.get("topic") != topic:
+        raise DatasetGenerationError(
+            f"Expected topic '{topic}' but received '{payload.get('topic')}'."
+        )
+
+    python_code = payload["python"]
+    question = payload["question"].strip()
+    correct_answer = payload["correct_answer"].strip()
+
+    write_module(module_path, python_code)
+
+    hyper_artifacts: List[HyperArtifact] = []
+    for hyper_index, csv_path in enumerate(csv_paths, start=1):
+        if csv_path.exists():
+            try:
+                csv_path.unlink()
+            except OSError as exc:
+                raise DatasetGenerationError(
+                    f"Failed to clear existing CSV '{csv_path}': {exc}"
+                ) from exc
+
+        ok, exec_error = run_generated_module(
+            module_path,
+            csv_path,
+            hyper_index,
+            n_hyper_params,
+            prefer_import=prefer_import,
+            timeout=exec_timeout,
+        )
+        if not ok:
+            raise DatasetGenerationError(
+                f"Execution failed for hyper-parameter {hyper_index}/{n_hyper_params}: {exec_error}"
+            )
+
+        valid, validation_message, preview = preview_csv(csv_path)
+        if not valid:
+            raise DatasetGenerationError(
+                f"CSV validation failed for hyper-parameter {hyper_index}/{n_hyper_params}: {validation_message}"
+            )
+
+        hyper_artifacts.append(
+            HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
+        )
+
+    return DatasetEntry(
+        topic=topic,
+        sample_index=sample_index,
+        question=question,
+        correct_answer=correct_answer,
+        python_path=module_path,
+        llm_response=payload,
+        hyper_artifacts=hyper_artifacts,
     )
 
 
@@ -391,36 +529,58 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
     llm = LLMClient(**llm_kwargs)
 
     dataset_entries: List[DatasetEntry] = []
-    for index, topic in enumerate(topics, start=1):
+    for topic in topics:
         slug = slugify(topic)
-        file_stub = f"{slug}_{index:03d}"
-        module_path = python_dir / f"{file_stub}.py"
-        csv_path = csv_dir / f"{file_stub}.csv"
+        for sample_index in range(1, args.n_samples_per_topic + 1):
+            file_stub = f"{slug}_{sample_index}"
+            module_path = python_dir / f"{file_stub}.py"
+            csv_paths = [
+                csv_dir / f"{slug}_{sample_index}_{hyper_index}.csv"
+                for hyper_index in range(1, args.n_hyper_params + 1)
+            ]
 
-        prompt = build_prompt(
-            base_prompt,
-            topic=topic,
-            n_samples_per_topic=args.n_samples_per_topic,
-            n_hyper_params=args.n_hyper_params,
-            file_stub=file_stub,
-        )
+            prompt = build_prompt(
+                base_prompt,
+                topic=topic,
+                sample_index=sample_index,
+                total_samples=args.n_samples_per_topic,
+                n_hyper_params=args.n_hyper_params,
+                file_stub=file_stub,
+            )
 
-        entry = await request_valid_artifact(
-            llm,
-            prompt,
-            topic=topic,
-            max_attempts=args.max_attempts,
-            module_path=module_path,
-            csv_path=csv_path,
-            n_samples_per_topic=args.n_samples_per_topic,
-            n_hyper_params=args.n_hyper_params,
-            prefer_import=not args.prefer_subprocess,
-            exec_timeout=args.exec_timeout,
-        )
-        dataset_entries.append(entry)
+            if args.enable_validation:
+                entry = await request_valid_artifact(
+                    llm,
+                    prompt,
+                    topic=topic,
+                    max_attempts=args.max_attempts,
+                    module_path=module_path,
+                    csv_paths=csv_paths,
+                    sample_index=sample_index,
+                    n_hyper_params=args.n_hyper_params,
+                    prefer_import=not args.prefer_subprocess,
+                    exec_timeout=args.exec_timeout,
+                )
+            else:
+                entry = await request_artifact_once(
+                    llm,
+                    prompt,
+                    topic=topic,
+                    module_path=module_path,
+                    csv_paths=csv_paths,
+                    sample_index=sample_index,
+                    n_hyper_params=args.n_hyper_params,
+                    prefer_import=not args.prefer_subprocess,
+                    exec_timeout=args.exec_timeout,
+                )
+            dataset_entries.append(entry)
 
-    output_path = Path(args.output_file_path).resolve() if args.output_file_path else exp_dir_path / "dataset.json"
-    records = [entry.to_dict(exp_dir_arg, exp_dir_path) for entry in dataset_entries]
+    output_path = (
+        Path(args.output_file_path).resolve() if args.output_file_path else exp_dir_path / "dataset.json"
+    )
+    records: List[Dict[str, Any]] = []
+    for entry in dataset_entries:
+        records.extend(entry.to_records(exp_dir_arg, exp_dir_path))
     output_path.parent.mkdir(parents=True, exist_ok=True)
     with output_path.open("w", encoding="utf-8") as fp:
         json.dump(records, fp, ensure_ascii=False, indent=2)
@@ -440,8 +600,18 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--output-file-path", help="Where to write dataset.json (defaults to <exp_dir>/dataset.json).")
     parser.add_argument("--python-dir", help="Directory to store generated Python modules (defaults to <exp_dir>/python).")
     parser.add_argument("--csv-dir", help="Directory to store generated CSV files (defaults to <exp_dir>/csv).")
-    parser.add_argument("--n-samples-per-topic", type=int, required=True, help="Rows per hyper-parameter setting.")
-    parser.add_argument("--n-hyper-params", type=int, required=True, help="Number of hyper-parameter combinations.")
+    parser.add_argument(
+        "--n-samples-per-topic",
+        type=int,
+        required=True,
+        help="Number of Python generator modules to request per topic.",
+    )
+    parser.add_argument(
+        "--n-hyper-params",
+        type=int,
+        required=True,
+        help="Number of hyper-parameter variations (CSV files) per Python module.",
+    )
     parser.add_argument(
         "--topics",
         nargs="+",
@@ -451,13 +621,18 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--max-attempts",
         type=int,
         default=3,
-        help="Maximum retries per topic when validating artifacts.",
+        help="Maximum retries per topic when validation is enabled.",
     )
     parser.add_argument(
         "--llm-kw",
         action="append",
         default=[],
         help="Additional key=value settings forwarded to LLMClient (repeatable).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        help="Shortcut for setting the LLM sampling temperature.",
     )
     parser.add_argument(
         "--prefer-subprocess",
@@ -470,8 +645,15 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         default=180,
         help="Timeout (seconds) when executing generated scripts via subprocess.",
     )
+    parser.add_argument(
+        "--enable-validation",
+        action="store_true",
+        help="Enable iterative validation and retry loop (slower but more robust).",
+    )
     parsed = parser.parse_args(argv)
     parsed.llm_kwargs = parse_kv_pairs(parsed.llm_kw or [])
+    if parsed.temperature is not None:
+        parsed.llm_kwargs.setdefault("temperature", parsed.temperature)
     return parsed
 
 

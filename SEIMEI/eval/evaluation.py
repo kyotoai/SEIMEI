@@ -100,8 +100,19 @@ def build_eval_prompt(
     csv_preview: Sequence[Sequence[str]],
 ) -> str:
     csv_text = table_from_rows(csv_preview) if csv_preview else "CSV preview unavailable."
+    topic = record.get("Topic") or "(unknown topic)"
+    sample_index = record.get("SampleIndex")
+    hyper_index = record.get("HyperParamIndex")
+    metadata_lines: List[str] = [f"Topic: {topic}"]
+    if sample_index is not None:
+        metadata_lines.append(f"Sample index: {sample_index}")
+    if hyper_index is not None:
+        metadata_lines.append(f"Hyper-parameter index: {hyper_index}")
+    metadata_block = "\n".join(metadata_lines)
     return textwrap.dedent(
         f"""
+        {metadata_block}
+
         Question:
         {record.get('Question', '').strip()}
 
@@ -240,7 +251,12 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--llm-kw",
         action="append",
         default=[],
-        help="Additional key=value options forwarded to LLMClient.",
+        help="Repeatable key=value options forwarded to LLMClient (e.g., --llm-kw top_p=0.9).",
+    )
+    parser.add_argument(
+        "--temperature",
+        type=float,
+        help="Shortcut for setting the evaluator's sampling temperature.",
     )
     parser.add_argument(
         "--force",
@@ -249,6 +265,8 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parsed = parser.parse_args(argv)
     parsed.llm_kwargs = parse_kv_pairs(parsed.llm_kw or [])
+    if parsed.temperature is not None:
+        parsed.llm_kwargs.setdefault("temperature", parsed.temperature)
     return parsed
 
 
