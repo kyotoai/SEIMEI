@@ -2,13 +2,35 @@ from __future__ import annotations
 
 import asyncio
 import re
-import shlex
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
 from seimei.agent import Agent, register
+from seimei.knowledge.utils import get_agent_knowledge
 
-_SAFE_DEFAULTS = ["echo", "python", "pip", "ls", "cat", "pwd", "whoami", "dir", "type"]
+_SAFE_DEFAULTS = [
+    "echo",
+    "python",
+    "python3",
+    "pip",
+    "pip3",
+    "ls",
+    "cat",
+    "pwd",
+    "whoami",
+    "dir",
+    "type",
+    "head",
+    "tail",
+    "grep",
+    "rg",
+    "sed",
+    "awk",
+    "cut",
+    "wc",
+    "jq",
+    "xlsx2csv",
+]
 
 
 @register
@@ -30,9 +52,19 @@ class code_act(Agent):
 
         code = _extract_code(messages)
         if not code:
-            return {"content": "No command detected. Provide a fenced code block like ```bash\\n<cmd>```."}
+            code = await _generate_command(messages, shared_ctx, allowed)
+        if not code:
+            return {
+                "content": (
+                    "No executable command detected or generated. "
+                    "Provide a fenced code block like ```bash\\n<cmd>``` or a clear analysis request."
+                )
+            }
 
-        cmd0 = shlex.split(code)[0] if code.strip() else ""
+        code = _normalize_command(code)
+        if not code:
+            return {"content": "Unable to form a valid command from the request."}
+        cmd0 = code.strip().split()[0] if code.strip() else ""
         if allowed and cmd0 not in allowed:
             return {"content": f"Command '{cmd0}' is not in allowlist: {list(allowed)}", "code": code}
 
@@ -81,3 +113,82 @@ def _extract_code(messages: List[Dict[str, Any]]) -> Optional[str]:
             if m2:
                 return m2.group(1).strip()
     return None
+
+
+def _normalize_command(command: str) -> str:
+    cmd = (command or "").strip()
+    if not cmd:
+        return ""
+
+    if "\n" in cmd:
+        lines = cmd.splitlines()
+        first_line = lines[0].strip()
+        body = "\n".join(lines[1:]).strip()
+        if first_line in {"python", "python3"} and body and "<<" not in first_line:
+            return f"{first_line} - <<'PY'\n{body}\nPY"
+    return cmd
+
+
+async def _generate_command(
+    messages: List[Dict[str, Any]],
+    shared_ctx: Dict[str, Any],
+    allowed: Optional[Sequence[str]],
+) -> Optional[str]:
+    llm = shared_ctx.get("llm")
+    if llm is None:
+        return None
+
+    user_text = _last_user_message(messages)
+    if not user_text.strip():
+        return None
+
+    allowed_list = list(allowed) if allowed else []
+    allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
+
+    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act")
+    knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
+
+    system_lines = [
+        "You translate user analysis requests into a single safe POSIX shell command.",
+        f"Only use commands that start with: {allowed_hint}.",
+        "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
+        "Return the command only, optionally inside a ```bash``` code block.",
+    ]
+    if knowledge_hint:
+        system_lines.append("Relevant knowledge:\n" + knowledge_hint)
+
+    user_prompt = (
+        "User request:\n"
+        f"{user_text}\n\n"
+        "Produce the best shell command (single command) to satisfy the request."
+    )
+
+    try:
+        response, _ = await llm.chat(
+            messages=[{"role": "user", "content": user_prompt}],
+            system="\n\n".join(system_lines),
+            temperature=0,
+        )
+    except Exception:
+        return None
+
+    return _extract_generated_command(response)
+
+
+def _extract_generated_command(text: str) -> Optional[str]:
+    if not text:
+        return None
+    match = _CODE_BLOCK_RE.search(text)
+    if match:
+        candidate = match.group(1).strip()
+        if candidate:
+            return candidate
+    lines = [line.strip() for line in text.splitlines() if line.strip()]
+    return lines[0] if lines else None
+
+
+def _last_user_message(messages: List[Dict[str, Any]]) -> str:
+    for msg in reversed(messages):
+        if msg.get("role") == "user":
+            return msg.get("content", "")
+    return ""

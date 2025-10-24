@@ -554,6 +554,16 @@ class seimei:
             msg_history.append({"role": "assistant", "content": answer})
             usage = {}
 
+        # Log final assistant output
+        final_log_blocks: List[Tuple[str, Optional[str]]] = []
+        preview = answer if answer else "[no content]"
+        if self.agent_log_head_lines and answer:
+            preview = answer[:1000]
+            if len(answer) > 1000:
+                preview = preview.rstrip() + "..."
+        final_log_blocks.append(("final output", preview))
+        log_step_blocks(final_log_blocks)
+
         # Save run artifacts
         with open(os.path.join(run_dir, "messages.json"), "w", encoding="utf-8") as f:
             json.dump(msg_history, f, ensure_ascii=False, indent=2)
