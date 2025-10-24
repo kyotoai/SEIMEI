@@ -26,7 +26,6 @@ DEFAULT_TOPICS: Tuple[str, ...] = (
     "supply_chain",
 )
 
-
 SYSTEM_PROMPT = textwrap.dedent(
     """
     You are a meticulous synthetic-data assistant.
@@ -108,6 +107,25 @@ def load_prompt(path: Path) -> str:
     if not path.is_file():
         raise FileNotFoundError(f"Prompt file not found: {path}")
     return path.read_text(encoding="utf-8")
+
+
+def load_topics_from_file(path: Path) -> List[str]:
+    if not path.is_file():
+        raise FileNotFoundError(f"Topics file not found: {path}")
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise ValueError(f"Topics file does not contain valid JSON: {exc}") from exc
+    if not isinstance(payload, list):
+        raise ValueError("Topics JSON must be a list of topic strings.")
+    topics: List[str] = []
+    for idx, item in enumerate(payload, start=1):
+        if not isinstance(item, str) or not item.strip():
+            raise ValueError(f"Topic at index {idx} must be a non-empty string.")
+        topics.append(item.strip())
+    if not topics:
+        raise ValueError("Topics list is empty.")
+    return topics
 
 
 def build_prompt(
@@ -568,7 +586,17 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
     prompt_path = Path(args.prompt_path).resolve()
     base_prompt = load_prompt(prompt_path)
 
-    topics = args.topics or list(DEFAULT_TOPICS)
+    topics: Sequence[str]
+    if args.topics:
+        topics = args.topics
+    elif args.topics_path:
+        topics_path = Path(args.topics_path)
+        try:
+            topics = load_topics_from_file(topics_path)
+        except (OSError, ValueError) as exc:
+            raise DatasetGenerationError(f"Failed to load topics from {topics_path}: {exc}") from exc
+    else:
+        topics = list(DEFAULT_TOPICS)
     llm_kwargs = {"model": args.model, **args.llm_kwargs}
     llm = LLMClient(**llm_kwargs)
 
@@ -713,6 +741,10 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         "--topics",
         nargs="+",
         help="Optional list of topics to generate. Defaults to built-in topic list.",
+    )
+    parser.add_argument(
+        "--topics-path",
+        help="Path to a JSON file containing an array of topics. Defaults to the built-in topic list when omitted.",
     )
     parser.add_argument(
         "--max-attempts",

@@ -27,6 +27,7 @@ generate_dataset_excel.py
 - `--n-samples-per-topic` controls how many Python modules to request per topic.
 - `--n-hyper-params` sets the number of CSVs (hyper-parameter variations) generated from each module.
 - `--topics` optional list of topic names (defaults to the bundled five).
+- `--topics-path` optional JSON file containing an array of topics; falls back to the bundled list when omitted.
 - `--prompt-path`, `--python-dir`, `--csv-dir`, `--output-file-path` override file locations.
 - `--prefer-subprocess`, `--exec-timeout` select execution mode and timeout for generated scripts.
 - `--enable-validation` toggles the slower retry loop; `--max-attempts` only applies when this flag is set.
