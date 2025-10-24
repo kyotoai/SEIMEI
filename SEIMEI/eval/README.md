@@ -56,10 +56,8 @@ generate_dataset_excel.py
 python seimei/eval/generate_dataset_excel.py \
   --n-samples-per-topic 3 \
   --n-hyper-params 4 \
-  --exp-dir exp1 \
-  --model gpt-5 \
-  --temperature 0.3 \
-  --llm-kw top_p=0.7
+  --exp-dir exp2 \
+  --model gpt-5-nano
 ```
 
 **Notices**
