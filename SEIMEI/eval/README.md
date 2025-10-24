@@ -54,10 +54,11 @@ generate_dataset_excel.py
 
 **Usage Example**
 ```bash
-python seimei/eval/generate_dataset_excel.py \
-  --n-samples-per-topic 3 \
+python SEIMEI/seimei/eval/generate_dataset_excel.py \
+  --n-samples-per-topic 1 \
   --n-hyper-params 4 \
-  --exp-dir exp2 \
+  --exp-dir exp4 \
+  --topics-path SEIMEI/seimei/eval/data_generators/excel_topics.json \
   --model gpt-5-nano
 ```
 

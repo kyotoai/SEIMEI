@@ -316,6 +316,20 @@ def format_dataset_path(base_arg: Path, exp_dir: Path, file_path: Path) -> str:
         return str(file_path)
 
 
+def cleanup_generated_artifacts(module_path: Path, csv_paths: Sequence[Path]) -> None:
+    if module_path.exists():
+        try:
+            module_path.unlink()
+        except OSError:
+            logger.debug("Failed to remove module %s", module_path, exc_info=True)
+    for csv_path in csv_paths:
+        if csv_path.exists():
+            try:
+                csv_path.unlink()
+            except OSError:
+                logger.debug("Failed to remove CSV %s", csv_path, exc_info=True)
+
+
 @dataclass
 class HyperArtifact:
     index: int
@@ -502,7 +516,10 @@ async def request_artifact_once(
     exec_timeout: int,
 ) -> DatasetEntry:
     response_text, _ = await llm.chat(messages=[{"role": "user", "content": prompt}], system=SYSTEM_PROMPT)
-    payload = extract_json_object(response_text)
+    try:
+        payload = extract_json_object(response_text)
+    except ValueError as exc:
+        raise DatasetGenerationError(f"Invalid JSON response: {exc}") from exc
     if payload.get("topic") != topic:
         raise DatasetGenerationError(
             f"Expected topic '{topic}' but received '{payload.get('topic')}'."
@@ -668,17 +685,31 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                         max_sample_attempts,
                         err,
                     )
-                    if module_path.exists():
-                        try:
-                            module_path.unlink()
-                        except OSError:
-                            logger.debug("Failed to remove module %s", module_path, exc_info=True)
-                    for csv_path in csv_paths:
-                        if csv_path.exists():
-                            try:
-                                csv_path.unlink()
-                            except OSError:
-                                logger.debug("Failed to remove CSV %s", csv_path, exc_info=True)
+                    cleanup_generated_artifacts(module_path, csv_paths)
+                    if sample_attempt >= max_sample_attempts:
+                        logger.error(
+                            "[%s] Giving up on sample %s after %d attempts.",
+                            topic,
+                            file_stub,
+                            max_sample_attempts,
+                        )
+                    else:
+                        logger.info(
+                            "[%s] Retrying sample %s (next attempt %d/%d).",
+                            topic,
+                            file_stub,
+                            sample_attempt + 1,
+                            max_sample_attempts,
+                        )
+                except Exception as err:
+                    logger.exception(
+                        "[%s] Unexpected failure for sample %s on attempt %d/%d",
+                        topic,
+                        file_stub,
+                        sample_attempt,
+                        max_sample_attempts,
+                    )
+                    cleanup_generated_artifacts(module_path, csv_paths)
                     if sample_attempt >= max_sample_attempts:
                         logger.error(
                             "[%s] Giving up on sample %s after %d attempts.",
