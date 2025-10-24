@@ -4,6 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
 from seimei.llm import TokenLimitExceeded
+from seimei.knowledge.utils import get_agent_knowledge
 
 
 def _latest_user_message(messages: List[Dict[str, Any]]) -> str:
@@ -47,6 +48,7 @@ class answer(Agent):
 
         user_question = _latest_user_message(messages)
         findings = _aggregate_agent_findings(messages)
+        knowledge_entries = get_agent_knowledge(shared_ctx, "answer")
 
         findings_text = "\n".join(
             f"- {item['agent']}: {item['content']}" for item in findings
@@ -57,6 +59,9 @@ class answer(Agent):
             "Using the user question and the collected findings, produce a concise, helpful reply. "
             "Reference key observations and highlight next steps if needed."
         )
+        if knowledge_entries:
+            knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
+            system_prompt += "\n\nAdditional answer agent knowledge:\n" + knowledge_block
         user_prompt = (
             f"User question:\n{user_question}\n\n"
             f"Collected findings:\n{findings_text}\n\n"
@@ -84,6 +89,8 @@ class answer(Agent):
             "seimei_output": final_answer,
             "sources": findings,
         }
+        if knowledge_entries:
+            log_data["knowledge_used"] = [item.get("text") for item in knowledge_entries[:8]]
         return {
             "content": final_answer,
             "stop": True,
