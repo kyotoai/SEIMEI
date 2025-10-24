@@ -45,3 +45,6 @@ seimei_runs
 
 # pytest
 .pytest_cache
+
+# experiment folders
+exp*

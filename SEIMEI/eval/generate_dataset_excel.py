@@ -5,6 +5,7 @@ import asyncio
 import csv
 import importlib.util
 import json
+import logging
 import re
 import subprocess
 import sys
@@ -53,6 +54,14 @@ SYSTEM_PROMPT = textwrap.dedent(
     The correct_answer must concisely explain the truth grounded in those hyper-parameters.
     """
 ).strip()
+
+
+logger = logging.getLogger(__name__)
+
+
+class _SafeFormatDict(dict):
+    def __missing__(self, key: str) -> str:
+        return "{" + key + "}"
 
 
 class DatasetGenerationError(RuntimeError):
@@ -110,13 +119,18 @@ def build_prompt(
     n_hyper_params: int,
     file_stub: str,
 ) -> str:
-    return base_prompt.format(
-        topic=topic,
-        sample_index=sample_index,
-        total_samples=total_samples,
-        n_hyper_params=n_hyper_params,
-        file_stub=file_stub,
-    )
+    values = {
+        "topic": topic,
+        "sample_index": sample_index,
+        "total_samples": total_samples,
+        "n_hyper_params": n_hyper_params,
+        "file_stub": file_stub,
+    }
+    # Backward compatibility for templates that reference legacy placeholders.
+    values.setdefault("hyper_index", "hyper_param_index")
+    values.setdefault("hyper_param_index", "hyper_param_index")
+    values.setdefault("n_samples_per_topic", total_samples)
+    return base_prompt.format_map(_SafeFormatDict(values))
 
 
 def extract_json_object(text: str) -> Dict[str, Any]:
@@ -384,6 +398,14 @@ async def request_valid_artifact(
                 except OSError:
                     pass
 
+            logger.info(
+                "[%s] Generating CSV %s hyper %d/%d at %s",
+                topic,
+                sample_index,
+                hyper_index,
+                n_hyper_params,
+                csv_path,
+            )
             ok, exec_error = run_generated_module(
                 module_path,
                 csv_path,
@@ -417,6 +439,13 @@ async def request_valid_artifact(
                 messages.append({"role": "user", "content": feedback})
                 generation_failed = True
                 break
+            logger.info(
+                "[%s] Generated CSV %s hyper %d/%d",
+                topic,
+                sample_index,
+                hyper_index,
+                n_hyper_params,
+            )
 
             hyper_artifacts.append(
                 HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
@@ -477,6 +506,14 @@ async def request_artifact_once(
                     f"Failed to clear existing CSV '{csv_path}': {exc}"
                 ) from exc
 
+        logger.info(
+            "[%s] Generating CSV %s hyper %d/%d at %s",
+            topic,
+            sample_index,
+            hyper_index,
+            n_hyper_params,
+            csv_path,
+        )
         ok, exec_error = run_generated_module(
             module_path,
             csv_path,
@@ -496,6 +533,13 @@ async def request_artifact_once(
                 f"CSV validation failed for hyper-parameter {hyper_index}/{n_hyper_params}: {validation_message}"
             )
 
+        logger.info(
+            "[%s] Generated CSV %s hyper %d/%d",
+            topic,
+            sample_index,
+            hyper_index,
+            n_hyper_params,
+        )
         hyper_artifacts.append(
             HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
         )
@@ -548,31 +592,84 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                 file_stub=file_stub,
             )
 
-            if args.enable_validation:
-                entry = await request_valid_artifact(
-                    llm,
-                    prompt,
-                    topic=topic,
-                    max_attempts=args.max_attempts,
-                    module_path=module_path,
-                    csv_paths=csv_paths,
-                    sample_index=sample_index,
-                    n_hyper_params=args.n_hyper_params,
-                    prefer_import=not args.prefer_subprocess,
-                    exec_timeout=args.exec_timeout,
-                )
-            else:
-                entry = await request_artifact_once(
-                    llm,
-                    prompt,
-                    topic=topic,
-                    module_path=module_path,
-                    csv_paths=csv_paths,
-                    sample_index=sample_index,
-                    n_hyper_params=args.n_hyper_params,
-                    prefer_import=not args.prefer_subprocess,
-                    exec_timeout=args.exec_timeout,
-                )
+            entry: Optional[DatasetEntry] = None
+            sample_attempt = 0
+            max_sample_attempts = max(1, args.max_attempts)
+            while sample_attempt < max_sample_attempts:
+                sample_attempt += 1
+                try:
+                    logger.info(
+                        "[%s] Generating module attempt %d/%d for sample %s",
+                        topic,
+                        sample_attempt,
+                        max_sample_attempts,
+                        file_stub,
+                    )
+                    if args.enable_validation:
+                        entry = await request_valid_artifact(
+                            llm,
+                            prompt,
+                            topic=topic,
+                            max_attempts=args.max_attempts,
+                            module_path=module_path,
+                            csv_paths=csv_paths,
+                            sample_index=sample_index,
+                            n_hyper_params=args.n_hyper_params,
+                            prefer_import=not args.prefer_subprocess,
+                            exec_timeout=args.exec_timeout,
+                        )
+                    else:
+                        entry = await request_artifact_once(
+                            llm,
+                            prompt,
+                            topic=topic,
+                            module_path=module_path,
+                            csv_paths=csv_paths,
+                            sample_index=sample_index,
+                            n_hyper_params=args.n_hyper_params,
+                            prefer_import=not args.prefer_subprocess,
+                            exec_timeout=args.exec_timeout,
+                        )
+                    break
+                except DatasetGenerationError as err:
+                    logger.error(
+                        "[%s] Generation failed for sample %s on attempt %d/%d: %s",
+                        topic,
+                        file_stub,
+                        sample_attempt,
+                        max_sample_attempts,
+                        err,
+                    )
+                    if module_path.exists():
+                        try:
+                            module_path.unlink()
+                        except OSError:
+                            logger.debug("Failed to remove module %s", module_path, exc_info=True)
+                    for csv_path in csv_paths:
+                        if csv_path.exists():
+                            try:
+                                csv_path.unlink()
+                            except OSError:
+                                logger.debug("Failed to remove CSV %s", csv_path, exc_info=True)
+                    if sample_attempt >= max_sample_attempts:
+                        logger.error(
+                            "[%s] Giving up on sample %s after %d attempts.",
+                            topic,
+                            file_stub,
+                            max_sample_attempts,
+                        )
+                    else:
+                        logger.info(
+                            "[%s] Retrying sample %s (next attempt %d/%d).",
+                            topic,
+                            file_stub,
+                            sample_attempt + 1,
+                            max_sample_attempts,
+                        )
+
+            if entry is None:
+                continue
+
             dataset_entries.append(entry)
 
     output_path = (
@@ -659,6 +756,8 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
 
 def main(argv: Optional[List[str]] = None) -> None:
     args = parse_arguments(argv)
+    if not logging.getLogger().handlers:
+        logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 
     async def _run() -> None:
         await generate_dataset(args)
