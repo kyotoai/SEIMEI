@@ -54,7 +54,7 @@ generate_dataset_excel.py
 
 **Usage Example**
 ```bash
-python SEIMEI/seimei/eval/generate_dataset_excel.py \
+python -m seimei.eval.generate_dataset_excel \
   --n-samples-per-topic 1 \
   --n-hyper-params 4 \
   --exp-dir exp4 \
@@ -97,7 +97,7 @@ Each dataset record gains:
 
 **Usage Example**
 ```bash
-python seimei/eval/inference.py \
+python -m seimei.eval.inference \
   --exp-dir exp1 \
   --allow-code-exec \
   --allowed-command cat \
@@ -139,7 +139,7 @@ Adds a `Correctness` object per entry:
 
 **Usage Example**
 ```bash
-python seimei/eval/evaluation.py \
+python -m seimei.eval.evaluation \
   --exp-dir exp1 \
   --model gpt-5 \
   --llm-kw temperature=0 \

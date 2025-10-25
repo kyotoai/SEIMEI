@@ -152,7 +152,8 @@ async def _generate_command(
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
         "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
-        "Return the command only, optionally inside a ```bash``` code block.",
+        "Reply with the command only. Do not add numbering, explanations, or the word 'None'.",
+        "Enclose the command in ```bash``` only if needed for parsing.",
     ]
     if knowledge_hint:
         system_lines.append("Relevant knowledge:\n" + knowledge_hint)
@@ -167,24 +168,42 @@ async def _generate_command(
         response, _ = await llm.chat(
             messages=[{"role": "user", "content": user_prompt}],
             system="\n\n".join(system_lines),
-            temperature=0,
         )
     except Exception:
         return None
 
-    return _extract_generated_command(response)
+    return _extract_generated_command(response, allowed_list)
 
 
-def _extract_generated_command(text: str) -> Optional[str]:
+def _extract_generated_command(text: str, allowed: Sequence[str]) -> Optional[str]:
     if not text:
         return None
     match = _CODE_BLOCK_RE.search(text)
     if match:
         candidate = match.group(1).strip()
-        if candidate:
-            return candidate
-    lines = [line.strip() for line in text.splitlines() if line.strip()]
-    return lines[0] if lines else None
+        cleaned = _clean_candidate(candidate, allowed)
+        if cleaned:
+            return cleaned
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        cleaned = _clean_candidate(line, allowed)
+        if cleaned:
+            return cleaned
+    return None
+
+
+def _clean_candidate(line: str, allowed: Sequence[str]) -> Optional[str]:
+    if not line:
+        return None
+    normalized = re.sub(r"^\d+[\).\s]+", "", line).strip()
+    if not normalized or normalized.lower() in {"none", "n/a"}:
+        return None
+    token = normalized.split()[0]
+    if allowed and token not in allowed:
+        return None
+    return normalized if normalized else None
 
 
 def _last_user_message(messages: List[Dict[str, Any]]) -> str:

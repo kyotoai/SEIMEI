@@ -24,3 +24,15 @@ Each CSV row stores:
 - `tags`: JSON-encoded list of short keywords.
 
 The generated file can be loaded at runtime and injected into `shared_ctx["knowledge"]` for agents to consume.
+
+## Using knowledge in SEIMEI
+- Instantiate the orchestrator with the `knowledge_path` argument:
+  ```python
+  orchestrator = seimei(
+      agent_config=[{"dir_path": "seimei/agents"}],
+      llm_kwargs={"model": "gpt-4o-mini"},
+      knowledge_path="data/knowledge.csv",
+  )
+  ```
+- The file can be CSV, JSON, or JSONL. Entries are grouped by the `agent` field, with `*` acting as a wildcard shared by all agents.
+- At runtime the knowledge is available through `shared_ctx["knowledge"]`, and helper utilities (e.g., `get_agent_knowledge`) deliver normalized snippets to each agent.

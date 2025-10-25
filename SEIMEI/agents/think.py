@@ -26,6 +26,11 @@ DEFAULT_THINK_KNOWLEDGE: List[Dict[str, Any]] = [
         "text": "Once sufficient evidence is collected, call the answer agent to compose the final response.",
         "tags": ["handoff"],
     },
+    {
+        "id": "multi_step_depth",
+        "text": "Outline multiple concrete follow-up actions instead of rushing to the answer to keep reasoning multi-step.",
+        "tags": ["planning", "depth"],
+    },
 ]
 
 
