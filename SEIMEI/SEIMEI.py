@@ -22,6 +22,7 @@ agent = agent_module
 from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
+from .knowledge import load_knowledge
 
 try:
     # Optional: your reward-model-based search (rmsearch) package
@@ -49,6 +50,7 @@ class seimei:
         approval_callback: Optional[Callable[[str], bool]] = None,
         agent_log_head_lines: int = 3,
         max_tokens_per_question: Optional[int] = None,
+        knowledge_path: Optional[str] = None,
     ) -> None:
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -67,6 +69,8 @@ class seimei:
         self.allowed_commands = list(allowed_commands) if allowed_commands else None
         self.approval_callback = approval_callback
         self.agent_log_head_lines = max(int(agent_log_head_lines), 0)
+        self.knowledge_path = knowledge_path
+        self.knowledge_store = self._load_knowledge_store(knowledge_path)
 
         # Load agents
         self.agents: Dict[str, Agent] = {}
@@ -81,6 +85,7 @@ class seimei:
             "allowed_commands": self.allowed_commands,
             "approval_callback": self.approval_callback,
             "search": None,
+            "knowledge": self.knowledge_store,
         }
 
     # -------------------------- Agent loading --------------------------
@@ -119,6 +124,19 @@ class seimei:
             module = importlib.util.module_from_spec(spec)
             sys.modules[mod_name] = module
             spec.loader.exec_module(module)  # type: ignore
+
+    def _load_knowledge_store(self, path: Optional[str]) -> Dict[str, List[Dict[str, Any]]]:
+        if not path:
+            return {}
+        try:
+            store = load_knowledge(path)
+            print(f"[seimei] Knowledge loaded from {path} ({sum(len(v) for v in store.values())} entries)")
+            return store
+        except FileNotFoundError as exc:
+            print(f"[seimei] Knowledge file not found: {exc}", file=sys.stderr)
+        except Exception as exc:  # pragma: no cover
+            print(f"[seimei] Failed to load knowledge from {path}: {exc}", file=sys.stderr)
+        return {}
 
     # -------------------------- Shared search --------------------------
 
@@ -295,9 +313,6 @@ class seimei:
         search_fn: Callable[..., Any],
     ) -> Optional[Agent]:
         if not self.agents:
-            return None
-
-        if messages and messages[-1].get("role") != "user":
             return None
 
         keys = [
@@ -554,15 +569,15 @@ class seimei:
             msg_history.append({"role": "assistant", "content": answer})
             usage = {}
 
-        # Log final assistant output
-        final_log_blocks: List[Tuple[str, Optional[str]]] = []
-        preview = answer if answer else "[no content]"
-        if self.agent_log_head_lines and answer:
-            preview = answer[:1000]
-            if len(answer) > 1000:
-                preview = preview.rstrip() + "..."
-        final_log_blocks.append(("final output", preview))
-        log_step_blocks(final_log_blocks)
+        # Log final assistant output without truncation
+        final_text = answer if answer else "[no content]"
+        if "\n" in final_text:
+            print(f"{log_prefix} Final Output:")
+            for line in final_text.splitlines():
+                print(f"    {line}")
+        else:
+            print(f"{log_prefix} Final Output: {final_text}")
+        print()
 
         # Save run artifacts
         with open(os.path.join(run_dir, "messages.json"), "w", encoding="utf-8") as f:
