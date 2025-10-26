@@ -38,6 +38,8 @@ class seimei:
     calls the LLM, and writes a dataset for each run.
     """
 
+    AGENT_OUTPUT_LIMIT = 10000
+
     def __init__(
         self,
         agent_config: Sequence[Dict[str, Any]],
@@ -469,6 +471,8 @@ class seimei:
             except Exception as e:
                 step_res = {"content": f"[agent_error] {type(e).__name__}: {e}"}
 
+            step_res = self._apply_agent_output_limit(step_res)
+
             if step_res.get("final_output"):
                 final_agent_output = str(step_res.get("final_output"))
                 final_agent_name = agent_obj.name
@@ -546,7 +550,8 @@ class seimei:
                     print(f"{log_prefix} Final output provided by {final_agent_name} agent")
             else:
                 try:
-                    answer, usage = await run_llm.chat(messages=msg_history, system=system)
+                    llm_ready_history = self._prepare_llm_messages(msg_history)
+                    answer, usage = await run_llm.chat(messages=llm_ready_history, system=system)
                 except TokenLimitExceeded as err:
                     token_limit_hit = True
                     token_limit_error = err
@@ -645,3 +650,66 @@ class seimei:
                 except Exception:
                     pass
         return rows
+
+    @staticmethod
+    def _prepare_llm_messages(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        llm_messages: List[Dict[str, Any]] = []
+        for msg in messages:
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+            name = msg.get("name")
+
+            if isinstance(content, (dict, list)):
+                try:
+                    content = json.dumps(content, ensure_ascii=False)
+                except TypeError:
+                    content = str(content)
+            else:
+                content = str(content)
+
+            if role == "agent":
+                llm_entry: Dict[str, Any] = {"role": "assistant", "content": content}
+                if isinstance(name, str) and name.strip():
+                    llm_entry["name"] = name.strip()[:64]
+                llm_messages.append(llm_entry)
+                continue
+
+            llm_entry = {"role": role or "user", "content": content}
+            if isinstance(name, str) and name.strip() and llm_entry["role"] == "assistant":
+                llm_entry["name"] = name.strip()[:64]
+
+            for key in ("tool_calls", "tool_call_id", "function_call"):
+                if key in msg:
+                    llm_entry[key] = msg[key]
+            if llm_entry["role"] not in {"system", "user", "assistant", "tool", "function", "developer"}:
+                llm_entry["role"] = "user"
+            llm_messages.append(llm_entry)
+        return llm_messages
+
+    def _apply_agent_output_limit(self, step_res: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(step_res, dict):
+            return step_res
+        limit = self.AGENT_OUTPUT_LIMIT
+        content = step_res.get("content")
+        if isinstance(content, str):
+            clipped, truncated = self._truncate_text(content, limit)
+            if truncated:
+                step_res["content"] = clipped
+        log_data = step_res.get("log")
+        if isinstance(log_data, dict):
+            for key, value in list(log_data.items()):
+                if isinstance(value, str):
+                    clipped, truncated = self._truncate_text(value, limit)
+                    if truncated:
+                        log_data[key] = clipped
+        return step_res
+
+    @staticmethod
+    def _truncate_text(text: str, limit: int) -> Tuple[str, bool]:
+        if len(text) <= limit:
+            return text, False
+        marker = "[CONTENT OMITTED]"
+        if limit <= len(marker):
+            return marker[:limit], True
+        prefix = text[: limit - len(marker)].rstrip()
+        return f"{prefix}{marker}", True

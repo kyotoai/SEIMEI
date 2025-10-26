@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import re
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
@@ -138,8 +139,10 @@ async def _generate_command(
     if llm is None:
         return None
 
-    user_text = _last_user_message(messages)
-    if not user_text.strip():
+    conversation_text = _conversation_transcript(messages)
+    if not conversation_text.strip():
+        conversation_text = _last_user_message(messages)
+    if not conversation_text.strip():
         return None
 
     allowed_list = list(allowed) if allowed else []
@@ -147,6 +150,8 @@ async def _generate_command(
 
     knowledge_entries = get_agent_knowledge(shared_ctx, "code_act")
     knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
+
+    print("knowledge_hint: ", knowledge_hint)
 
     system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",
@@ -159,8 +164,8 @@ async def _generate_command(
         system_lines.append("Relevant knowledge:\n" + knowledge_hint)
 
     user_prompt = (
-        "User request:\n"
-        f"{user_text}\n\n"
+        "Conversation so far:\n"
+        f"{conversation_text}\n\n"
         "Produce the best shell command (single command) to satisfy the request."
     )
 
@@ -211,3 +216,16 @@ def _last_user_message(messages: List[Dict[str, Any]]) -> str:
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
+
+
+def _conversation_transcript(messages: List[Dict[str, Any]]) -> str:
+    lines: List[str] = []
+    for msg in messages:
+        role = msg.get("role", "").upper() or "UNKNOWN"
+        content = msg.get("content", "")
+        if isinstance(content, (dict, list)):
+            content_str = json.dumps(content, ensure_ascii=False)
+        else:
+            content_str = str(content)
+        lines.append(f"{role}: {content_str}")
+    return "\n".join(lines)
