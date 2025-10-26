@@ -221,7 +221,15 @@ def _last_user_message(messages: List[Dict[str, Any]]) -> str:
 def _conversation_transcript(messages: List[Dict[str, Any]]) -> str:
     lines: List[str] = []
     for msg in messages:
-        role = msg.get("role", "").upper() or "UNKNOWN"
+        role_key = (msg.get("role", "") or "").lower()
+        label_map = {
+            "user": "User",
+            "assistant": "Assistant",
+            "agent": "Tool",
+            "system": "System",
+            "tool": "Tool",
+        }
+        role = label_map.get(role_key, role_key.title() or "Message")
         content = msg.get("content", "")
         if isinstance(content, (dict, list)):
             content_str = json.dumps(content, ensure_ascii=False)

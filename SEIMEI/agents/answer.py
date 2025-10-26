@@ -50,10 +50,6 @@ class answer(Agent):
         findings = _aggregate_agent_findings(messages)
         knowledge_entries = get_agent_knowledge(shared_ctx, "answer")
 
-        findings_text = "\n".join(
-            f"- {item['agent']}: {item['content']}" for item in findings
-        ) or "- No intermediate findings were recorded."
-
         system_prompt = (
             "You are the final answer agent for SEIMEI. "
             "Using the user question and the collected findings, produce a concise, helpful reply. "
@@ -62,11 +58,21 @@ class answer(Agent):
         if knowledge_entries:
             knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
             system_prompt += "\n\nAdditional answer agent knowledge:\n" + knowledge_block
-        user_prompt = (
-            f"User question:\n{user_question}\n\n"
-            f"Collected findings:\n{findings_text}\n\n"
-            "Write the final response for the user."
-        )
+        segments: List[str] = []
+        if user_question.strip():
+            segments.append(f'The user asked: "{user_question.strip()}".')
+        else:
+            segments.append("The user did not include an explicit question; infer their needs from the findings.")
+
+        if findings:
+            segments.append("Here are the most relevant findings gathered so far:")
+            for item in findings:
+                segments.append(f"- {item['agent']}: {item['content']}")
+        else:
+            segments.append("No intermediate findings were recorded.")
+
+        segments.append("Compose a clear, helpful reply that addresses the user's needs and suggests next steps when appropriate.")
+        user_prompt = "\n".join(segments)
 
         try:
             final_answer, _usage = await llm.chat(

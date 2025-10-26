@@ -231,22 +231,18 @@ class seimei:
         reason_hint = context.get("reason_hint", "")
         purpose = context.get("purpose", "selection")
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
+        parsed_messages = self._deserialize_message_blob(query)
+        last_user_message = self._extract_last_user_content(parsed_messages)
+
         system_prompt = (
-            "You rank candidate keys for relevance. "
+            "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
-            "{"
-            "\"index\": <1-based index of the candidate>, "
-            "\"score\": optional float between 0 and 1, "
-            "\"reason\": short string"
-            "}. "
-            "Only return up to the requested number of entries. Respond with JSON only."
+            '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
+            "Only return up to the requested number of entries. Respond with JSON only.\n"
+            f"Candidates:\n{numbered}\n"
+            f"Select up to {k} candidates most relevant to the conversation."
         )
-        user_prompt = (
-            f"Purpose: {purpose}\n"
-            f"Query:\n{query}\n\n"
-            f"Candidates:\n{numbered}\n\n"
-            f"Select up to {k} candidates most relevant to the query."
-        )
+        user_prompt = last_user_message or "No recent user request is available; choose the most suitable candidate to continue the conversation."
         if reason_hint:
             user_prompt += f"\nAdditional context: {reason_hint}"
 
@@ -668,9 +664,14 @@ class seimei:
                 content = str(content)
 
             if role == "agent":
-                llm_entry: Dict[str, Any] = {"role": "assistant", "content": content}
-                if isinstance(name, str) and name.strip():
-                    llm_entry["name"] = name.strip()[:64]
+                tool_name = (name or "agent").strip() if isinstance(name, str) else "agent"
+                tool_call_id = msg.get("tool_call_id") or f"{tool_name}_{len(llm_messages)}"
+                llm_entry = {
+                    "role": "tool",
+                    "name": tool_name[:64],
+                    "tool_call_id": tool_call_id,
+                    "content": content,
+                }
                 llm_messages.append(llm_entry)
                 continue
 
@@ -685,6 +686,29 @@ class seimei:
                 llm_entry["role"] = "user"
             llm_messages.append(llm_entry)
         return llm_messages
+
+    @staticmethod
+    def _deserialize_message_blob(blob: str) -> List[Dict[str, Any]]:
+        try:
+            data = json.loads(blob)
+            if isinstance(data, list):
+                return [item for item in data if isinstance(item, dict)]
+        except Exception:
+            return []
+        return []
+
+    @staticmethod
+    def _extract_last_user_content(messages: Sequence[Dict[str, Any]]) -> str:
+        for msg in reversed(messages):
+            if msg.get("role") == "user":
+                content = msg.get("content", "")
+                if isinstance(content, (dict, list)):
+                    try:
+                        return json.dumps(content, ensure_ascii=False)
+                    except TypeError:
+                        return str(content)
+                return str(content)
+        return ""
 
     def _apply_agent_output_limit(self, step_res: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(step_res, dict):
