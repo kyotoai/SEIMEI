@@ -162,7 +162,7 @@ class seimei:
 
     async def _search_with_backends(
         self,
-        query: str,
+        query: Union[str, Sequence[Dict[str, Any]]],
         keys: Sequence[Dict[str, Any]],
         *,
         k: int,
@@ -174,13 +174,15 @@ class seimei:
 
         limit = max(int(k), 1)
         key_map = {item.get("key"): item for item in keys if isinstance(item, dict) and item.get("key")}
+        conversation_text, focus_text = self._normalize_query_input(query)
+        rm_query = focus_text or conversation_text
 
         if rmsearch_fn:
             base_url = self.rm_kwargs.get("base_url")
             if base_url:
                 try:
                     rm_result = rmsearch_fn(
-                        query=query,
+                        query=rm_query,
                         keys=list(keys),
                         k_key=limit,
                         **self.rm_kwargs,
@@ -216,7 +218,7 @@ class seimei:
 
     async def _llm_route_search(
         self,
-        query: str,
+        query: Union[str, Sequence[Dict[str, Any]]],
         keys: Sequence[Dict[str, Any]],
         *,
         k: int,
@@ -231,18 +233,19 @@ class seimei:
         reason_hint = context.get("reason_hint", "")
         purpose = context.get("purpose", "selection")
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
-        parsed_messages = self._deserialize_message_blob(query)
-        last_user_message = self._extract_last_user_content(parsed_messages)
-
+        conversation_text, focus_text = self._normalize_query_input(query)
+        if not conversation_text:
+            conversation_text = "No conversation history available."
         system_prompt = (
             "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
             '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
             "Only return up to the requested number of entries. Respond with JSON only.\n"
+            f"Conversation context:\n{conversation_text}\n\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
         )
-        user_prompt = last_user_message or "No recent user request is available; choose the most suitable candidate to continue the conversation."
+        user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
             user_prompt += f"\nAdditional context: {reason_hint}"
 
@@ -737,3 +740,56 @@ class seimei:
             return marker[:limit], True
         prefix = text[: limit - len(marker)].rstrip()
         return f"{prefix}{marker}", True
+
+    @staticmethod
+    def _normalize_query_input(
+        query: Union[str, Sequence[Dict[str, Any]]]
+    ) -> Tuple[str, str]:
+        if isinstance(query, str):
+            messages = seimei._deserialize_message_blob(query)
+            if messages:
+                conversation = seimei._render_conversation(messages)
+                focus = seimei._extract_last_user_content(messages) or conversation
+                return conversation, focus
+            text = query.strip()
+            return text, text
+        if isinstance(query, Sequence):
+            messages = [dict(m) for m in query if isinstance(m, dict)]
+            conversation = seimei._render_conversation(messages)
+            focus = seimei._extract_last_user_content(messages) or conversation
+            return conversation, focus
+        text = str(query)
+        return text, text
+
+    @staticmethod
+    def _render_conversation(
+        messages: Sequence[Dict[str, Any]],
+        *,
+        max_messages: int = 8,
+        max_chars_per_message: int = 400,
+    ) -> str:
+        label_map = {
+            "user": "User",
+            "assistant": "Assistant",
+            "agent": "Tool",
+            "tool": "Tool",
+            "system": "System",
+            "function": "Function",
+            "developer": "Developer",
+        }
+        lines: List[str] = []
+        for msg in list(messages)[-max_messages:]:
+            role = label_map.get((msg.get("role") or "").lower(), "Message")
+            content = msg.get("content", "")
+            if isinstance(content, (dict, list)):
+                try:
+                    snippet = json.dumps(content, ensure_ascii=False)
+                except TypeError:
+                    snippet = str(content)
+            else:
+                snippet = str(content)
+            snippet = snippet.strip()
+            if len(snippet) > max_chars_per_message:
+                snippet = snippet[:max_chars_per_message].rstrip() + "..."
+            lines.append(f"{role}: {snippet}")
+        return "\n".join(lines) if lines else ""
