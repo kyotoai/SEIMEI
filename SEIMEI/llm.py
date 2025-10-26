@@ -233,7 +233,7 @@ class LLMClient:
         name = (message or {}).get("name")
 
         role_map = {
-            "agent": "assistant",
+            "agent": "tool",
         }
         normalized_role = role_map.get(role, role)
         if normalized_role not in {"system", "assistant", "user", "tool", "function", "developer"}:
