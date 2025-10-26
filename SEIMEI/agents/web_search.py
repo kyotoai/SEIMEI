@@ -219,7 +219,6 @@ async def _summarize_pages(
         summary, _ = await llm.chat(
             messages=[{"role": "user", "content": user_prompt}],
             system=system_prompt,
-            temperature=0,
         )
         return summary.strip()
     except Exception:

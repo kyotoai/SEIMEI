@@ -65,6 +65,12 @@ class TokenLimiter:
         if self.consumed > self.limit:
             raise TokenLimitExceeded(self.limit, self.consumed, usage)
 
+    def ensure_available(self) -> None:
+        if not self.limit:
+            return
+        if self.consumed >= self.limit:
+            raise TokenLimitExceeded(self.limit, self.consumed, {"total_tokens": self.consumed})
+
     @staticmethod
     def _extract_usage(usage: Dict[str, int]) -> int:
         total = usage.get("total_tokens")
@@ -132,6 +138,10 @@ class LLMClient:
             payload_msgs.append({"role": "system", "content": system})
         payload_msgs.extend([self._normalize_message(m) for m in messages])
 
+        print("\n")
+        print("payload_msgs: ", payload_msgs)
+        print()
+
         payload = {
             "model": self.model,
             "messages": payload_msgs,
@@ -149,6 +159,9 @@ class LLMClient:
             raise RuntimeError(
                 "LLMClient: OPENAI_API_KEY not set. Provide an API key or set `base_url` to a local server."
             )
+
+        if token_limiter:
+            token_limiter.ensure_available()
 
         async def _execute() -> Tuple[str, Dict[str, int]]:
             def _send_request() -> requests.Response:
@@ -171,6 +184,11 @@ class LLMClient:
             data = resp.json()
             self.last_response = data
             content = self._extract_content(data)
+
+            print("\n")
+            print("content: ", content)
+            print()
+
             usage_raw = data.get("usage") or {}
             usage: Dict[str, int] = {}
             for k, v in usage_raw.items():
@@ -204,7 +222,14 @@ class LLMClient:
     def _normalize_message(message: Dict[str, Any]) -> Dict[str, Any]:
         """Map internal message schema to OpenAI-compatible payload."""
         role = (message or {}).get("role") or "user"
-        content = (message or {}).get("content", "")
+        raw_content = (message or {}).get("content", "")
+        if isinstance(raw_content, (dict, list)):
+            try:
+                content = json.dumps(raw_content, ensure_ascii=False)
+            except TypeError:
+                content = str(raw_content)
+        else:
+            content = str(raw_content)
         name = (message or {}).get("name")
 
         role_map = {
