@@ -549,8 +549,7 @@ class seimei:
                     print(f"{log_prefix} Final output provided by {final_agent_name} agent")
             else:
                 try:
-                    llm_ready_history = self._prepare_llm_messages(msg_history)
-                    answer, usage = await run_llm.chat(messages=llm_ready_history, system=system)
+                    answer, usage = await run_llm.chat(messages=msg_history, system=system)
                 except TokenLimitExceeded as err:
                     token_limit_hit = True
                     token_limit_error = err
@@ -651,10 +650,6 @@ class seimei:
         return rows
 
     @staticmethod
-    def _prepare_llm_messages(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        return seimei._convert_history_to_llm(messages)
-
-    @staticmethod
     def _deserialize_message_blob(blob: str) -> List[Dict[str, Any]]:
         try:
             data = json.loads(blob)
@@ -693,47 +688,9 @@ class seimei:
     @staticmethod
     def _convert_history_to_llm(
         messages: Sequence[Dict[str, Any]],
-        *,
-        drop_system: bool = True,
     ) -> List[Dict[str, Any]]:
-        llm_messages: List[Dict[str, Any]] = []
-        for msg in messages:
-            role_raw = (msg.get("role") or "").lower()
-            if drop_system and role_raw == "system":
-                continue
-            content = msg.get("content", "")
-            if isinstance(content, (dict, list)):
-                try:
-                    content = json.dumps(content, ensure_ascii=False)
-                except TypeError:
-                    content = str(content)
-            else:
-                content = str(content)
-
-            if role_raw in {"agent", "tool"}:
-                system_entry: Dict[str, Any] = {"role": "system", "content": content}
-                name = msg.get("name")
-                if isinstance(name, str) and name.strip():
-                    system_entry["name"] = name.strip()[:64]
-                llm_messages.append(system_entry)
-                continue
-
-            if role_raw == "assistant":
-                assistant_entry: Dict[str, Any] = {"role": "assistant", "content": content}
-                if isinstance(msg.get("name"), str):
-                    assistant_entry["name"] = msg["name"][:64]
-                if msg.get("tool_calls"):
-                    assistant_entry["tool_calls"] = msg["tool_calls"]
-                if msg.get("function_call"):
-                    assistant_entry["function_call"] = msg["function_call"]
-                llm_messages.append(assistant_entry)
-                continue
-
-            if role_raw == "user":
-                llm_messages.append({"role": "user", "content": content})
-            else:
-                llm_messages.append({"role": "user", "content": content})
-        return llm_messages
+        prepared, _ = llm_module.prepare_messages(messages, drop_normal_system=False)
+        return prepared
 
     def _apply_agent_output_limit(self, step_res: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(step_res, dict):
@@ -782,8 +739,7 @@ class seimei:
         label_map = {
             "user": "User",
             "assistant": "Assistant",
-            "agent": "Tool",
-            "tool": "Tool",
+            "agent": "Agent",
             "system": "System",
             "function": "Function",
             "developer": "Developer",

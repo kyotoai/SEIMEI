@@ -7,6 +7,7 @@ import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
 from seimei.agent import Agent, register
+from seimei.llm import ensure_agent_prefix
 from seimei.knowledge.utils import get_agent_knowledge
 
 _SAFE_DEFAULTS = [
@@ -168,7 +169,6 @@ async def _generate_command(
         response, _ = await llm.chat(
             messages=chat_history,
             system="\n\n".join(system_lines),
-            temperature=0,
         )
     except Exception:
         return None
@@ -225,8 +225,8 @@ def _conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]
             content_str = json.dumps(content, ensure_ascii=False)
         else:
             content_str = str(content)
-        if role == "agent" or role == "tool":
-            entry: Dict[str, str] = {"role": "system", "content": content_str}
+        if role == "agent":
+            entry = {"role": "system", "content": ensure_agent_prefix(content_str), "agent": True}
         elif role == "assistant":
             entry = {"role": "assistant", "content": content_str}
         else:
@@ -246,11 +246,15 @@ def _fallback_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str
             content_str = str(content)
         if not content_str:
             continue
-        if role_raw in {"agent", "tool"}:
-            normalized_role = "system"
-        elif role_raw in {"assistant", "system"}:
-            normalized_role = role_raw
+        if role_raw == "agent":
+            history.append({"role": "system", "content": ensure_agent_prefix(content_str), "agent": True})
+        elif role_raw == "assistant":
+            history.append({"role": "assistant", "content": content_str})
+        elif role_raw == "system":
+            if msg.get("agent"):
+                history.append({"role": "system", "content": ensure_agent_prefix(content_str), "agent": True})
+            else:
+                history.append({"role": "system", "content": content_str})
         else:
-            normalized_role = "user"
-        history.append({"role": normalized_role, "content": content_str})
+            history.append({"role": "user", "content": content_str})
     return history
