@@ -711,14 +711,11 @@ class seimei:
                 content = str(content)
 
             if role_raw in {"agent", "tool"}:
-                tool_entry: Dict[str, Any] = {"role": "tool", "content": content}
+                system_entry: Dict[str, Any] = {"role": "system", "content": content}
                 name = msg.get("name")
                 if isinstance(name, str) and name.strip():
-                    tool_entry["name"] = name.strip()[:64]
-                tool_call_id = msg.get("tool_call_id")
-                if isinstance(tool_call_id, str) and tool_call_id.strip():
-                    tool_entry["tool_call_id"] = tool_call_id.strip()
-                llm_messages.append(tool_entry)
+                    system_entry["name"] = name.strip()[:64]
+                llm_messages.append(system_entry)
                 continue
 
             if role_raw == "assistant":

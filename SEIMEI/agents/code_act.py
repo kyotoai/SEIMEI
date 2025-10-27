@@ -139,12 +139,12 @@ async def _generate_command(
     if llm is None:
         return None
 
-    chat_history = _conversation_history(messages)
-    if not chat_history:
-        fallback = _last_user_message(messages)
-        if not fallback.strip():
-            return None
-        chat_history = [{"role": "user", "content": fallback.strip()}]
+    chat_history = messages
+    #chat_history = _conversation_history(messages)
+    #if not chat_history:
+    #    chat_history = _fallback_chat_history(messages)
+    #    if not chat_history:
+    #        return None
 
     allowed_list = list(allowed) if allowed else []
     allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
@@ -226,10 +226,31 @@ def _conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]
         else:
             content_str = str(content)
         if role == "agent" or role == "tool":
-            entry: Dict[str, str] = {"role": "tool", "content": content_str}
+            entry: Dict[str, str] = {"role": "system", "content": content_str}
         elif role == "assistant":
             entry = {"role": "assistant", "content": content_str}
         else:
             entry = {"role": "user", "content": content_str}
         history.append(entry)
+    return history
+
+
+def _fallback_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    history: List[Dict[str, str]] = []
+    for msg in messages:
+        role_raw = (msg.get("role") or "").lower()
+        content = msg.get("content", "")
+        if isinstance(content, (dict, list)):
+            content_str = json.dumps(content, ensure_ascii=False)
+        else:
+            content_str = str(content)
+        if not content_str:
+            continue
+        if role_raw in {"agent", "tool"}:
+            normalized_role = "system"
+        elif role_raw in {"assistant", "system"}:
+            normalized_role = role_raw
+        else:
+            normalized_role = "user"
+        history.append({"role": normalized_role, "content": content_str})
     return history
