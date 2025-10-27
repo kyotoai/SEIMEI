@@ -233,15 +233,14 @@ class seimei:
         reason_hint = context.get("reason_hint", "")
         purpose = context.get("purpose", "selection")
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
-        conversation_text, focus_text = self._normalize_query_input(query)
-        if not conversation_text:
-            conversation_text = "No conversation history available."
+        history_messages = self._normalize_query_messages(query)
+        conversation_messages = self._convert_history_to_llm(history_messages)
+        _, focus_text = self._normalize_query_input(query)
         system_prompt = (
             "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
             '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
-            "Only return up to the requested number of entries. Respond with JSON only.\n"
-            f"Conversation context:\n{conversation_text}\n\n"
+            "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
         )
@@ -250,11 +249,12 @@ class seimei:
             user_prompt += f"\nAdditional context: {reason_hint}"
 
         try:
+            routing_messages = conversation_messages if conversation_messages else [
+                {"role": "user", "content": user_prompt}
+            ]
             reply, _usage = await run_llm.chat(
-                messages=[
-                    {"role": "system", "content": system_prompt},
-                    {"role": "user", "content": user_prompt},
-                ]
+                messages=routing_messages,
+                system=system_prompt,
             )
         except Exception as exc:
             print(f"[seimei] LLM routing failed: {exc}", file=sys.stderr)
@@ -652,43 +652,7 @@ class seimei:
 
     @staticmethod
     def _prepare_llm_messages(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        llm_messages: List[Dict[str, Any]] = []
-        for msg in messages:
-            role = msg.get("role", "")
-            content = msg.get("content", "")
-            name = msg.get("name")
-
-            if isinstance(content, (dict, list)):
-                try:
-                    content = json.dumps(content, ensure_ascii=False)
-                except TypeError:
-                    content = str(content)
-            else:
-                content = str(content)
-
-            if role == "agent":
-                tool_name = (name or "agent").strip() if isinstance(name, str) else "agent"
-                tool_call_id = msg.get("tool_call_id") or f"{tool_name}_{len(llm_messages)}"
-                llm_entry = {
-                    "role": "tool",
-                    "name": tool_name[:64],
-                    "tool_call_id": tool_call_id,
-                    "content": content,
-                }
-                llm_messages.append(llm_entry)
-                continue
-
-            llm_entry = {"role": role or "user", "content": content}
-            if isinstance(name, str) and name.strip() and llm_entry["role"] == "assistant":
-                llm_entry["name"] = name.strip()[:64]
-
-            for key in ("tool_calls", "tool_call_id", "function_call"):
-                if key in msg:
-                    llm_entry[key] = msg[key]
-            if llm_entry["role"] not in {"system", "user", "assistant", "tool", "function", "developer"}:
-                llm_entry["role"] = "user"
-            llm_messages.append(llm_entry)
-        return llm_messages
+        return seimei._convert_history_to_llm(messages)
 
     @staticmethod
     def _deserialize_message_blob(blob: str) -> List[Dict[str, Any]]:
@@ -712,6 +676,67 @@ class seimei:
                         return str(content)
                 return str(content)
         return ""
+
+    @staticmethod
+    def _normalize_query_messages(
+        query: Union[str, Sequence[Dict[str, Any]]]
+    ) -> List[Dict[str, Any]]:
+        if isinstance(query, str):
+            parsed = seimei._deserialize_message_blob(query)
+            if parsed:
+                return parsed
+            return [{"role": "user", "content": query}]
+        if isinstance(query, Sequence):
+            return [dict(m) for m in query if isinstance(m, dict)]
+        return [{"role": "user", "content": str(query)}]
+
+    @staticmethod
+    def _convert_history_to_llm(
+        messages: Sequence[Dict[str, Any]],
+        *,
+        drop_system: bool = True,
+    ) -> List[Dict[str, Any]]:
+        llm_messages: List[Dict[str, Any]] = []
+        for msg in messages:
+            role_raw = (msg.get("role") or "").lower()
+            if drop_system and role_raw == "system":
+                continue
+            content = msg.get("content", "")
+            if isinstance(content, (dict, list)):
+                try:
+                    content = json.dumps(content, ensure_ascii=False)
+                except TypeError:
+                    content = str(content)
+            else:
+                content = str(content)
+
+            if role_raw in {"agent", "tool"}:
+                tool_entry: Dict[str, Any] = {"role": "tool", "content": content}
+                name = msg.get("name")
+                if isinstance(name, str) and name.strip():
+                    tool_entry["name"] = name.strip()[:64]
+                tool_call_id = msg.get("tool_call_id")
+                if isinstance(tool_call_id, str) and tool_call_id.strip():
+                    tool_entry["tool_call_id"] = tool_call_id.strip()
+                llm_messages.append(tool_entry)
+                continue
+
+            if role_raw == "assistant":
+                assistant_entry: Dict[str, Any] = {"role": "assistant", "content": content}
+                if isinstance(msg.get("name"), str):
+                    assistant_entry["name"] = msg["name"][:64]
+                if msg.get("tool_calls"):
+                    assistant_entry["tool_calls"] = msg["tool_calls"]
+                if msg.get("function_call"):
+                    assistant_entry["function_call"] = msg["function_call"]
+                llm_messages.append(assistant_entry)
+                continue
+
+            if role_raw == "user":
+                llm_messages.append({"role": "user", "content": content})
+            else:
+                llm_messages.append({"role": "user", "content": content})
+        return llm_messages
 
     def _apply_agent_output_limit(self, step_res: Dict[str, Any]) -> Dict[str, Any]:
         if not isinstance(step_res, dict):
@@ -745,21 +770,10 @@ class seimei:
     def _normalize_query_input(
         query: Union[str, Sequence[Dict[str, Any]]]
     ) -> Tuple[str, str]:
-        if isinstance(query, str):
-            messages = seimei._deserialize_message_blob(query)
-            if messages:
-                conversation = seimei._render_conversation(messages)
-                focus = seimei._extract_last_user_content(messages) or conversation
-                return conversation, focus
-            text = query.strip()
-            return text, text
-        if isinstance(query, Sequence):
-            messages = [dict(m) for m in query if isinstance(m, dict)]
-            conversation = seimei._render_conversation(messages)
-            focus = seimei._extract_last_user_content(messages) or conversation
-            return conversation, focus
-        text = str(query)
-        return text, text
+        messages = seimei._normalize_query_messages(query)
+        conversation = seimei._render_conversation(messages)
+        focus = seimei._extract_last_user_content(messages) or conversation
+        return conversation, focus
 
     @staticmethod
     def _render_conversation(
@@ -779,7 +793,10 @@ class seimei:
         }
         lines: List[str] = []
         for msg in list(messages)[-max_messages:]:
-            role = label_map.get((msg.get("role") or "").lower(), "Message")
+            role_raw = (msg.get("role") or "").lower()
+            if role_raw == "system":
+                continue
+            role = label_map.get(role_raw, "Message")
             content = msg.get("content", "")
             if isinstance(content, (dict, list)):
                 try:
