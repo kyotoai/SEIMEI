@@ -139,11 +139,12 @@ async def _generate_command(
     if llm is None:
         return None
 
-    conversation_text = _conversation_transcript(messages)
-    if not conversation_text.strip():
-        conversation_text = _last_user_message(messages)
-    if not conversation_text.strip():
-        return None
+    chat_history = _conversation_history(messages)
+    if not chat_history:
+        fallback = _last_user_message(messages)
+        if not fallback.strip():
+            return None
+        chat_history = [{"role": "user", "content": fallback.strip()}]
 
     allowed_list = list(allowed) if allowed else []
     allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
@@ -151,28 +152,23 @@ async def _generate_command(
     knowledge_entries = get_agent_knowledge(shared_ctx, "code_act")
     knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
 
-    print("knowledge_hint: ", knowledge_hint)
-
     system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
         "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
         "Reply with the command only. Do not add numbering, explanations, or the word 'None'.",
         "Enclose the command in ```bash``` only if needed for parsing.",
+        "Produce the best shell command (single command) to satisfy the request. "
+        "Treat user messages as instructions and tool messages as prior command outputs for context.",
     ]
     if knowledge_hint:
         system_lines.append("Relevant knowledge:\n" + knowledge_hint)
 
-    user_prompt = (
-        "Conversation so far:\n"
-        f"{conversation_text}\n\n"
-        "Produce the best shell command (single command) to satisfy the request."
-    )
-
     try:
         response, _ = await llm.chat(
-            messages=[{"role": "user", "content": user_prompt}],
+            messages=chat_history,
             system="\n\n".join(system_lines),
+            temperature=0,
         )
     except Exception:
         return None
@@ -218,22 +214,22 @@ def _last_user_message(messages: List[Dict[str, Any]]) -> str:
     return ""
 
 
-def _conversation_transcript(messages: List[Dict[str, Any]]) -> str:
-    lines: List[str] = []
+def _conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
+    history: List[Dict[str, str]] = []
     for msg in messages:
-        role_key = (msg.get("role", "") or "").lower()
-        label_map = {
-            "user": "User",
-            "assistant": "Assistant",
-            "agent": "Tool",
-            "system": "System",
-            "tool": "Tool",
-        }
-        role = label_map.get(role_key, role_key.title() or "Message")
+        role = (msg.get("role") or "").lower()
+        if role == "system":
+            continue
         content = msg.get("content", "")
         if isinstance(content, (dict, list)):
             content_str = json.dumps(content, ensure_ascii=False)
         else:
             content_str = str(content)
-        lines.append(f"{role}: {content_str}")
-    return "\n".join(lines)
+        if role == "agent" or role == "tool":
+            entry: Dict[str, str] = {"role": "tool", "content": content_str}
+        elif role == "assistant":
+            entry = {"role": "assistant", "content": content_str}
+        else:
+            entry = {"role": "user", "content": content_str}
+        history.append(entry)
+    return history
