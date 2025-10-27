@@ -8,17 +8,52 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
-AGENT_SYSTEM_PREFIX = "[AGENT_OUTPUT] "
+AGENT_OUTPUT_SUFFIX = "Use AGENT OUTPUTS to answer the user's last question clearly and concisely."
+
+
+def _format_tag_block(tag: str, value: Any) -> List[str]:
+    if value is None:
+        return []
+    value_str = _stringify_content(value)
+    if not value_str:
+        return [f"<{tag}>"]
+    lines = value_str.splitlines()
+    formatted: List[str] = [f"<{tag}>{lines[0]}"] if lines else [f"<{tag}>"]
+    for extra in lines[1:]:
+        formatted.append(f"  {extra}")
+    return formatted
+
+
+def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
+    blocks: List[str] = []
+    for idx, msg in enumerate(agent_messages, start=1):
+        block_lines: List[str] = []
+        header = f"AGENT OUTPUT {idx}"
+        block_lines.append(header)
+
+        log = msg.get("log")
+        if isinstance(log, dict):
+            for key, value in log.items():
+                block_lines.extend(_format_tag_block(str(key), value))
+
+        for extra_key in ("code", "chosen_instructions"):
+            if extra_key in msg:
+                block_lines.extend(_format_tag_block(extra_key, msg.get(extra_key)))
+
+        content = msg.get("content")
+        if content is not None:
+            block_lines.extend(_format_tag_block("content", content))
+
+        blocks.append("\n".join(block_lines).rstrip())
+
+    suffix = AGENT_OUTPUT_SUFFIX
+    if blocks:
+        return "\n\n".join(blocks + [suffix])
+    return suffix
 
 
 def ensure_agent_prefix(content: str) -> str:
-    text = content or ""
-    stripped = text.lstrip()
-    if stripped.startswith(AGENT_SYSTEM_PREFIX):
-        return text if text.startswith(AGENT_SYSTEM_PREFIX) else f"{AGENT_SYSTEM_PREFIX}{stripped[len(AGENT_SYSTEM_PREFIX):]}"
-    if text.startswith(AGENT_SYSTEM_PREFIX):
-        return text
-    return f"{AGENT_SYSTEM_PREFIX}{text}" if text else AGENT_SYSTEM_PREFIX.strip()
+    return format_agent_history([{"content": content}])
 
 
 def _stringify_content(value: Any) -> str:
@@ -37,6 +72,13 @@ def prepare_messages(
 ) -> Tuple[List[Dict[str, Any]], int]:
     prepared: List[Dict[str, Any]] = []
     normal_system_count = 0
+    agent_buffer: List[Dict[str, Any]] = []
+
+    def flush_agent_buffer() -> None:
+        if not agent_buffer:
+            return
+        prepared.append({"role": "system", "content": format_agent_history(agent_buffer), "agent": True})
+        agent_buffer.clear()
 
     for raw in messages or []:
         if not isinstance(raw, dict):
@@ -45,27 +87,26 @@ def prepare_messages(
         content = _stringify_content(raw.get("content", ""))
         name = raw.get("name")
 
-        if role_raw == "agent":
-            entry: Dict[str, Any] = {"role": "system", "content": ensure_agent_prefix(content), "agent": True}
+        is_agent = role_raw == "agent" or (role_raw == "system" and bool(raw.get("agent")))
+        if is_agent:
+            agent_entry: Dict[str, Any] = {"content": content}
             if isinstance(name, str) and name.strip():
-                entry["name"] = name.strip()[:64]
-            prepared.append(entry)
+                agent_entry["name"] = name.strip()[:64]
+            for key in ("log", "code", "chosen_instructions"):
+                if key in raw:
+                    agent_entry[key] = raw[key]
+            agent_buffer.append(agent_entry)
             continue
 
+        flush_agent_buffer()
+
         if role_raw == "system":
-            is_agent = bool(raw.get("agent"))
-            if is_agent:
-                entry = {"role": "system", "content": ensure_agent_prefix(content), "agent": True}
+            normal_system_count += 1
+            if not drop_normal_system:
+                entry = {"role": "system", "content": content}
                 if isinstance(name, str) and name.strip():
                     entry["name"] = name.strip()[:64]
                 prepared.append(entry)
-            else:
-                normal_system_count += 1
-                if not drop_normal_system:
-                    entry = {"role": "system", "content": content}
-                    if isinstance(name, str) and name.strip():
-                        entry["name"] = name.strip()[:64]
-                    prepared.append(entry)
             continue
 
         if role_raw == "assistant":
@@ -88,6 +129,8 @@ def prepare_messages(
         if isinstance(name, str) and name.strip():
             entry["name"] = name.strip()[:64]
         prepared.append(entry)
+
+    flush_agent_buffer()
 
     return prepared, normal_system_count
 
