@@ -233,7 +233,8 @@ class LLMClient:
         name = (message or {}).get("name")
 
         role_map = {
-            "agent": "tool",
+            "agent": "system",
+            "tool": "system",
         }
         normalized_role = role_map.get(role, role)
         if normalized_role not in {"system", "assistant", "user", "tool", "function", "developer"}:
@@ -244,9 +245,6 @@ class LLMClient:
         if name and isinstance(name, str):
             payload["name"] = name[:64]
 
-        # Pass along tool/function-specific fields if present
-        if normalized_role == "tool" and message.get("tool_call_id"):
-            payload["tool_call_id"] = message["tool_call_id"]
         if normalized_role == "assistant":
             tool_calls = message.get("tool_calls")
             if tool_calls:
