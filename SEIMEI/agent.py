@@ -3,6 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Type
 
+from seimei.llm import TokenLimitExceeded
+
 _AGENT_REGISTRY: Dict[str, Type['Agent']] = {}
 
 def get_agent_subclasses() -> Dict[str, Type['Agent']]:
@@ -50,6 +52,9 @@ class Agent:
             # Normalize shape
             res.setdefault("content", "")
             return res
+        except TokenLimitExceeded:
+            # Surface token limit errors so the orchestrator can halt the run.
+            raise
         except Exception as e:
             return {"content": f"[error] {type(e).__name__}: {e}"}
 
