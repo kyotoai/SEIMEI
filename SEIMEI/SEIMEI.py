@@ -405,9 +405,10 @@ class seimei:
             with open(steps_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(step, ensure_ascii=False) + "\n")
 
-        def log_step_blocks(blocks: Sequence[Tuple[str, Optional[str]]]) -> None:
+        def log_step_blocks(blocks: Dict[str, Optional[str]]) -> None:
             printed_any = False
-            for label, value in blocks:
+            for label in blocks:
+                value = blocks[label]
                 if value is None:
                     continue
                 text = str(value).strip("\n")
@@ -499,32 +500,25 @@ class seimei:
             print(f"{step_label}: Done {agent_obj.name} agent")
 
             content = step_res.get("content", "")
-            blocks: List[Tuple[str, Optional[str]]] = []
+            log_data = step_res.get("log", None)
+            blocks: Dict[str, Optional[str]] = {}
 
-            code_text = step_res.get("code")
-            if code_text:
-                blocks.append(("command", str(code_text)))
+            if log_data:
+                blocks.update(log_data)
 
-            log_data = step_res.get("log")
-            if isinstance(log_data, dict):
-                if isinstance(log_data.get("query"), str):
-                    blocks.append(("query", log_data["query"]))
-                if isinstance(log_data.get("user_input"), str):
-                    blocks.append(("user input", log_data["user_input"]))
-                if isinstance(log_data.get("seimei_output"), str):
-                    blocks.append(("seimei output", log_data["seimei_output"]))
-            output_text: Optional[str] = None
-            if self.agent_log_head_lines:
-                if content:
-                    preview = content[:1000]
-                    if len(content) > 1000:
-                        preview = preview.rstrip() + "..."
-                    output_text = preview
-                else:
-                    output_text = "[no content]"
+            else:
+                output_text: Optional[str] = None
+                if self.agent_log_head_lines:
+                    if content:
+                        preview = content[:1000]
+                        if len(content) > 1000:
+                            preview = preview.rstrip() + "..."
+                        output_text = preview
+                    else:
+                        output_text = "[no content]"
 
-            if output_text:
-                blocks.append(("output", output_text))
+                if output_text:
+                    blocks["output"] = output_text
 
             log_step_blocks(blocks)
 
@@ -573,6 +567,8 @@ class seimei:
             usage = {}
 
         # Log final assistant output without truncation
+        # -> Now answer agent is doing this.
+        '''
         final_text = answer if answer else "[no content]"
         if "\n" in final_text:
             print(f"{log_prefix} Final Output:")
@@ -581,6 +577,7 @@ class seimei:
         else:
             print(f"{log_prefix} Final Output: {final_text}")
         print()
+        '''
 
         # Save run artifacts
         with open(os.path.join(run_dir, "messages.json"), "w", encoding="utf-8") as f:

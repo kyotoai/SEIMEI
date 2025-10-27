@@ -14,7 +14,7 @@ async def demo_code_act():
     result = await orchestrator(
         messages=[
             {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
-            {"role": "user", "content": "Analyze the folder where you are now and see all files inside."},
+            {"role": "user", "content": "Analyze the whole structure of the current folder"},
         ]
     )
     # The code_act reply is stored as the last agent message
