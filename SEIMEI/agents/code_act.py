@@ -95,7 +95,7 @@ class code_act(Agent):
         stderr = (proc_out.stderr or "").strip()
         rc = proc_out.returncode
         summary = f"$ {code}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
-        return {"content": summary, "code": code, "log": {"returncode": rc, "stdout": stdout, "stderr": stderr}}
+        return {"content": summary, "code": code, "log": {"command": code, "output": stdout, "error": stderr}}
 
 
 _CODE_BLOCK_RE = re.compile(r"```(?:bash|sh|zsh|shell)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
