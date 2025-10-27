@@ -4,9 +4,93 @@ import asyncio
 import json
 import os
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
+
+AGENT_SYSTEM_PREFIX = "[AGENT_OUTPUT] "
+
+
+def ensure_agent_prefix(content: str) -> str:
+    text = content or ""
+    stripped = text.lstrip()
+    if stripped.startswith(AGENT_SYSTEM_PREFIX):
+        return text if text.startswith(AGENT_SYSTEM_PREFIX) else f"{AGENT_SYSTEM_PREFIX}{stripped[len(AGENT_SYSTEM_PREFIX):]}"
+    if text.startswith(AGENT_SYSTEM_PREFIX):
+        return text
+    return f"{AGENT_SYSTEM_PREFIX}{text}" if text else AGENT_SYSTEM_PREFIX.strip()
+
+
+def _stringify_content(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    return str(value)
+
+
+def prepare_messages(
+    messages: Sequence[Dict[str, Any]],
+    *,
+    drop_normal_system: bool,
+) -> Tuple[List[Dict[str, Any]], int]:
+    prepared: List[Dict[str, Any]] = []
+    normal_system_count = 0
+
+    for raw in messages or []:
+        if not isinstance(raw, dict):
+            continue
+        role_raw = str(raw.get("role") or "user").lower()
+        content = _stringify_content(raw.get("content", ""))
+        name = raw.get("name")
+
+        if role_raw == "agent":
+            entry: Dict[str, Any] = {"role": "system", "content": ensure_agent_prefix(content), "agent": True}
+            if isinstance(name, str) and name.strip():
+                entry["name"] = name.strip()[:64]
+            prepared.append(entry)
+            continue
+
+        if role_raw == "system":
+            is_agent = bool(raw.get("agent"))
+            if is_agent:
+                entry = {"role": "system", "content": ensure_agent_prefix(content), "agent": True}
+                if isinstance(name, str) and name.strip():
+                    entry["name"] = name.strip()[:64]
+                prepared.append(entry)
+            else:
+                normal_system_count += 1
+                if not drop_normal_system:
+                    entry = {"role": "system", "content": content}
+                    if isinstance(name, str) and name.strip():
+                        entry["name"] = name.strip()[:64]
+                    prepared.append(entry)
+            continue
+
+        if role_raw == "assistant":
+            entry = {"role": "assistant", "content": content}
+            if isinstance(name, str) and name.strip():
+                entry["name"] = name.strip()[:64]
+            tool_calls = raw.get("tool_calls")
+            if tool_calls:
+                entry["tool_calls"] = tool_calls
+            function_call = raw.get("function_call")
+            if function_call:
+                entry["function_call"] = function_call
+            prepared.append(entry)
+            continue
+
+        normalized_role = "user"
+        if role_raw == "developer":
+            normalized_role = "system"
+        entry = {"role": normalized_role, "content": content}
+        if isinstance(name, str) and name.strip():
+            entry["name"] = name.strip()[:64]
+        prepared.append(entry)
+
+    return prepared, normal_system_count
+
 
 _OPENAI_CHAT_FIELDS = {
     # Core chat completion parameters documented by OpenAI (2024-09)
@@ -133,14 +217,29 @@ class LLMClient:
         token_limiter: Optional[TokenLimiter] = None,
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
+        prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=bool(system))
+        if normal_system_count > 1:
+            print(
+                "[LLMClient] Multiple non-agent system messages detected; only the last should remain once the system prompt is applied.",
+                file=sys.stderr,
+            )
+        elif normal_system_count and not system:
+            print(
+                "[LLMClient] Using existing non-agent system message because no system prompt argument was provided.",
+                file=sys.stderr,
+            )
+
         payload_msgs: List[Dict[str, Any]] = []
         if system:
             payload_msgs.append({"role": "system", "content": system})
-        payload_msgs.extend([self._normalize_message(m) for m in messages])
+        for msg in prepared_msgs:
+            entry = dict(msg)
+            entry.pop("agent", None)
+            payload_msgs.append(entry)
 
-        print("\n")
-        print("payload_msgs: ", payload_msgs)
-        print()
+        #print("\n")
+        #print("payload_msgs: ", payload_msgs)
+        #print()
 
         payload = {
             "model": self.model,
@@ -185,9 +284,9 @@ class LLMClient:
             self.last_response = data
             content = self._extract_content(data)
 
-            print("\n")
-            print("content: ", content)
-            print()
+            #print("\n")
+            #print("content: ", content)
+            #print()
 
             usage_raw = data.get("usage") or {}
             usage: Dict[str, int] = {}
@@ -217,43 +316,6 @@ class LLMClient:
             )
             self._warned_filtered_kwargs = True
         return filtered
-
-    @staticmethod
-    def _normalize_message(message: Dict[str, Any]) -> Dict[str, Any]:
-        """Map internal message schema to OpenAI-compatible payload."""
-        role = (message or {}).get("role") or "user"
-        raw_content = (message or {}).get("content", "")
-        if isinstance(raw_content, (dict, list)):
-            try:
-                content = json.dumps(raw_content, ensure_ascii=False)
-            except TypeError:
-                content = str(raw_content)
-        else:
-            content = str(raw_content)
-        name = (message or {}).get("name")
-
-        role_map = {
-            "agent": "system",
-            "tool": "system",
-        }
-        normalized_role = role_map.get(role, role)
-        if normalized_role not in {"system", "assistant", "user", "tool", "function", "developer"}:
-            normalized_role = "user"
-
-        payload: Dict[str, Any] = {"role": normalized_role, "content": content}
-
-        if name and isinstance(name, str):
-            payload["name"] = name[:64]
-
-        if normalized_role == "assistant":
-            tool_calls = message.get("tool_calls")
-            if tool_calls:
-                payload["tool_calls"] = tool_calls
-            function_call = message.get("function_call")
-            if function_call:
-                payload["function_call"] = function_call
-
-        return payload
 
     @staticmethod
     def _extract_content(data: Dict[str, Any]) -> str:
