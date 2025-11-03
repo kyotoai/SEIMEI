@@ -1,13 +1,11 @@
 from __future__ import annotations
 
 import asyncio
-import json
 import re
 import subprocess
 from typing import Any, Dict, List, Optional, Sequence
 
 from seimei.agent import Agent, register
-from seimei.llm import format_agent_history
 from seimei.knowledge.utils import get_agent_knowledge
 
 _SAFE_DEFAULTS = [
@@ -141,11 +139,6 @@ async def _generate_command(
         return None
 
     chat_history = messages
-    #chat_history = _conversation_history(messages)
-    #if not chat_history:
-    #    chat_history = _fallback_chat_history(messages)
-    #    if not chat_history:
-    #        return None
 
     allowed_list = list(allowed) if allowed else []
     allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
@@ -212,74 +205,3 @@ def _last_user_message(messages: List[Dict[str, Any]]) -> str:
         if msg.get("role") == "user":
             return msg.get("content", "")
     return ""
-
-
-def _conversation_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    history: List[Dict[str, str]] = []
-    agent_buffer: List[Dict[str, Any]] = []
-
-    def flush_agent_buffer() -> None:
-        if not agent_buffer:
-            return
-        history.append({"role": "system", "content": format_agent_history(agent_buffer), "agent": True})
-        agent_buffer.clear()
-
-    for msg in messages:
-        role = (msg.get("role") or "").lower()
-        if role == "system":
-            flush_agent_buffer()
-            continue
-        content = msg.get("content", "")
-        if isinstance(content, (dict, list)):
-            content_str = json.dumps(content, ensure_ascii=False)
-        else:
-            content_str = str(content)
-        if role == "agent":
-            agent_buffer.append(msg)
-            continue
-        flush_agent_buffer()
-        if role == "assistant":
-            entry = {"role": "assistant", "content": content_str}
-        else:
-            entry = {"role": "user", "content": content_str}
-        history.append(entry)
-    flush_agent_buffer()
-    return history
-
-
-def _fallback_chat_history(messages: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    history: List[Dict[str, str]] = []
-    agent_buffer: List[Dict[str, Any]] = []
-
-    def flush_agent_buffer() -> None:
-        if not agent_buffer:
-            return
-        history.append({"role": "system", "content": format_agent_history(agent_buffer), "agent": True})
-        agent_buffer.clear()
-
-    for msg in messages:
-        role_raw = (msg.get("role") or "").lower()
-        is_agent = role_raw == "agent" or (role_raw == "system" and msg.get("agent"))
-        if is_agent:
-            agent_buffer.append(msg)
-            continue
-
-        flush_agent_buffer()
-
-        content = msg.get("content", "")
-        if isinstance(content, (dict, list)):
-            content_str = json.dumps(content, ensure_ascii=False)
-        else:
-            content_str = str(content)
-        if not content_str:
-            continue
-
-        if role_raw == "assistant":
-            history.append({"role": "assistant", "content": content_str})
-        elif role_raw == "system":
-            history.append({"role": "system", "content": content_str})
-        else:
-            history.append({"role": "user", "content": content_str})
-
-    flush_agent_buffer()
-    return history

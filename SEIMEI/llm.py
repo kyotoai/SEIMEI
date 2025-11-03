@@ -8,8 +8,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
-AGENT_OUTPUT_SUFFIX = "Use AGENT OUTPUTS to answer the user's last question clearly and concisely."
-
 
 def _format_tag_block(tag: str, value: Any) -> List[str]:
     if value is None:
@@ -46,14 +44,7 @@ def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
 
         blocks.append("\n".join(block_lines).rstrip())
 
-    suffix = AGENT_OUTPUT_SUFFIX
-    if blocks:
-        return "\n\n".join(blocks + [suffix])
-    return suffix
-
-
-def ensure_agent_prefix(content: str) -> str:
-    return format_agent_history([{"content": content}])
+    return "\n\n".join(blocks)
 
 
 def _stringify_content(value: Any) -> str:
@@ -73,12 +64,25 @@ def prepare_messages(
     prepared: List[Dict[str, Any]] = []
     normal_system_count = 0
     agent_buffer: List[Dict[str, Any]] = []
+    last_user_idx: Optional[int] = None
 
     def flush_agent_buffer() -> None:
+        nonlocal last_user_idx
         if not agent_buffer:
             return
-        prepared.append({"role": "system", "content": format_agent_history(agent_buffer), "agent": True})
+        history_text = format_agent_history(agent_buffer)
         agent_buffer.clear()
+        if not history_text:
+            return
+        section = f"Here's the analysis you made so far:\n{history_text}"
+        if last_user_idx is not None:
+            existing = prepared[last_user_idx].get("content", "")
+            existing_str = _stringify_content(existing)
+            joiner = "\n\n" if existing_str else ""
+            prepared[last_user_idx]["content"] = f"{existing_str}{joiner}{section}"
+        else:
+            prepared.append({"role": "user", "content": section})
+            last_user_idx = len(prepared) - 1
 
     for raw in messages or []:
         if not isinstance(raw, dict):
@@ -129,6 +133,8 @@ def prepare_messages(
         if isinstance(name, str) and name.strip():
             entry["name"] = name.strip()[:64]
         prepared.append(entry)
+        if normalized_role == "user":
+            last_user_idx = len(prepared) - 1
 
     flush_agent_buffer()
 
@@ -228,6 +234,11 @@ class LLMClient:
         max_concurrent_requests: Optional[int] = None,
         **kwargs: Any,
     ) -> None:
+        
+        from dotenv import load_dotenv
+        from pathlib import Path
+        load_dotenv(dotenv_path=Path(__name__).resolve().parent / ".env")
+
         api_key_env = kwargs.pop("api_key_env", None)
         extra_headers = kwargs.pop("extra_headers", None) or {}
 
@@ -280,9 +291,9 @@ class LLMClient:
             entry.pop("agent", None)
             payload_msgs.append(entry)
 
-        #print("\n")
-        #print("payload_msgs: ", payload_msgs)
-        #print()
+        print("\n")
+        print("payload_msgs: ", payload_msgs)
+        print()
 
         payload = {
             "model": self.model,
@@ -327,9 +338,9 @@ class LLMClient:
             self.last_response = data
             content = self._extract_content(data)
 
-            #print("\n")
-            #print("content: ", content)
-            #print()
+            print("\n")
+            print("content: ", content)
+            print()
 
             usage_raw = data.get("usage") or {}
             usage: Dict[str, int] = {}
