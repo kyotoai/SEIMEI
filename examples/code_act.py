@@ -8,13 +8,13 @@ async def demo_code_act():
         allow_code_exec=True,
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
-        max_tokens_per_question=10000,
+        max_tokens_per_question=40000,
     )
 
     result = await orchestrator(
         messages=[
             {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
-            {"role": "user", "content": "Analyze the files inside the current folder"},
+            {"role": "user", "content": "Analyze the files inside the current folder and tell me what's SEIMEI."},
         ]
     )
     # The code_act reply is stored as the last agent message
