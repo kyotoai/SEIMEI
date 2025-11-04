@@ -29,4 +29,3 @@ Rules:
 - Keep `knowledge` under 220 characters.
 - Include 1–3 short `tags` per entry.
 - Do not output anything outside the JSON array.
-

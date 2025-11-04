@@ -16,9 +16,11 @@ To derive knowledge from past runs:
 python -m seimei.knowledge.generate_from_runs run-20251103-203312-0338e318 --save-file-path seimei_knowledge/knowledge.csv
 ```
 The command above inspects the run artefacts stored under `seimei_runs/<run_id>` and appends new rows to the target CSV.
+By default it loads the retrospection prompt at `seimei/knowledge/prompts/generate_from_runs.md`, but you can pass
+`--prompt seimei/knowledge/prompts/excel.md` (or another custom file) for task-specific guidance.
 
 ## Useful options
-- `--prompt`: Point to a different prompt template.
+- `--prompt`: Point to a different prompt template (defaults to `seimei/knowledge/prompts/generate_from_runs.md`).
 - `--agents`: Supply a custom list of agent identifiers.
 - `--model`, `--base-url`, `--api-key`: Override LLM connection settings (defaults match `seimei.llm.LLMClient`).
 - `--system`: Provide a custom system prompt for the LLM call.

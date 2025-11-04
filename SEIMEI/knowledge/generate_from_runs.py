@@ -12,6 +12,7 @@ from seimei.llm import format_agent_history, LLMClient
 
 _JSON_BLOCK_RE = re.compile(r"```json\s*(.*?)```", re.DOTALL | re.IGNORECASE)
 _MAX_SNIPPET_CHARS = 420
+DEFAULT_RUN_PROMPT = Path(__file__).with_name("prompts") / "generate_from_runs.md"
 
 
 def parse_args() -> argparse.Namespace:
@@ -38,12 +39,11 @@ def parse_args() -> argparse.Namespace:
         default=Path("seimei_runs"),
         help="Directory that stores run artefacts (default: seimei_runs).",
     )
-    default_prompt = Path(__file__).with_name("generate_from_runs.md")
     parser.add_argument(
         "--prompt",
         type=Path,
-        default=default_prompt,
-        help=f"Prompt template to load (default: {default_prompt}).",
+        default=DEFAULT_RUN_PROMPT,
+        help=f"Prompt template to load (default: {DEFAULT_RUN_PROMPT}).",
     )
     parser.add_argument(
         "--model",
@@ -86,7 +86,10 @@ async def generate_knowledge_from_runs(
     if not run_ids:
         raise ValueError("No run IDs provided.")
 
-    prompt_path = prompt_path or Path(__file__).with_name("generate_from_runs.md")
+    if prompt_path is None:
+        prompt_path = DEFAULT_RUN_PROMPT
+    else:
+        prompt_path = Path(prompt_path)
     prompt_template = prompt_path.read_text(encoding="utf-8")
 
     run_context_text = _build_run_context(
@@ -388,4 +391,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

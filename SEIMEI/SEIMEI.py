@@ -23,7 +23,7 @@ agent = agent_module
 from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
-from .knowledge import generate_knowledge_from_runs, load_knowledge
+from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_knowledge
 
 try:
     # Optional: your reward-model-based search (rmsearch) package
@@ -409,6 +409,7 @@ class seimei:
         run_name: Optional[str] = None,
         generate_knowledge: bool = False,
         save_knowledge_path: Optional[str] = None,
+        knowledge_prompt_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
@@ -457,6 +458,9 @@ class seimei:
         final_agent_output: Optional[str] = None
         final_agent_name: Optional[str] = None
         knowledge_generation_result: Optional[Dict[str, Any]] = None
+        resolved_prompt_path: Optional[Path] = None
+        if knowledge_prompt_path is not None:
+            resolved_prompt_path = Path(knowledge_prompt_path).expanduser()
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
@@ -650,6 +654,7 @@ class seimei:
                     run_ids=[Path(run_dir).name],
                     save_file_path=target_path,
                     runs_dir=Path(self.log_dir),
+                    prompt_path=resolved_prompt_path or DEFAULT_RUN_PROMPT,
                     messages=msg_history,
                     model=self.llm.model,
                     base_url=self.llm.base_url,
