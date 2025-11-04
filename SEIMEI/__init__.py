@@ -1,6 +1,7 @@
 from .seimei import seimei
 from .llm import LLMClient
 from .agent import Agent, register, get_agent_subclasses
+from .knowledge import DEFAULT_RUN_PROMPT
 from . import agents
 
 __all__ = [
@@ -10,4 +11,5 @@ __all__ = [
     "register",
     "get_agent_subclasses",
     "agents",
+    "DEFAULT_RUN_PROMPT",
 ]
