@@ -38,7 +38,7 @@
 <h3 align="center">SEIMEI</h3>
 
   <p align="center">
-    Search-Engine-Integrated Multi-Expert Inference (SEIMEI)
+    Search-Enhanced Interface for Multi-Expertise Integration (SEIMEI)
   </p>
   <p align="center">
     SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!

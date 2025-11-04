@@ -141,8 +141,8 @@ async def _generate_command(
     allowed_list = list(allowed) if allowed else []
     allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
 
-    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act")
-    knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
+    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act", max_items=3)
+    knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries)
 
     system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",

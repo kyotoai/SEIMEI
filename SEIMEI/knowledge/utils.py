@@ -2,11 +2,16 @@ from __future__ import annotations
 
 import csv
 import json
+import random
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Union
 
 
-def get_agent_knowledge(shared_ctx: Dict[str, Any], agent_name: str) -> List[Dict[str, Any]]:
+def get_agent_knowledge(
+    shared_ctx: Dict[str, Any],
+    agent_name: str,
+    max_items: Optional[int] = 3,
+) -> List[Dict[str, Any]]:
     """Fetch normalized knowledge entries for an agent (including wildcard entries)."""
     knowledge = shared_ctx.get("knowledge")
     if not isinstance(knowledge, dict):
@@ -24,7 +29,28 @@ def get_agent_knowledge(shared_ctx: Dict[str, Any], agent_name: str) -> List[Dic
             if not normalized.get("id"):
                 normalized["id"] = f"{agent_name}_{len(collected)}"
             collected.append(normalized)
-    return collected
+    if not collected:
+        return []
+
+    limit = _sanitize_limit(max_items, default=3)
+    rm_kwargs = shared_ctx.get("rm_kwargs") or {}
+    rmsearch_fn = shared_ctx.get("rmsearch_fn")
+
+    if rm_kwargs and callable(rmsearch_fn):
+        ranked = _rank_with_rmsearch(
+            rmsearch_fn=rmsearch_fn,
+            rm_kwargs=rm_kwargs,
+            agent_name=agent_name,
+            candidates=collected,
+            limit=limit,
+            shared_ctx=shared_ctx,
+        )
+        if ranked:
+            return ranked
+
+    if limit >= len(collected):
+        return list(collected)
+    return random.sample(collected, k=limit)
 
 
 def _iter_entries(value: Any) -> Iterator[Dict[str, Any]]:
@@ -196,6 +222,84 @@ def _parse_tags(raw: Any) -> List[str]:
     if isinstance(raw, Iterable):
         return [str(item).strip() for item in raw if str(item).strip()]
     return []
+
+
+def _sanitize_limit(max_items: Optional[int], default: int) -> int:
+    if max_items is None:
+        return max(int(default), 1)
+    try:
+        value = int(max_items)
+    except (TypeError, ValueError):
+        return max(int(default), 1)
+    return max(value, 1)
+
+
+def _rank_with_rmsearch(
+    rmsearch_fn: Any,
+    rm_kwargs: Dict[str, Any],
+    agent_name: str,
+    candidates: List[Dict[str, Any]],
+    limit: int,
+    shared_ctx: Dict[str, Any],
+) -> List[Dict[str, Any]]:
+    if not candidates or not callable(rmsearch_fn):
+        return []
+
+    keys: List[Dict[str, Any]] = []
+    for entry in candidates:
+        text = entry.get("text") or ""
+        if not text:
+            continue
+        key_entry = {
+            "key": text,
+            "knowledge": entry,
+            "knowledge_id": entry.get("id"),
+            "tags": entry.get("tags", []),
+        }
+        keys.append(key_entry)
+    if not keys:
+        return []
+
+    query = _build_knowledge_query(shared_ctx, agent_name)
+    key_map = {item["key"]: item["knowledge"] for item in keys if item.get("key")}
+    try:
+        result = rmsearch_fn(
+            query=query,
+            keys=list(keys),
+            k_key=min(limit, len(keys)),
+            **rm_kwargs,
+        )
+    except Exception:
+        return []
+
+    ranked_entries: List[Dict[str, Any]] = []
+    if isinstance(result, list):
+        for item in result:
+            if not isinstance(item, dict):
+                continue
+            key = item.get("key")
+            payload = item.get("payload")
+            entry: Optional[Dict[str, Any]] = None
+            if isinstance(payload, dict) and payload.get("knowledge"):
+                entry = payload["knowledge"]
+            elif key in key_map:
+                entry = key_map[key]
+            if entry and entry not in ranked_entries:
+                ranked_entries.append(entry)
+            if len(ranked_entries) >= limit:
+                break
+    return ranked_entries[:limit]
+
+
+def _build_knowledge_query(shared_ctx: Dict[str, Any], agent_name: str) -> str:
+    override = shared_ctx.get("knowledge_query")
+    if isinstance(override, dict):
+        value = override.get(agent_name) or override.get("*")
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    elif isinstance(override, str) and override.strip():
+        return override.strip()
+    return f"Relevant knowledge for agent '{agent_name}'"
 
 
 __all__ = ["get_agent_knowledge", "load_knowledge"]

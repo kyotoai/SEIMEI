@@ -12,7 +12,7 @@ with io.open(os.path.join(here, 'requirements.txt'), encoding='utf-8') as f:
 setup(
     name='SEIMEI',
     version='0.1.0',
-    description='Search-Engine-Integrated Multi-Expert Inference',
+    description='Search-Enhanced Interface for Multi-Expertise Integration',
     #long_description=io.open(os.path.join(here, 'README.md'), encoding='utf-8').read(),
     #long_description_content_type='text/markdown',
     author='Kentaro Seki',
