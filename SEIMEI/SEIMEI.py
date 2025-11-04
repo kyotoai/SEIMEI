@@ -11,6 +11,7 @@ import time
 import types
 import uuid
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # Re-export convenience (allows: `from seimei import seimei, llm, agent`)
@@ -22,7 +23,7 @@ agent = agent_module
 from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
-from .knowledge import load_knowledge
+from .knowledge import generate_knowledge_from_runs, load_knowledge
 
 try:
     # Optional: your reward-model-based search (rmsearch) package
@@ -139,6 +140,22 @@ class seimei:
         except Exception as exc:  # pragma: no cover
             print(f"[seimei] Failed to load knowledge from {path}: {exc}", file=sys.stderr)
         return {}
+
+    def _refresh_knowledge_store(self, path: Path) -> None:
+        try:
+            store = load_knowledge(path)
+        except Exception as exc:  # pragma: no cover - best-effort reload
+            print(f"[seimei] Failed to reload knowledge from {path}: {exc}", file=sys.stderr)
+            return
+        self.knowledge_path = str(path)
+        self.knowledge_store = store
+        self.shared_ctx["knowledge"] = store
+
+    def _resolve_knowledge_output_path(self, override: Optional[str]) -> Path:
+        candidate = override or self.knowledge_path
+        if candidate:
+            return Path(candidate).expanduser()
+        return Path("seimei_knowledge") / "knowledge.csv"
 
     # -------------------------- Shared search --------------------------
 
@@ -390,6 +407,8 @@ class seimei:
         stop_when: Optional[Callable[[List[Dict[str, Any]]], bool]] = None,
         return_usage: bool = True,
         run_name: Optional[str] = None,
+        generate_knowledge: bool = False,
+        knowledge_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
@@ -437,6 +456,7 @@ class seimei:
         token_limit_error: Optional[TokenLimitExceeded] = None
         final_agent_output: Optional[str] = None
         final_agent_name: Optional[str] = None
+        knowledge_generation_result: Optional[Dict[str, Any]] = None
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
@@ -623,7 +643,25 @@ class seimei:
             dataset_record["run_name"] = run_name
         self._append_dataset(dataset_record)
 
-        out = {"run_id": run_id, "output": answer, "msg_history": msg_history}
+        if generate_knowledge:
+            try:
+                target_path = self._resolve_knowledge_output_path(knowledge_path)
+                knowledge_generation_result = await generate_knowledge_from_runs(
+                    run_ids=[Path(run_dir).name],
+                    save_file_path=target_path,
+                    runs_dir=Path(self.log_dir),
+                    messages=msg_history,
+                    model=self.llm.model,
+                    base_url=self.llm.base_url,
+                    api_key=self.llm.api_key,
+                )
+                self._refresh_knowledge_store(target_path)
+            except Exception as exc:  # pragma: no cover - knowledge generation best effort
+                print(f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}", file=sys.stderr)
+
+        out: Dict[str, Any] = {"run_id": run_id, "output": answer, "msg_history": msg_history}
+        if knowledge_generation_result:
+            out["knowledge_result"] = knowledge_generation_result
         if return_usage:
             out["usage"] = usage_agg
         if run_name:
