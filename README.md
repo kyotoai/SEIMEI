@@ -350,7 +350,7 @@ Set `generate_knowledge=True` when calling the orchestrator to append run retros
 result = await orchestrator(
     messages=[{"role": "user", "content": "Find clever ways to speed up our ETL pipeline."}],
     generate_knowledge=True,
-    knowledge_path="seimei_knowledge/knowledge.csv",
+    save_knowledge_path="seimei_knowledge/knowledge.csv",
 )
 ```
 

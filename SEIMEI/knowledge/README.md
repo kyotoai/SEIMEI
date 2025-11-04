@@ -32,14 +32,14 @@ Each CSV row stores:
 The generated file can be loaded at runtime and injected into `shared_ctx["knowledge"]` for agents to consume.
 
 ## Using knowledge in SEIMEI
-- Instantiate the orchestrator with the `knowledge_path` argument:
+- Instantiate the orchestrator with the `save_knowledge_path` argument:
   ```python
   orchestrator = seimei(
       agent_config=[{"dir_path": "seimei/agents"}],
       llm_kwargs={"model": "gpt-4o-mini"},
-      knowledge_path="seimei_knowledge/knowledge.csv",
+      save_knowledge_path="seimei_knowledge/knowledge.csv",
   )
   ```
 - The file can be CSV, JSON, or JSONL. Entries are grouped by the `agent` field, with `*` acting as a wildcard shared by all agents.
 - At runtime the knowledge is available through `shared_ctx["knowledge"]`, and helper utilities (e.g., `get_agent_knowledge`) deliver normalized snippets to each agent.
-- When calling the orchestrator you can set `generate_knowledge=True` to append fresh insights from each run into `seimei_knowledge/knowledge.csv` (or a custom path via `knowledge_path`). The knowledge store is reloaded automatically after each append.
+- When calling the orchestrator you can set `generate_knowledge=True` to append fresh insights from each run into `seimei_knowledge/knowledge.csv` (or a custom path via `save_knowledge_path`). The knowledge store is reloaded automatically after each append.
