@@ -342,6 +342,20 @@ async def demo_web_search():
 asyncio.run(demo_web_search())
 ```
 
+### Automatic knowledge accumulation
+
+Set `generate_knowledge=True` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
+
+```python
+result = await orchestrator(
+    messages=[{"role": "user", "content": "Find clever ways to speed up our ETL pipeline."}],
+    generate_knowledge=True,
+    knowledge_path="seimei_knowledge/knowledge.csv",
+)
+```
+
+The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance.
+
 ### Using the OpenAI API backend
 
 SEIMEI can run entirely through the OpenAI API, which removes the requirement for a local GPU or vLLM runtime.

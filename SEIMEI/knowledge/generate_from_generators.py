@@ -24,11 +24,15 @@ def parse_args() -> argparse.Namespace:
         default=default_prompt,
         help=f"Path to the prompt template (default: {default_prompt})",
     )
+    default_output = Path("seimei_knowledge") / "knowledge.csv"
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path("knowledge.csv"),
-        help="Destination CSV file for generated knowledge (default: knowledge.csv in CWD).",
+        default=default_output,
+        help=(
+            "Destination CSV file for generated knowledge "
+            f"(default: {default_output})."
+        ),
     )
     parser.add_argument(
         "--agents",
@@ -142,9 +146,9 @@ def main() -> None:
     try:
         result = asyncio.run(_generate(args))
     except Exception as exc:
-        raise SystemExit(f"[generate.py] Failed: {exc}") from exc
+        raise SystemExit(f"[generate_from_generators] Failed: {exc}") from exc
     print(
-        f"[generate.py] Wrote {result['count']} knowledge entries to {result['output']}. "
+        f"[generate_from_generators] Wrote {result['count']} knowledge entries to {result['output']}. "
         f"Usage: {result['usage']}"
     )
 
