@@ -15,7 +15,9 @@ async def demo_code_act():
         messages=[
             {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
             {"role": "user", "content": "Analyze the files inside the current folder using python code and tell me what's SEIMEI."},
-        ]
+        ],
+        generate_knowledge=True,
+        knowledge_path="seimei_knowledge/knowledge.csv",
     )
     # The code_act reply is stored as the last agent message
     # print(result["msg_history"][-2]["content"])
