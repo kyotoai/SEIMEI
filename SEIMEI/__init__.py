@@ -1,4 +1,4 @@
-from .seimei import seimei
+from .SEIMEI import seimei
 from .llm import LLMClient
 from .agent import Agent, register, get_agent_subclasses
 from .knowledge import DEFAULT_RUN_PROMPT

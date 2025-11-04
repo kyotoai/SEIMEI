@@ -191,7 +191,7 @@ class seimei:
 
         limit = max(int(k), 1)
         key_map = {item.get("key"): item for item in keys if isinstance(item, dict) and item.get("key")}
-        conversation_text, focus_text = self._normalize_query_input(query)
+        _, conversation_text, focus_text = self._prepare_query_input(query)
         rm_query = focus_text or conversation_text
 
         if rmsearch_fn:
@@ -248,11 +248,9 @@ class seimei:
 
         context = context or {}
         reason_hint = context.get("reason_hint", "")
-        purpose = context.get("purpose", "selection")
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
-        history_messages = self._normalize_query_messages(query)
+        history_messages, _, focus_text = self._prepare_query_input(query)
         conversation_messages = self._convert_history_to_llm(history_messages)
-        _, focus_text = self._normalize_query_input(query)
         system_prompt = (
             "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
@@ -655,7 +653,6 @@ class seimei:
                     save_file_path=target_path,
                     runs_dir=Path(self.log_dir),
                     prompt_path=resolved_prompt_path or DEFAULT_RUN_PROMPT,
-                    messages=self._slim_messages_for_export(msg_history),
                     model=self.llm.model,
                     base_url=self.llm.base_url,
                     api_key=self.llm.api_key,
@@ -690,62 +687,68 @@ class seimei:
         return rows
 
     @staticmethod
-    def _deserialize_message_blob(blob: str) -> List[Dict[str, Any]]:
-        try:
-            data = json.loads(blob)
-            if isinstance(data, list):
-                return [item for item in data if isinstance(item, dict)]
-        except Exception:
-            return []
-        return []
-
-    @staticmethod
-    def _extract_last_user_content(messages: Sequence[Dict[str, Any]]) -> str:
-        for msg in reversed(messages):
-            if msg.get("role") == "user":
-                content = msg.get("content", "")
-                if isinstance(content, (dict, list)):
-                    try:
-                        return json.dumps(content, ensure_ascii=False)
-                    except TypeError:
-                        return str(content)
-                return str(content)
-        return ""
-
-    @staticmethod
-    def _normalize_query_messages(
+    def _coerce_messages(
         query: Union[str, Sequence[Dict[str, Any]]]
     ) -> List[Dict[str, Any]]:
         if isinstance(query, str):
-            parsed = seimei._deserialize_message_blob(query)
-            if parsed:
-                return parsed
+            try:
+                data = json.loads(query)
+                if isinstance(data, list):
+                    return [item for item in data if isinstance(item, dict)]
+            except Exception:
+                pass
             return [{"role": "user", "content": query}]
         if isinstance(query, Sequence):
             return [dict(m) for m in query if isinstance(m, dict)]
         return [{"role": "user", "content": str(query)}]
 
     @staticmethod
-    def _slim_messages_for_export(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        slimmed: List[Dict[str, Any]] = []
-        for msg in messages or []:
-            if not isinstance(msg, dict):
-                continue
-            role = str(msg.get("role", "") or "").strip() or "user"
-            content = msg.get("content", "")
-            if isinstance(content, (dict, list)):
+    def _prepare_query_input(
+        query: Union[str, Sequence[Dict[str, Any]]],
+        *,
+        max_messages: int = 8,
+        max_chars_per_message: int = 400,
+    ) -> Tuple[List[Dict[str, Any]], str, str]:
+        messages = seimei._coerce_messages(query)
+
+        def _stringify(value: Any) -> str:
+            if isinstance(value, (dict, list)):
                 try:
-                    content_str = json.dumps(content, ensure_ascii=False)
+                    return json.dumps(value, ensure_ascii=False)
                 except TypeError:
-                    content_str = str(content)
-            else:
-                content_str = str(content)
-            entry: Dict[str, Any] = {"role": role, "content": content_str}
-            name = msg.get("name")
-            if isinstance(name, str) and name.strip():
-                entry["name"] = name.strip()
-            slimmed.append(entry)
-        return slimmed
+                    return str(value)
+            return str(value)
+
+        focus = ""
+        for msg in reversed(messages):
+            if str(msg.get("role") or "").lower() == "user":
+                focus = _stringify(msg.get("content", ""))
+                if focus:
+                    break
+
+        label_map = {
+            "user": "User",
+            "assistant": "Assistant",
+            "agent": "Agent",
+            "system": "System",
+            "function": "Function",
+            "developer": "Developer",
+        }
+        lines: List[str] = []
+        for msg in list(messages)[-max_messages:]:
+            role_raw = (msg.get("role") or "").lower()
+            if role_raw == "system":
+                continue
+            role = label_map.get(role_raw, "Message")
+            snippet = _stringify(msg.get("content", "")).strip()
+            if len(snippet) > max_chars_per_message:
+                snippet = snippet[:max_chars_per_message].rstrip() + "..."
+            lines.append(f"{role}: {snippet}")
+
+        conversation = "\n".join(lines) if lines else ""
+        if not focus:
+            focus = conversation
+        return messages, conversation, focus
 
     @staticmethod
     def _convert_history_to_llm(
@@ -781,47 +784,3 @@ class seimei:
             return marker[:limit], True
         prefix = text[: limit - len(marker)].rstrip()
         return f"{prefix}{marker}", True
-
-    @staticmethod
-    def _normalize_query_input(
-        query: Union[str, Sequence[Dict[str, Any]]]
-    ) -> Tuple[str, str]:
-        messages = seimei._normalize_query_messages(query)
-        conversation = seimei._render_conversation(messages)
-        focus = seimei._extract_last_user_content(messages) or conversation
-        return conversation, focus
-
-    @staticmethod
-    def _render_conversation(
-        messages: Sequence[Dict[str, Any]],
-        *,
-        max_messages: int = 8,
-        max_chars_per_message: int = 400,
-    ) -> str:
-        label_map = {
-            "user": "User",
-            "assistant": "Assistant",
-            "agent": "Agent",
-            "system": "System",
-            "function": "Function",
-            "developer": "Developer",
-        }
-        lines: List[str] = []
-        for msg in list(messages)[-max_messages:]:
-            role_raw = (msg.get("role") or "").lower()
-            if role_raw == "system":
-                continue
-            role = label_map.get(role_raw, "Message")
-            content = msg.get("content", "")
-            if isinstance(content, (dict, list)):
-                try:
-                    snippet = json.dumps(content, ensure_ascii=False)
-                except TypeError:
-                    snippet = str(content)
-            else:
-                snippet = str(content)
-            snippet = snippet.strip()
-            if len(snippet) > max_chars_per_message:
-                snippet = snippet[:max_chars_per_message].rstrip() + "..."
-            lines.append(f"{role}: {snippet}")
-        return "\n".join(lines) if lines else ""
