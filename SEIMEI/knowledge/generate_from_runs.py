@@ -105,7 +105,6 @@ async def generate_knowledge_from_runs(
     response, usage = await client.chat(
         messages=[{"role": "user", "content": prompt_text}],
         system=system_prompt,
-        temperature=0,
     )
     knowledge_entries = _parse_response(response)
     _append_csv(knowledge_entries, save_file_path)
