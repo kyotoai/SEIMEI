@@ -28,21 +28,11 @@ def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
     for idx, msg in enumerate(agent_messages, start=1):
         block_lines: List[str] = []
         header = f"AGENT OUTPUT {idx}"
-        block_lines.append(header)
-
-        log = msg.get("log")
-        if isinstance(log, dict):
-            for key, value in log.items():
-                block_lines.extend(_format_tag_block(str(key), value))
-
-        for extra_key in ("code", "chosen_instructions"):
-            if extra_key in msg:
-                block_lines.extend(_format_tag_block(extra_key, msg.get(extra_key)))
-
         content = msg.get("content")
-        if content is not None:
-            block_lines.extend(_format_tag_block("content", content))
-
+        if content is None:
+            continue
+        block_lines.append(header)
+        block_lines.extend(_format_tag_block("content", content))
         blocks.append("\n".join(block_lines).rstrip())
 
     return "\n\n".join(blocks)
@@ -97,9 +87,6 @@ def prepare_messages(
             agent_entry: Dict[str, Any] = {"content": content}
             if isinstance(name, str) and name.strip():
                 agent_entry["name"] = name.strip()[:64]
-            for key in ("log", "code", "chosen_instructions"):
-                if key in raw:
-                    agent_entry[key] = raw[key]
             agent_buffer.append(agent_entry)
             continue
 
@@ -298,7 +285,8 @@ class LLMClient:
             payload_msgs.append({"role": "system", "content": system})
         for msg in prepared_msgs:
             entry = dict(msg)
-            entry.pop("agent", None)
+            for drop_key in ("agent", "log", "code", "chosen_instructions"):
+                entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)

@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence
 
 from seimei.agent import Agent, register
 from seimei.knowledge.utils import get_agent_knowledge
@@ -76,16 +76,20 @@ class code_act(Agent):
             return {"content": "Execution denied by approval callback.", "code": code}
         '''
 
+        normalized_code = _normalize_command(code)
+        if not normalized_code:
+            return {"content": "Unable to form a valid command from the request."}
+        code = normalized_code
+        python_heredoc = _parse_python_heredoc(code)
+
         try:
             loop = asyncio.get_event_loop()
             proc_out = await loop.run_in_executor(
                 None,
-                lambda: subprocess.run(
-                    code,
-                    shell=True,
-                    capture_output=True,
-                    text=True,
+                lambda: _run_command(
+                    code=code,
                     timeout=timeout,
+                    python_heredoc=python_heredoc,
                 ),
             )
         except subprocess.TimeoutExpired:
@@ -99,6 +103,15 @@ class code_act(Agent):
 
 
 _CMD_TAG_RE = re.compile(r"<cmd>(.*?)</cmd>", re.DOTALL | re.IGNORECASE)
+_PY_HEREDOC_HEADER_RE = re.compile(
+    r"^(python3?|python)(?:\s+(?P<dash>-))?\s*<<(?P<quote>['\"]?)(?P<tag>[A-Za-z0-9_]+)(?P=quote)\s*$"
+)
+
+
+class _PythonHeredoc(NamedTuple):
+    executable: str
+    script: str
+    has_dash: bool
 
 
 def _extract_tagged_command(text: str) -> Optional[str]:
@@ -113,6 +126,64 @@ def _extract_tagged_command(text: str) -> Optional[str]:
     return command or None
 
 
+def _parse_python_heredoc(command: str) -> Optional[_PythonHeredoc]:
+    if not command:
+        return None
+    lines = command.splitlines()
+    if not lines:
+        return None
+    header = lines[0].strip()
+    match = _PY_HEREDOC_HEADER_RE.match(header)
+    if not match:
+        return None
+    delimiter = match.group("tag")
+    executable = match.group(1)
+    script_lines: List[str] = []
+    closing_index: Optional[int] = None
+    for idx, line in enumerate(lines[1:], start=1):
+        if line.strip() == delimiter:
+            closing_index = idx
+            break
+        script_lines.append(line)
+    if closing_index is None:
+        return None
+    trailing_lines = lines[closing_index + 1 :]
+    if any(line.strip() for line in trailing_lines):
+        return None
+    script = "\n".join(script_lines)
+    has_dash = bool(match.group("dash"))
+    return _PythonHeredoc(executable=executable, script=script, has_dash=has_dash)
+
+
+def _run_command(
+    *,
+    code: str,
+    timeout: int,
+    python_heredoc: Optional[_PythonHeredoc],
+) -> subprocess.CompletedProcess[str]:
+    if python_heredoc:
+        args: List[str] = [python_heredoc.executable]
+        if python_heredoc.has_dash:
+            args.append("-")
+        script_input = python_heredoc.script
+        if script_input and not script_input.endswith("\n"):
+            script_input += "\n"
+        return subprocess.run(
+            args,
+            input=script_input,
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+        )
+    return subprocess.run(
+        code,
+        shell=True,
+        capture_output=True,
+        text=True,
+        timeout=timeout,
+    )
+
+
 def _normalize_command(command: str) -> str:
     cmd = (command or "").strip()
     if not cmd:
@@ -121,9 +192,12 @@ def _normalize_command(command: str) -> str:
     if "\n" in cmd:
         lines = cmd.splitlines()
         first_line = lines[0].strip()
-        body = "\n".join(lines[1:]).strip()
-        if first_line in {"python", "python3"} and body and "<<" not in first_line:
-            return f"{first_line} - <<'PY'\\n{body}\nPY"
+        body_lines = lines[1:]
+        if first_line in {"python", "python3"} and body_lines and "<<" not in first_line:
+            body = "\n".join(body_lines).lstrip("\n")
+            if body.strip():
+                return f"{first_line} - <<'PY'\n{body}\nPY"
+            return first_line
     return cmd
 
 

@@ -655,7 +655,7 @@ class seimei:
                     save_file_path=target_path,
                     runs_dir=Path(self.log_dir),
                     prompt_path=resolved_prompt_path or DEFAULT_RUN_PROMPT,
-                    messages=msg_history,
+                    messages=self._slim_messages_for_export(msg_history),
                     model=self.llm.model,
                     base_url=self.llm.base_url,
                     api_key=self.llm.api_key,
@@ -724,6 +724,28 @@ class seimei:
         if isinstance(query, Sequence):
             return [dict(m) for m in query if isinstance(m, dict)]
         return [{"role": "user", "content": str(query)}]
+
+    @staticmethod
+    def _slim_messages_for_export(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+        slimmed: List[Dict[str, Any]] = []
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role", "") or "").strip() or "user"
+            content = msg.get("content", "")
+            if isinstance(content, (dict, list)):
+                try:
+                    content_str = json.dumps(content, ensure_ascii=False)
+                except TypeError:
+                    content_str = str(content)
+            else:
+                content_str = str(content)
+            entry: Dict[str, Any] = {"role": role, "content": content_str}
+            name = msg.get("name")
+            if isinstance(name, str) and name.strip():
+                entry["name"] = name.strip()
+            slimmed.append(entry)
+        return slimmed
 
     @staticmethod
     def _convert_history_to_llm(
