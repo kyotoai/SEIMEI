@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import os
 import sys
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -194,15 +195,24 @@ class TokenLimiter:
         if not self.limit:
             return
         delta = self._extract_usage(usage)
+        if self.consumed + delta > self.limit:
+            raise TokenLimitExceeded(self.limit, self.consumed + delta, usage)
         self.consumed += delta
-        if self.consumed > self.limit:
-            raise TokenLimitExceeded(self.limit, self.consumed, usage)
 
     def ensure_available(self) -> None:
         if not self.limit:
             return
         if self.consumed >= self.limit:
             raise TokenLimitExceeded(self.limit, self.consumed, {"total_tokens": self.consumed})
+
+    def preview(self, upcoming: int, usage_hint: Optional[Dict[str, int]] = None) -> None:
+        if not self.limit:
+            return
+        upcoming_tokens = max(int(upcoming), 0)
+        projected = self.consumed + upcoming_tokens
+        if projected > self.limit:
+            hint = usage_hint or {"total_tokens": projected}
+            raise TokenLimitExceeded(self.limit, projected, hint)
 
     @staticmethod
     def _extract_usage(usage: Dict[str, int]) -> int:
@@ -291,6 +301,17 @@ class LLMClient:
             entry.pop("agent", None)
             payload_msgs.append(entry)
 
+        estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
+        if token_limiter:
+            token_limiter.ensure_available()
+            token_limiter.preview(
+                estimated_prompt_tokens,
+                {
+                    "total_tokens": token_limiter.consumed + estimated_prompt_tokens,
+                    "estimated_prompt_tokens": estimated_prompt_tokens,
+                },
+            )
+
         print("\n")
         print("payload_msgs: ", payload_msgs)
         print()
@@ -370,6 +391,27 @@ class LLMClient:
             )
             self._warned_filtered_kwargs = True
         return filtered
+
+    @staticmethod
+    def _estimate_prompt_tokens(messages: Sequence[Dict[str, Any]]) -> int:
+        total_chars = 0
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            content = msg.get("content", "")
+            if isinstance(content, (dict, list)):
+                try:
+                    rendered = json.dumps(content, ensure_ascii=False)
+                except TypeError:
+                    rendered = str(content)
+            else:
+                rendered = str(content)
+            total_chars += len(rendered)
+            role = msg.get("role")
+            if role:
+                total_chars += len(str(role))
+        estimated = math.ceil(total_chars / 4) if total_chars else 0
+        return max(estimated, len(messages))
 
     @staticmethod
     def _extract_content(data: Dict[str, Any]) -> str:

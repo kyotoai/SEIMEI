@@ -38,7 +38,7 @@ class seimei:
     calls the LLM, and writes a dataset for each run.
     """
 
-    AGENT_OUTPUT_LIMIT = 40000
+    AGENT_OUTPUT_LIMIT = 3000
 
     def __init__(
         self,

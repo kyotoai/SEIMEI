@@ -41,10 +41,13 @@ rmsearch/train/__pycache__/
 
 # notes
 notes
-seimei_runs
 
 # pytest
 .pytest_cache
 
 # experiment folders
 exp*
+
+# files created as seimei runs
+seimei_runs
+seimei_knowledge
