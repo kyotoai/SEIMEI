@@ -50,17 +50,18 @@ class code_act(Agent):
         allowed: Optional[Sequence[str]] = shared_ctx.get("allowed_commands") or _SAFE_DEFAULTS
         approve_cb = shared_ctx.get("approval_callback")
 
-        code = _extract_code(messages)
-        if not code:
-            code = await _generate_command(messages, shared_ctx, allowed)
+        
+        code = await _generate_command(messages, shared_ctx, allowed)
+
         if not code:
             return {
                 "content": (
                     "No executable command detected or generated. "
-                    "Provide a fenced code block like ```bash\\n<cmd>``` or a clear analysis request."
+                    "Provide a command wrapped in <cmd>...</cmd> or a clear analysis request."
                 )
             }
 
+        '''
         code = _normalize_command(code)
         if not code:
             return {"content": "Unable to form a valid command from the request."}
@@ -73,6 +74,7 @@ class code_act(Agent):
 
         if approve_cb and not approve_cb(code):
             return {"content": "Execution denied by approval callback.", "code": code}
+        '''
 
         try:
             loop = asyncio.get_event_loop()
@@ -96,23 +98,19 @@ class code_act(Agent):
         return {"content": summary, "code": code, "log": {"command": code, "output": stdout, "error": stderr}}
 
 
-_CODE_BLOCK_RE = re.compile(r"```(?:bash|sh|zsh|shell)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
-_PROMPT_LINE_RE = re.compile(r"^\$\s*(.*)$")
+_CMD_TAG_RE = re.compile(r"<cmd>(.*?)</cmd>", re.DOTALL | re.IGNORECASE)
 
 
-def _extract_code(messages: List[Dict[str, Any]]) -> Optional[str]:
-    for m in reversed(messages):
-        if m.get("role") != "user":
-            continue
-        text = m.get("content", "")
-        m1 = _CODE_BLOCK_RE.search(text)
-        if m1:
-            return m1.group(1).strip()
-        for line in text.splitlines():
-            m2 = _PROMPT_LINE_RE.match(line.strip())
-            if m2:
-                return m2.group(1).strip()
-    return None
+def _extract_tagged_command(text: str) -> Optional[str]:
+    if not text:
+        return None
+    last_match: Optional[re.Match[str]] = None
+    for match in _CMD_TAG_RE.finditer(text):
+        last_match = match
+    if not last_match:
+        return None
+    command = last_match.group(1).strip()
+    return command or None
 
 
 def _normalize_command(command: str) -> str:
@@ -125,7 +123,7 @@ def _normalize_command(command: str) -> str:
         first_line = lines[0].strip()
         body = "\n".join(lines[1:]).strip()
         if first_line in {"python", "python3"} and body and "<<" not in first_line:
-            return f"{first_line} - <<'PY'\n{body}\nPY"
+            return f"{first_line} - <<'PY'\\n{body}\nPY"
     return cmd
 
 
@@ -150,8 +148,8 @@ async def _generate_command(
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
         "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
-        "Reply with the command only. Do not add numbering, explanations, or the word 'None'.",
-        "Enclose the command in ```bash``` only if needed for parsing.",
+        "Wrap the command in `<cmd>` and `</cmd>`. Output nothing before or after the tags.",
+        "Ensure the command text inside `<cmd>` contains everything needed, including any heredoc markers.",
         "Produce the best shell command (single command) to satisfy the request. "
         "Treat user messages as instructions and tool messages as prior command outputs for context.",
     ]
@@ -166,42 +164,15 @@ async def _generate_command(
     except Exception:
         return None
 
-    return _extract_generated_command(response, allowed_list)
+    command = _extract_tagged_command(response)
 
-
-def _extract_generated_command(text: str, allowed: Sequence[str]) -> Optional[str]:
-    if not text:
+    '''
+    if not command:
         return None
-    match = _CODE_BLOCK_RE.search(text)
-    if match:
-        candidate = match.group(1).strip()
-        cleaned = _clean_candidate(candidate, allowed)
-        if cleaned:
-            return cleaned
-    for raw_line in text.splitlines():
-        line = raw_line.strip()
-        if not line:
-            continue
-        cleaned = _clean_candidate(line, allowed)
-        if cleaned:
-            return cleaned
-    return None
+    if allowed_list:
+        token = command.split()[0] if command.split() else ""
+        if token not in allowed_list:
+            return None
+    '''
 
-
-def _clean_candidate(line: str, allowed: Sequence[str]) -> Optional[str]:
-    if not line:
-        return None
-    normalized = re.sub(r"^\d+[\).\s]+", "", line).strip()
-    if not normalized or normalized.lower() in {"none", "n/a"}:
-        return None
-    token = normalized.split()[0]
-    if allowed and token not in allowed:
-        return None
-    return normalized if normalized else None
-
-
-def _last_user_message(messages: List[Dict[str, Any]]) -> str:
-    for msg in reversed(messages):
-        if msg.get("role") == "user":
-            return msg.get("content", "")
-    return ""
+    return command
