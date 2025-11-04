@@ -53,7 +53,7 @@ class seimei:
         approval_callback: Optional[Callable[[str], bool]] = None,
         agent_log_head_lines: int = 3,
         max_tokens_per_question: Optional[int] = None,
-        knowledge_path: Optional[str] = None,
+        load_knowledge_path: Optional[str] = None,
     ) -> None:
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -72,8 +72,8 @@ class seimei:
         self.allowed_commands = list(allowed_commands) if allowed_commands else None
         self.approval_callback = approval_callback
         self.agent_log_head_lines = max(int(agent_log_head_lines), 0)
-        self.knowledge_path = knowledge_path
-        self.knowledge_store = self._load_knowledge_store(knowledge_path)
+        self.load_knowledge_path = load_knowledge_path
+        self.knowledge_store = self._load_knowledge_store(load_knowledge_path)
 
         # Load agents
         self.agents: Dict[str, Agent] = {}
@@ -147,12 +147,12 @@ class seimei:
         except Exception as exc:  # pragma: no cover - best-effort reload
             print(f"[seimei] Failed to reload knowledge from {path}: {exc}", file=sys.stderr)
             return
-        self.knowledge_path = str(path)
+        self.load_knowledge_path = str(path)
         self.knowledge_store = store
         self.shared_ctx["knowledge"] = store
 
     def _resolve_knowledge_output_path(self, override: Optional[str]) -> Path:
-        candidate = override or self.knowledge_path
+        candidate = override or self.load_knowledge_path
         if candidate:
             return Path(candidate).expanduser()
         return Path("seimei_knowledge") / "knowledge.csv"
@@ -408,7 +408,7 @@ class seimei:
         return_usage: bool = True,
         run_name: Optional[str] = None,
         generate_knowledge: bool = False,
-        knowledge_path: Optional[str] = None,
+        save_knowledge_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
@@ -645,7 +645,7 @@ class seimei:
 
         if generate_knowledge:
             try:
-                target_path = self._resolve_knowledge_output_path(knowledge_path)
+                target_path = self._resolve_knowledge_output_path(save_knowledge_path)
                 knowledge_generation_result = await generate_knowledge_from_runs(
                     run_ids=[Path(run_dir).name],
                     save_file_path=target_path,
