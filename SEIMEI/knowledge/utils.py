@@ -33,10 +33,14 @@ def get_agent_knowledge(
         return []
 
     limit = _sanitize_limit(max_items, default=3)
-    rm_kwargs = shared_ctx.get("rm_kwargs") or {}
+    rm_kwargs = dict(shared_ctx.get("rm_kwargs") or {})
     rmsearch_fn = shared_ctx.get("rmsearch_fn")
 
-    if rm_kwargs and callable(rmsearch_fn):
+    if (
+        rm_kwargs
+        and callable(rmsearch_fn)
+        and rm_kwargs.get("knowledge_search", True)
+    ):
         ranked = _rank_with_rmsearch(
             rmsearch_fn=rmsearch_fn,
             rm_kwargs=rm_kwargs,
@@ -44,6 +48,7 @@ def get_agent_knowledge(
             candidates=collected,
             limit=limit,
             shared_ctx=shared_ctx,
+            purpose="knowledge_search",
         )
         if ranked:
             return ranked
@@ -241,6 +246,7 @@ def _rank_with_rmsearch(
     candidates: List[Dict[str, Any]],
     limit: int,
     shared_ctx: Dict[str, Any],
+    purpose: str,
 ) -> List[Dict[str, Any]]:
     if not candidates or not callable(rmsearch_fn):
         return []
@@ -267,6 +273,7 @@ def _rank_with_rmsearch(
             query=query,
             keys=list(keys),
             k_key=min(limit, len(keys)),
+            purpose=purpose,
             **rm_kwargs,
         )
     except Exception:

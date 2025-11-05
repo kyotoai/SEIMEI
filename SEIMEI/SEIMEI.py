@@ -14,6 +14,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
+import requests
+
 # Re-export convenience (allows: `from seimei import seimei, llm, agent`)
 from . import llm as llm_module
 from . import agent as agent_module
@@ -24,13 +26,6 @@ from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
 from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_knowledge
-
-try:
-    # Optional: your reward-model-based search (rmsearch) package
-    from rmsearch import rmsearch as rmsearch_fn  # type: ignore
-except Exception:  # pragma: no cover
-    rmsearch_fn = None
-
 
 class seimei:
     """Main orchestrator.
@@ -62,9 +57,11 @@ class seimei:
         self.llm = LLMClient(**llm_kwargs)
 
         # Routing
-        self.rm_kwargs = rm_kwargs or {}
+        default_rm_settings = {"agent_routing": False, "knowledge_search": True}
+        provided_rm_kwargs = rm_kwargs or {}
+        self.rm_kwargs = {**default_rm_settings, **provided_rm_kwargs}
         self.max_steps = max_steps
-        self._rm_warned_missing_base_url = False
+        self._rm_warned_missing_url = False
         self.max_tokens_per_question = max_tokens_per_question
 
         # Safety for code_act
@@ -83,7 +80,7 @@ class seimei:
         self.shared_ctx = {
             "llm": self.llm,
             "rm_kwargs": self.rm_kwargs,
-            "rmsearch_fn": rmsearch_fn,
+            "rmsearch_fn": self._rmsearch,
             "allow_code_exec": self.allow_code_exec,
             "allowed_commands": self.allowed_commands,
             "approval_callback": self.approval_callback,
@@ -177,6 +174,188 @@ class seimei:
 
         return _search
 
+    @staticmethod
+    def _normalize_purpose(raw_purpose: Optional[str]) -> str:
+        if not raw_purpose:
+            return "knowledge_search"
+        value = str(raw_purpose).strip().lower()
+        if value == "agent_routing":
+            return "agent_routing"
+        return "knowledge_search"
+
+    def _should_use_rmsearch(self, purpose: str, cfg: Optional[Dict[str, Any]] = None) -> bool:
+        config = cfg or self.rm_kwargs
+        url = str(config.get("url") or "").strip()
+        if not url:
+            return False
+        if purpose == "agent_routing":
+            return bool(config.get("agent_routing", False))
+        return bool(config.get("knowledge_search", True))
+
+    def _rmsearch(
+        self,
+        *,
+        query: Union[str, Sequence[Dict[str, Any]]],
+        keys: Sequence[Dict[str, Any]],
+        k_key: Optional[int] = None,
+        k: Optional[int] = None,
+        purpose: Optional[str] = None,
+        timeout: Optional[float] = None,
+        **overrides: Any,
+    ) -> List[Dict[str, Any]]:
+        config = dict(self.rm_kwargs)
+        config.update(overrides)
+        effective_purpose = self._normalize_purpose(purpose or config.get("purpose"))
+
+        if not self._should_use_rmsearch(effective_purpose, config):
+            return []
+
+        url = str(config.get("url") or "").strip()
+        if not url:
+            if not self._rm_warned_missing_url:
+                print("[seimei] rmsearch skipped: rm_kwargs['url'] not set.", file=sys.stderr)
+                self._rm_warned_missing_url = True
+            return []
+
+        limit_raw = k_key if k_key is not None else k if k is not None else config.get("k")
+        try:
+            limit = max(int(limit_raw), 1)
+        except (TypeError, ValueError):
+            limit = 1
+
+        final_timeout = timeout if timeout is not None else config.get("timeout")
+
+        try:
+            return self._rmsearch_http(
+                url=url,
+                query=query,
+                keys=keys,
+                limit=limit,
+                purpose=effective_purpose,
+                timeout=final_timeout,
+            )
+        except Exception as exc:
+            print(f"[seimei] rmsearch request failed: {exc}", file=sys.stderr)
+            return []
+
+    def _rmsearch_http(
+        self,
+        *,
+        url: str,
+        query: Union[str, Sequence[Dict[str, Any]]],
+        keys: Sequence[Dict[str, Any]],
+        limit: int,
+        purpose: str,
+        timeout: Optional[float],
+    ) -> List[Dict[str, Any]]:
+        serialized_query = self._format_rmsearch_query(query)
+        key_payload, index_map, text_map = self._format_rmsearch_keys(keys)
+        if not key_payload:
+            return []
+
+        payload: Dict[str, Any] = {
+            "queries": [serialized_query],
+            "keys": key_payload,
+            "k": limit,
+        }
+        if purpose:
+            payload["purpose"] = purpose
+
+        response = requests.post(url, json=payload, timeout=timeout or 10)
+        response.raise_for_status()
+        try:
+            data = response.json()
+        except ValueError as exc:
+            raise RuntimeError(f"Invalid JSON from RMSearch: {exc}") from exc
+
+        return self._parse_rmsearch_response(
+            data=data,
+            limit=limit,
+            index_map=index_map,
+            text_map=text_map,
+        )
+
+    @staticmethod
+    def _format_rmsearch_query(query: Union[str, Sequence[Dict[str, Any]]]) -> Union[str, Dict[str, Any]]:
+        if isinstance(query, str):
+            stripped = query.strip()
+            return stripped or query
+        if isinstance(query, Sequence):
+            messages = [dict(m) for m in query if isinstance(m, dict)]
+            if messages:
+                return {"message": messages}
+        return str(query)
+
+    @staticmethod
+    def _format_rmsearch_keys(
+        keys: Sequence[Dict[str, Any]]
+    ) -> Tuple[List[str], Dict[int, Dict[str, Any]], Dict[str, Dict[str, Any]]]:
+        payload: List[str] = []
+        index_map: Dict[int, Dict[str, Any]] = {}
+        text_map: Dict[str, Dict[str, Any]] = {}
+        for item in keys:
+            if not isinstance(item, dict):
+                continue
+            key_text = str(item.get("key") or "").strip()
+            if not key_text:
+                continue
+            index_map[len(payload)] = item
+            payload.append(key_text)
+            text_map.setdefault(key_text, item)
+        return payload, index_map, text_map
+
+    @staticmethod
+    def _parse_rmsearch_response(
+        *,
+        data: Any,
+        limit: int,
+        index_map: Dict[int, Dict[str, Any]],
+        text_map: Dict[str, Dict[str, Any]],
+    ) -> List[Dict[str, Any]]:
+        records: List[Dict[str, Any]] = []
+        entries: Sequence[Any]
+        if isinstance(data, list):
+            entries = data
+        elif isinstance(data, dict):
+            entries = data.get("results") or data.get("queries") or []
+            if isinstance(entries, dict):
+                entries = [entries]
+            if not isinstance(entries, list):
+                entries = []
+        else:
+            return []
+
+        for entry in entries:
+            keys = []
+            if isinstance(entry, dict):
+                keys = entry.get("keys") or []
+            if not isinstance(keys, Sequence):
+                continue
+            for item in keys:
+                if not isinstance(item, dict):
+                    continue
+                key_idx = item.get("key_id")
+                key_text = item.get("key")
+                payload = None
+                if isinstance(key_idx, int) and key_idx in index_map:
+                    payload = index_map[key_idx]
+                elif isinstance(key_text, str) and key_text in text_map:
+                    payload = text_map[key_text]
+                if not payload:
+                    continue
+                result = {
+                    "key": payload.get("key"),
+                    "payload": payload,
+                    "score": item.get("relevance"),
+                    "source": "rmsearch",
+                }
+                if "reason" in item:
+                    result["reason"] = item["reason"]
+                records.append(result)
+                if len(records) >= limit:
+                    return records
+        return records[:limit]
+
     async def _search_with_backends(
         self,
         query: Union[str, Sequence[Dict[str, Any]]],
@@ -194,26 +373,21 @@ class seimei:
         _, conversation_text, focus_text = self._prepare_query_input(query)
         rm_query = focus_text or conversation_text
 
-        if rmsearch_fn:
-            base_url = self.rm_kwargs.get("base_url")
-            if base_url:
-                try:
-                    rm_result = rmsearch_fn(
-                        query=rm_query,
-                        keys=list(keys),
-                        k_key=limit,
-                        **self.rm_kwargs,
-                    )
-                    if asyncio.iscoroutine(rm_result):
-                        rm_result = await rm_result
-                    results = self._attach_payloads(rm_result or [], key_map)
-                    if results:
-                        return results[:limit]
-                except Exception as exc:
-                    print(f"[seimei] rmsearch selection failed: {exc}", file=sys.stderr)
-            elif not self._rm_warned_missing_base_url:
-                print("[seimei] rmsearch skipped: rm_kwargs['base_url'] not set.", file=sys.stderr)
-                self._rm_warned_missing_base_url = True
+        purpose = self._normalize_purpose((context or {}).get("purpose"))
+        try:
+            rm_result = self._rmsearch(
+                query=rm_query,
+                keys=list(keys),
+                k_key=limit,
+                purpose=purpose,
+            )
+            if asyncio.iscoroutine(rm_result):
+                rm_result = await rm_result
+            results = self._attach_payloads(rm_result or [], key_map)
+            if results:
+                return results[:limit]
+        except Exception as exc:
+            print(f"[seimei] rmsearch selection failed: {exc}", file=sys.stderr)
 
         return await self._llm_route_search(
             query=query,
