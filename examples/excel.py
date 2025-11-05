@@ -5,6 +5,7 @@ async def demo_code_act():
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
         llm_kwargs={"model": "gpt-5-nano"},
+        rm_kwargs={"url": "https://epw2v5tnn5ajnw-8000.proxy.runpod.net/rmsearch", "agent_routing":False, "knowledge_search":True},
         allow_code_exec=True,
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
