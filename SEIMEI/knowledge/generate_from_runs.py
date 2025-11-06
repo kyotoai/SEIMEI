@@ -326,8 +326,9 @@ def _parse_response(text: str) -> List[Dict[str, Any]]:
             raise RuntimeError(f"Knowledge entry at index {idx} is not an object.")
         agent = str(item.get("agent", "")).strip()
         knowledge = str(item.get("knowledge", "")).strip()
+        condition = str(item.get("condition", "")).strip()
         tags = item.get("tags", [])
-        if not agent or not knowledge:
+        if not agent or not knowledge or not condition:
             raise RuntimeError(f"Knowledge entry at index {idx} missing agent or knowledge text.")
         if isinstance(tags, str):
             tags_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
@@ -335,7 +336,7 @@ def _parse_response(text: str) -> List[Dict[str, Any]]:
             tags_list = [str(tag).strip() for tag in tags if str(tag).strip()]
         else:
             tags_list = []
-        cleaned.append({"agent": agent, "knowledge": knowledge, "tags": tags_list})
+        cleaned.append({"agent": agent, "knowledge": knowledge, "condition": condition, "tags": tags_list})
     return cleaned
 
 
@@ -344,7 +345,7 @@ def _append_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
         return
     output_path = output_path.expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["agent", "knowledge", "tags"]
+    fieldnames = ["agent", "knowledge", "condition" "tags"]
 
     write_header = True
     if output_path.exists():
