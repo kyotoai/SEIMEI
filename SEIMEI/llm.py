@@ -244,10 +244,15 @@ class LLMClient:
         self.api_key = api_key or env_key or os.getenv("OPENAI_API_KEY")
 
         raw_base = (base_url or "").strip()
-        self.base_url = raw_base.rstrip("/") if raw_base else None
-        self.using_openai = not self.base_url or self.base_url.startswith("https://api.openai.com")
-        if not self.base_url:
-            self.base_url = "https://api.openai.com/v1"
+        trimmed = raw_base.rstrip("/") if raw_base else ""
+        if trimmed:
+            self.base_url = trimmed
+        else:
+            self.base_url = "https://api.openai.com/v1/chat/completions"
+        self.using_generate = self.base_url.endswith("/generate")
+        if not self.using_generate and not self.base_url.endswith("/chat/completions"):
+            self.base_url = f"{self.base_url.rstrip('/')}/chat/completions"
+        self.using_openai = "api.openai.com" in self.base_url
 
         self.timeout = timeout
         self.kwargs = kwargs
@@ -260,6 +265,36 @@ class LLMClient:
 
         # If using official API and no key, leave requests to fail with a clear error
         # If using local base_url, API key may not be required
+
+    def _build_generate_payload(self, prompt: str, params: Dict[str, Any]) -> Dict[str, Any]:
+        payload = {k: v for k, v in params.items() if v is not None}
+        payload["prompts"] = [prompt or ""]
+        if "model" not in payload and self.model:
+            payload["model"] = self.model
+        return payload
+
+    def _render_prompt(self, messages: Sequence[Dict[str, Any]]) -> str:
+        segments: List[str] = []
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role") or "user").lower()
+            raw_content = msg.get("content", "")
+            content = _stringify_content(raw_content).strip()
+            if not content:
+                continue
+            if role == "system":
+                prefix = "System"
+            elif role == "assistant":
+                prefix = "Assistant"
+            else:
+                prefix = "User"
+            segments.append(f"{prefix}: {content}")
+        if not segments:
+            return ""
+        if not segments[-1].startswith("Assistant:"):
+            segments.append("Assistant:")
+        return "\n".join(segments)
 
     async def chat(
         self,
@@ -304,19 +339,23 @@ class LLMClient:
         print("payload_msgs: ", payload_msgs)
         print()
 
-        payload = {
-            "model": self.model,
-            "messages": payload_msgs,
-        }
         extra_params = dict(self.kwargs)
         extra_params.update(call_kwargs)
-        payload.update(self._filter_payload(extra_params))
+        if self.using_generate:
+            prompt_text = self._render_prompt(payload_msgs)
+            payload = self._build_generate_payload(prompt_text, extra_params)
+        else:
+            payload = {
+                "model": self.model,
+                "messages": payload_msgs,
+            }
+            payload.update(self._filter_payload(extra_params))
 
         headers = {"Content-Type": "application/json", **self.extra_headers}
         if self.api_key and "Authorization" not in headers:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
-        url = f"{self.base_url}/chat/completions"
+        url = self.base_url
         if self.using_openai and not self.api_key:
             raise RuntimeError(
                 "LLMClient: OPENAI_API_KEY not set. Provide an API key or set `base_url` to a local server."
@@ -351,7 +390,10 @@ class LLMClient:
             print("content: ", content)
             print()
 
-            usage_raw = data.get("usage") or {}
+            if isinstance(data, dict):
+                usage_raw = data.get("usage") or {}
+            else:
+                usage_raw = {}
             usage: Dict[str, int] = {}
             for k, v in usage_raw.items():
                 try:
@@ -401,25 +443,65 @@ class LLMClient:
         estimated = math.ceil(total_chars / 4) if total_chars else 0
         return max(estimated, len(messages))
 
-    @staticmethod
-    def _extract_content(data: Dict[str, Any]) -> str:
-        choices = data.get("choices") or []
-        if not choices:
+    def _extract_content(self, data: Any) -> str:
+        if isinstance(data, list):
+            for item in data:
+                text = self._extract_content(item)
+                if text:
+                    return text
             return ""
-        choice = choices[0] or {}
-        message = choice.get("message") or {}
-        if isinstance(message, dict):
-            content = message.get("content")
-            if content:
-                return content
-            tool_calls = message.get("tool_calls")
-            if tool_calls:
-                try:
-                    return json.dumps({"tool_calls": tool_calls}, ensure_ascii=False)
-                except TypeError:
-                    return str(tool_calls)
-        text = choice.get("text")
-        if text:
+        if not isinstance(data, dict):
+            rendered = _stringify_content(data).strip()
+            return rendered if rendered else ""
+
+        choices = data.get("choices") or []
+        if choices:
+            choice = choices[0] or {}
+            message = choice.get("message") or {}
+            if isinstance(message, dict):
+                content = message.get("content")
+                if content:
+                    return content
+                tool_calls = message.get("tool_calls")
+                if tool_calls:
+                    try:
+                        return json.dumps({"tool_calls": tool_calls}, ensure_ascii=False)
+                    except TypeError:
+                        return str(tool_calls)
+            text = choice.get("text")
+            if text:
+                return text
+
+        if self.using_generate:
+            simple_keys = ("text", "generated_text", "output", "content", "result", "response")
+            for key in simple_keys:
+                value = data.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value
+            for key in ("results", "outputs", "data"):
+                container = data.get(key)
+                if isinstance(container, list) and container:
+                    first = container[0]
+                    if isinstance(first, dict):
+                        for inner_key in simple_keys:
+                            inner_val = first.get(inner_key)
+                            if isinstance(inner_val, str) and inner_val.strip():
+                                return inner_val
+                    elif isinstance(first, str) and first.strip():
+                        return first
+            # As a very last resort, try common nested dict structures.
+            message = data.get("message")
+            if isinstance(message, dict):
+                for key in ("content", "text", "output"):
+                    value = message.get(key)
+                    if isinstance(value, str) and value.strip():
+                        return value
+            # Fallback to serialized content when nothing else matches.
+            fallback = _stringify_content(data).strip()
+            if fallback:
+                return fallback
+        text = data.get("text")
+        if isinstance(text, str) and text.strip():
             return text
         return ""
 
