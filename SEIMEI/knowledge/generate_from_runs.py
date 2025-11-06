@@ -110,6 +110,16 @@ async def generate_knowledge_from_runs(
         system=system_prompt,
     )
     knowledge_entries = _parse_response(response)
+    run_identifier = (
+        str(run_ids[0])
+        if len(run_ids) == 1
+        else ",".join(str(run_id) for run_id in run_ids)
+    )
+    for entry in knowledge_entries:
+        if entry.get("run_id"):
+            entry["run_id"] = str(entry["run_id"])
+        else:
+            entry["run_id"] = run_identifier
     _append_csv(knowledge_entries, save_file_path)
     return {
         "usage": usage,
@@ -345,23 +355,75 @@ def _append_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
         return
     output_path = output_path.expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["agent", "knowledge", "condition" "tags"]
+    fieldnames = ["run_id", "agent", "knowledge", "condition", "tags"]
 
+    needs_overwrite = False
     write_header = True
+    existing_rows: List[Dict[str, Any]] = []
+
     if output_path.exists():
         try:
-            write_header = output_path.stat().st_size == 0
+            if output_path.stat().st_size > 0:
+                with output_path.open("r", encoding="utf-8", newline="") as fh:
+                    reader = csv.DictReader(fh)
+                    existing_header = reader.fieldnames
+                    if existing_header is None:
+                        write_header = True
+                    elif existing_header != fieldnames:
+                        needs_overwrite = True
+                        existing_rows = [
+                            row for row in reader if any(value for value in row.values())
+                        ]
+                    else:
+                        write_header = False
+            else:
+                write_header = True
         except OSError:
             write_header = False
+
+    def _prepare_row(raw: Dict[str, Any]) -> Dict[str, Any]:
+        serialized: Dict[str, Any] = {
+            "run_id": str(raw.get("run_id") or "").strip(),
+            "agent": str(raw.get("agent") or "").strip(),
+            "knowledge": str(raw.get("knowledge") or "").strip(),
+            "condition": str(raw.get("condition") or "").strip(),
+            "tags": "[]",
+        }
+        tags_value = raw.get("tags")
+        if isinstance(tags_value, str):
+            serialized["tags"] = tags_value if tags_value else "[]"
+        elif isinstance(tags_value, Iterable) and not isinstance(tags_value, (str, bytes)):
+            serialized["tags"] = json.dumps(
+                [str(tag).strip() for tag in tags_value if str(tag).strip()],
+                ensure_ascii=False,
+            )
+        else:
+            serialized["tags"] = "[]"
+        extras = raw.get(None)
+        if not serialized["condition"] and isinstance(extras, list) and extras:
+            serialized["condition"] = str(extras[0]).strip()
+            if len(extras) > 1 and serialized["tags"] == "[]":
+                fallback_tags = extras[1]
+                if isinstance(fallback_tags, str) and fallback_tags:
+                    serialized["tags"] = fallback_tags
+        return serialized
+
+    if needs_overwrite:
+        prepared_existing = [_prepare_row(row) for row in existing_rows]
+        prepared_new = [_prepare_row(row) for row in rows]
+        with output_path.open("w", encoding="utf-8", newline="") as fh:
+            writer = csv.DictWriter(fh, fieldnames=fieldnames)
+            writer.writeheader()
+            for row in prepared_existing + prepared_new:
+                writer.writerow(row)
+        return
 
     with output_path.open("a", encoding="utf-8", newline="") as fh:
         writer = csv.DictWriter(fh, fieldnames=fieldnames)
         if write_header:
             writer.writeheader()
         for row in rows:
-            serialized = dict(row)
-            serialized["tags"] = json.dumps(row.get("tags", []), ensure_ascii=False)
-            writer.writerow(serialized)
+            writer.writerow(_prepare_row(row))
 
 
 async def _generate(args: argparse.Namespace) -> Dict[str, Any]:
