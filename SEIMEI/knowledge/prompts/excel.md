@@ -6,8 +6,8 @@ guidance for analysing CSV files with lightweight Python commands.
 <<RUN_CONTEXT>>
 
 ## Task
-- Capture command strategies that surface *novel* numerical relationships (e.g., ratios,
-  growth, clustering, anomaly scores) hidden behind raw values.
+- Capture command strategies that surface *novel* numerical relationships (e.g., distribution,
+  growth, clustering, anomaly scores, hidden parameters, generator functions) hidden behind raw values.
 - Prefer focused computations that interpret what the numbers mean for the domain (trend
   explanations, correlations, thresholds) rather than just listing statistics.
 - Encourage concise commands whose outputs remain readable, yet deliver deep insights
@@ -22,15 +22,17 @@ Return a JSON array, for example:
 [
   {
     "agent": "code_act",
-    "knowledge": "Example guidance here.",
+    "knowledge": "Your guidance here.",
+    "condition": "Condition to use the knowledge. Ex. 'When user asks some deep question'",
     "tags": ["csv", "low_tokens"]
   }
 ]
 ```
 
 Rules:
-- Use lowercase agent identifiers (typically `code_act` for command execution guidance).
-- Keep each `knowledge` field under 220 characters; emphasise concrete commands or prompt
+- Use lowercase agent identifiers (typically `code_act` for command execution guidance). 
+- Keep each `knowledge` field under 5 sentences; emphasise concrete commands or prompt
   fragments the agent can reuse.
+- Describe in which condition the knowledge should be used in `condition` field.
 - Include 1–3 short `tags` that capture themes such as `csv`, `profiling`, or `low_tokens`.
 - Output only the JSON array—no commentary or markdown outside the code block above.
