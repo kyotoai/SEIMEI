@@ -9,6 +9,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
 
+from .logging_utils import LogColors, colorize
+
 
 def _format_tag_block(tag: str, value: Any) -> List[str]:
     if value is None:
@@ -306,12 +308,18 @@ class LLMClient:
         prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=bool(system))
         if normal_system_count > 1:
             print(
-                "[LLMClient] Multiple non-agent system messages detected; only the last should remain once the system prompt is applied.",
+                colorize(
+                    "[LLMClient] Multiple non-agent system messages detected; only the last should remain once the system prompt is applied.",
+                    LogColors.RED,
+                ),
                 file=sys.stderr,
             )
         elif normal_system_count and not system:
             print(
-                "[LLMClient] Using existing non-agent system message because no system prompt argument was provided.",
+                colorize(
+                    "[LLMClient] Using existing non-agent system message because no system prompt argument was provided.",
+                    LogColors.RED,
+                ),
                 file=sys.stderr,
             )
 
@@ -408,7 +416,10 @@ class LLMClient:
         dropped = set(params.keys()) - set(filtered.keys())
         if dropped and not self._warned_filtered_kwargs:
             print(
-                f"[LLMClient] Ignoring unsupported OpenAI parameters: {sorted(dropped)}",
+                colorize(
+                    f"[LLMClient] Ignoring unsupported OpenAI parameters: {sorted(dropped)}",
+                    LogColors.RED,
+                ),
                 file=sys.stderr,
             )
             self._warned_filtered_kwargs = True
