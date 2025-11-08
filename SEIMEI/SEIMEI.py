@@ -26,6 +26,13 @@ from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
 from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_knowledge
+from .logging_utils import LogColors, colorize, supports_color
+
+STEP_TITLE_COLOR = LogColors.GREEN
+LOG_BLOCK_COLOR = LogColors.CYAN
+ANSWER_BLOCK_COLOR = LogColors.BOLD_MAGENTA
+ERROR_COLOR = LogColors.RED
+KNOWLEDGE_COLOR = LogColors.YELLOW
 
 class seimei:
     """Main orchestrator.
@@ -105,7 +112,10 @@ class seimei:
                 inst = cls()
                 self.agents[inst.name] = inst
             except Exception as e:
-                print(f"[seimei] Failed to instantiate agent {cls}: {e}", file=sys.stderr)
+                print(
+                    colorize(f"[seimei] Failed to instantiate agent {cls}: {e}", ERROR_COLOR),
+                    file=sys.stderr,
+                )
 
     def _load_agents_from_dir(self, path: str) -> None:
         if not os.path.isdir(path):
@@ -133,16 +143,16 @@ class seimei:
             print(f"[seimei] Knowledge loaded from {path} ({sum(len(v) for v in store.values())} entries)")
             return store
         except FileNotFoundError as exc:
-            print(f"[seimei] Knowledge file not found: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] Knowledge file not found: {exc}", ERROR_COLOR), file=sys.stderr)
         except Exception as exc:  # pragma: no cover
-            print(f"[seimei] Failed to load knowledge from {path}: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] Failed to load knowledge from {path}: {exc}", ERROR_COLOR), file=sys.stderr)
         return {}
 
     def _refresh_knowledge_store(self, path: Path) -> None:
         try:
             store = load_knowledge(path)
         except Exception as exc:  # pragma: no cover - best-effort reload
-            print(f"[seimei] Failed to reload knowledge from {path}: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] Failed to reload knowledge from {path}: {exc}", ERROR_COLOR), file=sys.stderr)
             return
         self.load_knowledge_path = str(path)
         self.knowledge_store = store
@@ -213,7 +223,7 @@ class seimei:
         url = str(config.get("url") or "").strip()
         if not url:
             if not self._rm_warned_missing_url:
-                print("[seimei] rmsearch skipped: rm_kwargs['url'] not set.", file=sys.stderr)
+                print(colorize("[seimei] rmsearch skipped: rm_kwargs['url'] not set.", ERROR_COLOR), file=sys.stderr)
                 self._rm_warned_missing_url = True
             return []
 
@@ -235,7 +245,7 @@ class seimei:
                 timeout=final_timeout,
             )
         except Exception as exc:
-            print(f"[seimei] rmsearch request failed: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] rmsearch request failed: {exc}", ERROR_COLOR), file=sys.stderr)
             return []
 
     def _rmsearch_http(
@@ -387,7 +397,7 @@ class seimei:
             if results:
                 return results[:limit]
         except Exception as exc:
-            print(f"[seimei] rmsearch selection failed: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] rmsearch selection failed: {exc}", ERROR_COLOR), file=sys.stderr)
 
         return await self._llm_route_search(
             query=query,
@@ -446,7 +456,7 @@ class seimei:
                 system=system_prompt,
             )
         except Exception as exc:
-            print(f"[seimei] LLM routing failed: {exc}", file=sys.stderr)
+            print(colorize(f"[seimei] LLM routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
             return [
                 {"key": item["key"], "payload": item, "source": "llm-fallback", "score": None}
                 for item in candidates[:k]
@@ -531,7 +541,7 @@ class seimei:
                     if agent_name in self.agents:
                         return self.agents[agent_name]
             except Exception as exc:
-                print(f"[seimei] search-based routing failed: {exc}", file=sys.stderr)
+                print(colorize(f"[seimei] search-based routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
 
         # Fallback heuristic based on the most recent user turn
         last_user = None
@@ -587,21 +597,7 @@ class seimei:
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
         run_label = (run_name or "").strip()
         log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
-        use_color = bool(
-            getattr(sys.stdout, "isatty", lambda: False)()
-            or getattr(sys.stderr, "isatty", lambda: False)()
-        )
-        ANSI_RESET = "\033[0m"
-        STEP_TITLE_COLOR = "\033[92m"
-        LOG_BLOCK_COLOR = "\033[96m"
-        ANSWER_BLOCK_COLOR = "\033[1m\033[95m"
-        ERROR_COLOR = "\033[91m"
-        KNOWLEDGE_COLOR = "\033[93m"
-
-        def colorize(text: str, color_code: Optional[str] = None) -> str:
-            if not (use_color and color_code):
-                return text
-            return f"{color_code}{text}{ANSI_RESET}"
+        color_enabled = supports_color()
 
         run_id = str(uuid.uuid4())
         run_dir = self._make_run_dirs(run_id)
@@ -626,9 +622,9 @@ class seimei:
                     continue
                 text = str(value).strip("\n")
                 lines = text.splitlines() if text else [""]
-                print(colorize(f"    <{label}>", block_color))
+                print(colorize(f"    <{label}>", block_color, enable=color_enabled))
                 for line in lines:
-                    print(colorize(f"        {line}", block_color))
+                    print(colorize(f"        {line}", block_color, enable=color_enabled))
                 printed_any = True
             if printed_any:
                 print()
@@ -666,7 +662,7 @@ class seimei:
                 break
 
             step_label = f"{log_prefix} Step {step_idx}"
-            print(colorize(f"{step_label}: Running {agent_obj.name} agent", STEP_TITLE_COLOR))
+            print(colorize(f"{step_label}: Running {agent_obj.name} agent", STEP_TITLE_COLOR, enable=color_enabled))
 
             try:
                 step_res = await agent_obj(
@@ -681,6 +677,7 @@ class seimei:
                         f"{log_prefix} !! Token limit exceeded by agent {agent_obj.name}: "
                         f"limit={err.limit}, consumed={err.consumed}",
                         ERROR_COLOR,
+                        enable=color_enabled,
                     )
                 )
                 step_res = {
@@ -717,7 +714,7 @@ class seimei:
                 "time": time.time(),
             })
 
-            print(colorize(f"{step_label}: Done {agent_obj.name} agent", STEP_TITLE_COLOR))
+            print(colorize(f"{step_label}: Done {agent_obj.name} agent", STEP_TITLE_COLOR, enable=color_enabled))
 
             content = step_res.get("content", "")
             log_data = step_res.get("log", None)
@@ -760,7 +757,13 @@ class seimei:
                 usage = {}
                 msg_history.append({"role": "assistant", "content": answer})
                 if final_agent_name:
-                    print(colorize(f"{log_prefix} Final output provided by {final_agent_name} agent", STEP_TITLE_COLOR))
+                    print(
+                        colorize(
+                            f"{log_prefix} Final output provided by {final_agent_name} agent",
+                            STEP_TITLE_COLOR,
+                            enable=color_enabled,
+                        )
+                    )
             else:
                 try:
                     answer, usage = await run_llm.chat(messages=msg_history, system=system)
@@ -772,6 +775,7 @@ class seimei:
                             f"{log_prefix} !! Token limit exceeded during final response: "
                             f"limit={err.limit}, consumed={err.consumed}",
                             ERROR_COLOR,
+                            enable=color_enabled,
                         )
                     )
                     answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
@@ -852,6 +856,7 @@ class seimei:
                 colorize(
                     f"{log_prefix} Knowledge generation: starting (target={target_path})",
                     KNOWLEDGE_COLOR,
+                    enable=color_enabled,
                 )
             )
             try:
@@ -872,6 +877,7 @@ class seimei:
                         f"{log_prefix} Knowledge generation: completed "
                         f"(entries={added_display}, saved_to={target_path})",
                         KNOWLEDGE_COLOR,
+                        enable=color_enabled,
                     )
                 )
             except Exception as exc:  # pragma: no cover - knowledge generation best effort
@@ -879,6 +885,7 @@ class seimei:
                     colorize(
                         f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}",
                         ERROR_COLOR,
+                        enable=color_enabled,
                     ),
                     file=sys.stderr,
                 )

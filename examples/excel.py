@@ -10,7 +10,7 @@ async def demo_code_act():
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
         max_tokens_per_question=20000,
-        #load_knowledge_path="seimei_knowledge/excel.csv",
+        load_knowledge_path="seimei_knowledge/excel.csv",
     )
 
     result = await orchestrator(
@@ -19,8 +19,8 @@ async def demo_code_act():
             {"role": "user", "content": "Analyze exp1/csv/ecommerce_orders_001.csv inside and see some features in the csv file."},
         ],
         generate_knowledge=True,
-        #save_knowledge_path="seimei_knowledge/excel.csv",
-        #knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
+        save_knowledge_path="seimei_knowledge/excel.csv",
+        knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
     )
     # The code_act reply is stored as the last agent message
     # print(result["msg_history"][-2]["content"])
