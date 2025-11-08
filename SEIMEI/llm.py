@@ -335,10 +335,6 @@ class LLMClient:
                 },
             )
 
-        print("\n")
-        print("payload_msgs: ", payload_msgs)
-        print()
-
         extra_params = dict(self.kwargs)
         extra_params.update(call_kwargs)
         if self.using_generate:
@@ -385,10 +381,6 @@ class LLMClient:
             data = resp.json()
             self.last_response = data
             content = self._extract_content(data)
-
-            print("\n")
-            print("content: ", content)
-            print()
 
             if isinstance(data, dict):
                 usage_raw = data.get("usage") or {}
