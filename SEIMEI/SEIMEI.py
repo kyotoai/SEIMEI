@@ -140,7 +140,7 @@ class seimei:
             return {}
         try:
             store = load_knowledge(path)
-            print(f"[seimei] Knowledge loaded from {path} ({sum(len(v) for v in store.values())} entries)")
+            print(colorize(f"[seimei] Knowledge loaded from {path} ({sum(len(v) for v in store.values())} entries)", STEP_TITLE_COLOR))
             return store
         except FileNotFoundError as exc:
             print(colorize(f"[seimei] Knowledge file not found: {exc}", ERROR_COLOR), file=sys.stderr)
