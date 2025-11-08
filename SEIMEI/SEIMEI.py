@@ -587,6 +587,21 @@ class seimei:
         msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
         run_label = (run_name or "").strip()
         log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
+        use_color = bool(
+            getattr(sys.stdout, "isatty", lambda: False)()
+            or getattr(sys.stderr, "isatty", lambda: False)()
+        )
+        ANSI_RESET = "\033[0m"
+        STEP_TITLE_COLOR = "\033[92m"
+        LOG_BLOCK_COLOR = "\033[96m"
+        ANSWER_BLOCK_COLOR = "\033[1m\033[95m"
+        ERROR_COLOR = "\033[91m"
+        KNOWLEDGE_COLOR = "\033[93m"
+
+        def colorize(text: str, color_code: Optional[str] = None) -> str:
+            if not (use_color and color_code):
+                return text
+            return f"{color_code}{text}{ANSI_RESET}"
 
         run_id = str(uuid.uuid4())
         run_dir = self._make_run_dirs(run_id)
@@ -597,17 +612,23 @@ class seimei:
             with open(steps_path, "a", encoding="utf-8") as f:
                 f.write(json.dumps(step, ensure_ascii=False) + "\n")
 
-        def log_step_blocks(blocks: Dict[str, Optional[str]]) -> None:
+        def log_step_blocks(
+            blocks: Dict[str, Optional[str]],
+            *,
+            agent_name: Optional[str] = None,
+        ) -> None:
             printed_any = False
-            for label in blocks:
-                value = blocks[label]
+            normalized_agent = (agent_name or "").lower()
+            is_answer_agent = normalized_agent.endswith("answer")
+            block_color = ANSWER_BLOCK_COLOR if is_answer_agent else LOG_BLOCK_COLOR
+            for label, value in blocks.items():
                 if value is None:
                     continue
                 text = str(value).strip("\n")
                 lines = text.splitlines() if text else [""]
-                print(f"    <{label}>")
+                print(colorize(f"    <{label}>", block_color))
                 for line in lines:
-                    print(f"        {line}")
+                    print(colorize(f"        {line}", block_color))
                 printed_any = True
             if printed_any:
                 print()
@@ -645,7 +666,7 @@ class seimei:
                 break
 
             step_label = f"{log_prefix} Step {step_idx}"
-            print(f"{step_label}: Running {agent_obj.name} agent")
+            print(colorize(f"{step_label}: Running {agent_obj.name} agent", STEP_TITLE_COLOR))
 
             try:
                 step_res = await agent_obj(
@@ -656,8 +677,11 @@ class seimei:
                 token_limit_hit = True
                 token_limit_error = err
                 print(
-                    f"{log_prefix} !! Token limit exceeded by agent {agent_obj.name}: "
-                    f"limit={err.limit}, consumed={err.consumed}"
+                    colorize(
+                        f"{log_prefix} !! Token limit exceeded by agent {agent_obj.name}: "
+                        f"limit={err.limit}, consumed={err.consumed}",
+                        ERROR_COLOR,
+                    )
                 )
                 step_res = {
                     "content": f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens.",
@@ -693,7 +717,7 @@ class seimei:
                 "time": time.time(),
             })
 
-            print(f"{step_label}: Done {agent_obj.name} agent")
+            print(colorize(f"{step_label}: Done {agent_obj.name} agent", STEP_TITLE_COLOR))
 
             content = step_res.get("content", "")
             log_data = step_res.get("log", None)
@@ -716,7 +740,7 @@ class seimei:
                 if output_text:
                     blocks["output"] = output_text
 
-            log_step_blocks(blocks)
+            log_step_blocks(blocks, agent_name=agent_obj.name)
 
             # Optional termination predicate
             if stop_when and stop_when(msg_history):
@@ -736,7 +760,7 @@ class seimei:
                 usage = {}
                 msg_history.append({"role": "assistant", "content": answer})
                 if final_agent_name:
-                    print(f"{log_prefix} Final output provided by {final_agent_name} agent")
+                    print(colorize(f"{log_prefix} Final output provided by {final_agent_name} agent", STEP_TITLE_COLOR))
             else:
                 try:
                     answer, usage = await run_llm.chat(messages=msg_history, system=system)
@@ -744,8 +768,11 @@ class seimei:
                     token_limit_hit = True
                     token_limit_error = err
                     print(
-                        f"{log_prefix} !! Token limit exceeded during final response: "
-                        f"limit={err.limit}, consumed={err.consumed}"
+                        colorize(
+                            f"{log_prefix} !! Token limit exceeded during final response: "
+                            f"limit={err.limit}, consumed={err.consumed}",
+                            ERROR_COLOR,
+                        )
                     )
                     answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
                     usage = {}
@@ -820,8 +847,14 @@ class seimei:
         self._append_dataset(dataset_record)
 
         if generate_knowledge:
+            target_path = self._resolve_knowledge_output_path(save_knowledge_path)
+            print(
+                colorize(
+                    f"{log_prefix} Knowledge generation: starting (target={target_path})",
+                    KNOWLEDGE_COLOR,
+                )
+            )
             try:
-                target_path = self._resolve_knowledge_output_path(save_knowledge_path)
                 knowledge_generation_result = await generate_knowledge_from_runs(
                     run_ids=[Path(run_dir).name],
                     save_file_path=target_path,
@@ -832,8 +865,23 @@ class seimei:
                     api_key=self.llm.api_key,
                 )
                 self._refresh_knowledge_store(target_path)
+                added = knowledge_generation_result.get("count")
+                added_display = added if added is not None else 0
+                print(
+                    colorize(
+                        f"{log_prefix} Knowledge generation: completed "
+                        f"(entries={added_display}, saved_to={target_path})",
+                        KNOWLEDGE_COLOR,
+                    )
+                )
             except Exception as exc:  # pragma: no cover - knowledge generation best effort
-                print(f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}", file=sys.stderr)
+                print(
+                    colorize(
+                        f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}",
+                        ERROR_COLOR,
+                    ),
+                    file=sys.stderr,
+                )
 
         out: Dict[str, Any] = {"run_id": run_id, "output": answer, "msg_history": msg_history}
         if knowledge_generation_result:

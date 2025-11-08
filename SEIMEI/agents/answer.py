@@ -93,7 +93,7 @@ class answer(Agent):
         log_data = {
             "user_input": user_question,
             "seimei_output": final_answer,
-            "sources": findings,
+            #"sources": findings,
         }
         if knowledge_entries:
             log_data["knowledge_used"] = [item.get("text") for item in knowledge_entries[:8]]
