@@ -466,7 +466,7 @@ class seimei:
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation.\n"
-            "You must run think agent several times before you provide your answer. Also, after you get 2, 3 agent outputs, you must select answer agent to finish your inference."
+            "You must rank think at the top when you don't have at least 4, 5 agent output. After you get 6, 7 agent outputs, you must rank answer agent high to finish your inference."
         )
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
