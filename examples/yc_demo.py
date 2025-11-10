@@ -9,7 +9,7 @@ async def demo_code_act():
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=30000,
-        #load_knowledge_path="seimei_knowledge/yc_demo_knowledge2.csv",
+        load_knowledge_path="seimei_knowledge/yc_demo_knowledge2.csv",
     )
 
     result = await orchestrator(
