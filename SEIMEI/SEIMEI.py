@@ -449,6 +449,7 @@ class seimei:
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
+            "Try to think longer if the problem is difficult and answer quickly if not."
         )
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
@@ -648,6 +649,7 @@ class seimei:
         run_shared_ctx["llm"] = run_llm
         search_fn = self._make_search_fn(run_llm)
         run_shared_ctx["search"] = search_fn
+        self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
         token_limit_hit = False
         token_limit_error: Optional[TokenLimitExceeded] = None
@@ -662,6 +664,8 @@ class seimei:
         step_idx = 0
         while step_idx < self.max_steps:
             step_idx += 1
+
+            self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Decide which agent to run
             agent_obj = await self._select_next_agent(msg_history, search_fn)
@@ -712,6 +716,7 @@ class seimei:
                 if k in step_res:
                     agent_msg[k] = step_res[k]
             msg_history.append(agent_msg)
+            self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Persist step
             write_step({
@@ -1020,3 +1025,149 @@ class seimei:
             return marker[:limit], True
         prefix = text[: limit - len(marker)].rstrip()
         return f"{prefix}{marker}", True
+
+    def _update_shared_knowledge_query(self, shared_ctx: Dict[str, Any], messages: Sequence[Dict[str, Any]]) -> None:
+        if not isinstance(shared_ctx, dict):
+            return
+        query_block = self._build_knowledge_query_block(messages)
+        if query_block:
+            shared_ctx["knowledge_query"] = query_block
+        else:
+            shared_ctx.pop("knowledge_query", None)
+
+    def _build_knowledge_query_block(
+        self,
+        messages: Sequence[Dict[str, Any]],
+        *,
+        max_agent_steps: int = 4,
+        max_agent_chars: int = 800,
+        max_knowledge_per_step: int = 3,
+        max_knowledge_chars: int = 200,
+    ) -> str:
+        normalized = seimei._coerce_messages(messages)
+        _, conversation_text, focus_text = self._prepare_query_input(normalized)
+        user_query = (focus_text or conversation_text or "").strip()
+
+        agent_entries: List[Dict[str, Any]] = []
+        agent_idx = 0
+        for msg in normalized:
+            if str(msg.get("role") or "").lower() != "agent":
+                continue
+            agent_idx += 1
+            label = f"step{agent_idx}"
+            content = self._shorten_for_query(self._stringify_for_query(msg.get("content", "")), max_agent_chars)
+            knowledge_cues = self._extract_knowledge_cues(msg, max_knowledge_per_step, max_knowledge_chars)
+            agent_entries.append({"label": label, "content": content, "knowledge": knowledge_cues})
+        recent_entries = agent_entries[-max(int(max_agent_steps), 1):]
+
+        sections: List[str] = []
+        sections.append(f"User query:\n{user_query or '[missing user query]'}")
+
+        findings_lines: List[str] = []
+        for entry in recent_entries:
+            content = entry.get("content") or ""
+            if not content:
+                continue
+            findings_lines.append(entry["label"])
+            findings_lines.append(content)
+            findings_lines.append("")
+        findings_block = "\n".join(findings_lines).strip()
+        if findings_block:
+            sections.append("Recent agent findings:\n" + findings_block)
+
+        knowledge_lines: List[str] = []
+        for entry in recent_entries:
+            cues: List[str] = entry.get("knowledge") or []
+            if not cues:
+                continue
+            knowledge_lines.append(entry["label"])
+            for cue in cues:
+                knowledge_lines.append(f"- {cue}")
+            knowledge_lines.append("")
+        knowledge_block = "\n".join(knowledge_lines).strip()
+        if knowledge_block:
+            sections.append("Selected knowledge cues:\n" + knowledge_block)
+
+        return "\n\n".join(section for section in sections if section).strip()
+
+    def _extract_knowledge_cues(
+        self,
+        message: Dict[str, Any],
+        limit: int,
+        max_chars: int,
+    ) -> List[str]:
+        cues: List[str] = []
+        sources: List[Any] = []
+        log_data = message.get("log")
+        if isinstance(log_data, dict):
+            for key in ("knowledge", "knowledge_used", "chosen_knowledge"):
+                raw = log_data.get(key)
+                if raw is not None:
+                    sources.append(raw)
+        for key in ("chosen_knowledge",):
+            raw = message.get(key)
+            if raw is not None:
+                sources.append(raw)
+
+        for raw in sources:
+            for text in self._coerce_knowledge_texts(raw, max_chars):
+                if text:
+                    cues.append(text)
+                if len(cues) >= limit:
+                    return cues[:limit]
+        return cues[:limit]
+
+    @staticmethod
+    def _coerce_knowledge_texts(value: Any, max_chars: int) -> List[str]:
+        texts: List[str] = []
+        if value is None:
+            return texts
+        if isinstance(value, str):
+            snippet = seimei._shorten_for_query(value, max_chars)
+            if snippet:
+                texts.append(snippet)
+            return texts
+        if isinstance(value, dict):
+            snippet = seimei._shorten_for_query(seimei._stringify_knowledge_dict(value), max_chars)
+            if snippet:
+                texts.append(snippet)
+            return texts
+        if isinstance(value, (list, tuple, set)):
+            for item in value:
+                texts.extend(seimei._coerce_knowledge_texts(item, max_chars))
+            return texts
+        snippet = seimei._shorten_for_query(str(value), max_chars)
+        if snippet:
+            texts.append(snippet)
+        return texts
+
+    @staticmethod
+    def _stringify_for_query(value: Any) -> str:
+        if value is None:
+            return ""
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                return str(value)
+        return str(value)
+
+    @staticmethod
+    def _shorten_for_query(text: str, limit: int) -> str:
+        snippet = (text or "").strip()
+        if not snippet:
+            return ""
+        if limit > 0 and len(snippet) > limit:
+            return snippet[:limit].rstrip() + "..."
+        return snippet
+
+    @staticmethod
+    def _stringify_knowledge_dict(data: Dict[str, Any]) -> str:
+        for key in ("text", "knowledge", "key", "content", "summary"):
+            value = data.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip()
+        try:
+            return json.dumps(data, ensure_ascii=False)
+        except TypeError:
+            return str(data)
