@@ -23,6 +23,8 @@ the user so future `think` agents can reason with the user's real constraints.
   (hardware specs, data access rules, collaboration habits, review cadence).
 - Mention constraints even if they blocked the run; note mitigations the user
   will accept.
+- When a fact is pivotal to success, include the literal marker `[IMPORTANT FACT]`
+  inside the knowledge text (use sparingly for high-impact constraints only).
 - Keep each sentence under 220 characters and make it immediately actionable for
   future reasoning.
 
@@ -34,7 +36,7 @@ the user so future `think` agents can reason with the user's real constraints.
 [
   {
     "agent": "think",
-    "knowledge": "The user only deploys 3D U-Net (~40M params) so plans must keep memory under 16GB and avoid alternative models.",
+    "knowledge": "[IMPORTANT FACT] The user only deploys 3D U-Net (~40M params) so plans must keep memory under 16GB and avoid alternative models.",
     "tags": ["constraints", "model"]
   }
 ]

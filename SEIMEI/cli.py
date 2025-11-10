@@ -36,14 +36,17 @@ DEFAULT_AGENT_CONFIG: List[Dict[str, Any]] = [
 DEFAULT_LLM_KWARGS: Dict[str, Any] = {
     "model": "gpt-5-mini",
 }
-DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch", "agent_routing":False, "knowledge_search":True}
+
+# rmsearch: https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch
+# emnbed: https://si3trdzr984v57-8000.proxy.runpod.net/embed
+DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://si3trdzr984v57-8000.proxy.runpod.net/embed", "agent_routing":False, "knowledge_search":True}
 DEFAULT_MAX_STEPS = 12
 DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
 DEFAULT_ALLOWED_COMMANDS: Optional[Sequence[str]] = None
 DEFAULT_MAX_TOKENS_PER_QUESTION = 40_000
-DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge3.csv"
-DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge3_output.csv"
+DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge4.csv"
+DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge4_output.csv"
 DEFAULT_KNOWLEDGE_PROMPT_PATH = "seimei/knowledge/prompts/user_intent_alignment3.md"
 DEFAULT_GENERATE_KNOWLEDGE = True
 DEFAULT_LOG_DIR = "./seimei_runs"

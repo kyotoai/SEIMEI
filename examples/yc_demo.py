@@ -15,7 +15,7 @@ async def demo_code_act():
     result = await orchestrator(
         messages=[
             {"role": "system", "content": "You are a helpful assistant. Think deeply about the user's instruction and provide answer."},
-            {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project."},
+            {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
         #generate_knowledge=True,
         #save_knowledge_path="seimei_knowledge/excel.csv",
