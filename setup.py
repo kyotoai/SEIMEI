@@ -28,7 +28,7 @@ setup(
     ],
     entry_points={
         'console_scripts': [
-            'my-tool = my_package.cli:main',
+            'seimei = seimei.cli:main',
         ],
     },
 )

@@ -342,6 +342,18 @@ async def demo_web_search():
 asyncio.run(demo_web_search())
 ```
 
+### CLI Chat
+
+Prefer to experiment directly from the terminal? Install SEIMEI (`pip install -e .` inside this repo) and run:
+
+```bash
+seimei
+```
+
+The CLI spins up the same orchestrator configuration shown above (code-act agent, `gpt-5-nano`, code execution enabled) and keeps knowledge loading/saving turned on by default (`seimei_knowledge/excel.csv` with prompt `seimei/knowledge/prompts/excel.md`). Every turn streams the agent logs live, clears them once an answer is ready, and redraws the transcript so you see a clean **you → SEIMEI** exchange.
+
+All defaults (model, agent file, knowledge paths, banners, limits, etc.) sit at the top of `seimei/cli.py`, so you can tweak them without touching the CLI logic. Flags such as `--model`, `--knowledge-file`, or `--no-knowledge` are also available if you prefer overriding values at runtime.
+
 ### Automatic knowledge accumulation
 
 Set `generate_knowledge=True` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
