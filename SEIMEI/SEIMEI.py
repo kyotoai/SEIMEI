@@ -41,7 +41,7 @@ class seimei:
     calls the LLM, and writes a dataset for each run.
     """
 
-    AGENT_OUTPUT_LIMIT = 5000
+    AGENT_OUTPUT_LIMIT = 8000
 
     def __init__(
         self,
@@ -238,9 +238,9 @@ class seimei:
 
         final_timeout = timeout if timeout is not None else config.get("timeout")
 
-        print()
-        print("--- rmsearch 1 ---")
-        print("query: ", query)
+        #print()
+        #print("--- rmsearch 1 ---")
+        #print("query: ", query)
 
         try:
             return self._rmsearch_http(
@@ -270,9 +270,9 @@ class seimei:
         if not key_payload:
             return []
         
-        print()
-        print("--- rmsearch 2 ---")
-        print("serialized_query: ", serialized_query)
+        #print()
+        #print("--- rmsearch 2 ---")
+        #print("serialized_query: ", serialized_query)
 
         payload: Dict[str, Any] = {
             "queries": [serialized_query],
@@ -465,7 +465,7 @@ class seimei:
             '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
-            f"Select up to {k} candidates most relevant to the conversation."
+            f"Select up to {k} candidates most relevant to the conversation.\n"
             "You must run think agent several times before you provide your answer. Also, after you get 2, 3 agent outputs, you must select answer agent to finish your inference."
         )
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."

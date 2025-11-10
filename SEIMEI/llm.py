@@ -306,6 +306,7 @@ class LLMClient:
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
         prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=bool(system))
+        print("normal_system_count: ")
         if normal_system_count > 1:
             print(
                 colorize(
@@ -393,8 +394,8 @@ class LLMClient:
             self.last_response = data
             content = self._extract_content(data)
 
-            print()
-            print("content: ", content)
+            #print()
+            #print("content: ", content)
 
             if isinstance(data, dict):
                 usage_raw = data.get("usage") or {}
