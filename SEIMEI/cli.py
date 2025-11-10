@@ -19,12 +19,12 @@ from .logging_utils import LogColors, colorize, supports_color
 CLI_VERSION = "0.1.0"
 CLI_NAME = "SEIMEI CLI"
 ASCII_ART = r"""
-     _____ ______ ______ __  __ _____ _____ 
-    / ____|  ____|  ____|  \/  |_   _|_   _|
-   | (___ | |__  | |__  | \  / | | |   | |  
-    \___ \|  __| |  __| | |\/| | | |   | |  
-    ____) | |____| |____| |  | |_| |_ _| |_ 
-   |_____/|______|______|_|  |_|_____|_____|
+  _____  ______ _____ __  __ ______ _____ 
+ / ____|/ ____|_   _|  \/  |  ____|_   _|
+| (___ | |__    | | | \  / | |__    | |  
+ \___ \|  __|   | | | |\/| |  __|   | |  
+ ____) | |____ _| |_| |  | | |____ _| |_ 
+|_____/ \_____|_____|_|  |_|______|_____|
 """
 
 DEFAULT_SYSTEM_PROMPT = (
@@ -37,11 +37,11 @@ DEFAULT_LLM_KWARGS: Dict[str, Any] = {
     "model": "gpt-5-nano",
 }
 DEFAULT_RM_KWARGS: Dict[str, Any] = {}
-DEFAULT_MAX_STEPS = 8
+DEFAULT_MAX_STEPS = 12
 DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
 DEFAULT_ALLOWED_COMMANDS: Optional[Sequence[str]] = None
-DEFAULT_MAX_TOKENS_PER_QUESTION = 20_000
+DEFAULT_MAX_TOKENS_PER_QUESTION = 40_000
 DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/excel.csv"
 DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/excel.csv"
 DEFAULT_KNOWLEDGE_PROMPT_PATH = "seimei/knowledge/prompts/excel.md"
@@ -205,16 +205,6 @@ def format_transcript(messages: Sequence[Dict[str, Any]]) -> str:
     return "\n\n".join(lines)
 
 
-def filter_agent_messages(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    sanitized: List[Dict[str, Any]] = []
-    for msg in messages:
-        role = str(msg.get("role") or "").lower()
-        if role == "agent":
-            continue
-        sanitized.append(dict(msg))
-    return sanitized
-
-
 def ensure_parent_dir(path: Optional[Path]) -> None:
     if not path:
         return
@@ -226,18 +216,24 @@ def render_screen(
     session_id: str,
     transcript: str,
     status_line: Optional[str],
+    *,
+    color_enabled: bool,
 ) -> None:
     clear_screen()
-    print(ASCII_ART.rstrip())
+    banner = colorize(ASCII_ART.rstrip(), LogColors.GREEN, enable=color_enabled)
+    print(banner)
     version = resolve_version()
-    print(f"\n{CLI_NAME} v{version}")
-    print(f"\nInitialized conversation {session_id}")
-    print("\nLet's start building!")
+    cli_line = colorize(f"{CLI_NAME} v{version}", LogColors.GRAY, enable=color_enabled)
+    init_line = colorize(
+        f"Initialized conversation {session_id}", LogColors.GRAY, enable=color_enabled
+    )
+    print(f"\n{cli_line}")
+    print(f"\n{init_line}")
     if transcript:
         print("\n" + transcript)
     if status_line:
         print(f"\n{status_line}")
-    print("\nWhat do you want to build? Type /help for help\n")
+    print("\nWhat is on your mind today?\n")
 
 
 def resolve_version() -> str:
@@ -284,16 +280,17 @@ async def run_cli(args: CLIArgs) -> None:
     status_line: Optional[str] = None
     render_needed = True
     color_enabled = supports_color()
+    prompt_text = colorize("> ", LogColors.GREEN, enable=color_enabled)
     full_history: List[Dict[str, Any]] = list(message_history)
     turn = 0
 
     while True:
         if render_needed:
             transcript = format_transcript(message_history)
-            render_screen(session_id, transcript, status_line)
+            render_screen(session_id, transcript, status_line, color_enabled=color_enabled)
             render_needed = False
         try:
-            user_input = (await ainput("> ")).strip()
+            user_input = (await ainput(prompt_text)).strip()
         except (KeyboardInterrupt, EOFError):
             print("\nExiting SEIMEI CLI.")
             return
@@ -355,7 +352,7 @@ async def run_cli(args: CLIArgs) -> None:
         try:
             result = await orchestrator(
                 messages=list(message_history),
-                run_name=f"cli-{session_id}-turn-{turn}",
+                #run_name=f"cli-{session_id}-turn-{turn}",
                 generate_knowledge=args.generate_knowledge,
                 save_knowledge_path=str(knowledge_file) if knowledge_file else None,
                 knowledge_prompt_path=knowledge_prompt,
@@ -368,8 +365,9 @@ async def run_cli(args: CLIArgs) -> None:
             render_needed = True
             continue
 
-        full_history = result.get("msg_history", [])
-        message_history = filter_agent_messages(full_history)
+        history_result = result.get("msg_history", []) or []
+        full_history = history_result
+        message_history = [dict(m) for m in full_history]
         knowledge_info = result.get("knowledge_result")
         if knowledge_info and args.generate_knowledge:
             added = knowledge_info.get("count")
