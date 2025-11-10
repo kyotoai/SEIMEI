@@ -185,26 +185,6 @@ def build_llm_kwargs(args: CLIArgs) -> Dict[str, Any]:
     return llm_kwargs
 
 
-def clear_screen() -> None:
-    if os.name == "nt":
-        os.system("cls")
-    else:
-        sys.stdout.write("\033c")
-        sys.stdout.flush()
-
-
-def format_transcript(messages: Sequence[Dict[str, Any]]) -> str:
-    lines: List[str] = []
-    for msg in messages:
-        role = str(msg.get("role") or "").lower()
-        if role not in {"user", "assistant"}:
-            continue
-        label = "You" if role == "user" else "SEIMEI"
-        content = str(msg.get("content") or "").strip() or "[no content]"
-        lines.append(f"{label}: {content}")
-    return "\n\n".join(lines)
-
-
 def ensure_parent_dir(path: Optional[Path]) -> None:
     if not path:
         return
@@ -212,14 +192,11 @@ def ensure_parent_dir(path: Optional[Path]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
 
 
-def render_screen(
+def render_header(
     session_id: str,
-    transcript: str,
-    status_line: Optional[str],
     *,
     color_enabled: bool,
 ) -> None:
-    clear_screen()
     banner = colorize(ASCII_ART.rstrip(), LogColors.GREEN, enable=color_enabled)
     print(banner)
     version = resolve_version()
@@ -229,11 +206,29 @@ def render_screen(
     )
     print(f"\n{cli_line}")
     print(f"\n{init_line}")
-    if transcript:
-        print("\n" + transcript)
-    if status_line:
-        print(f"\n{status_line}")
     print("\nWhat is on your mind today?\n")
+
+
+def print_new_messages(
+    messages: Sequence[Dict[str, Any]],
+    start_idx: int,
+    *,
+    color_enabled: bool,
+) -> int:
+    if start_idx >= len(messages):
+        return start_idx
+
+    for msg in messages[start_idx:]:
+        role = str(msg.get("role") or "").lower()
+        if role not in {"user", "assistant"}:
+            continue
+        label = "You" if role == "user" else "SEIMEI"
+        color = LogColors.CYAN if role == "user" else LogColors.BOLD_MAGENTA
+        content = str(msg.get("content") or "").strip() or "[no content]"
+        label_text = colorize(f"{label}:", color, enable=color_enabled)
+        print(f"{label_text} {content}\n")
+
+    return len(messages)
 
 
 def resolve_version() -> str:
@@ -277,18 +272,14 @@ async def run_cli(args: CLIArgs) -> None:
     if system_prompt:
         message_history.append({"role": "system", "content": system_prompt})
     session_id = f"{uuid.uuid4()}-{uuid.uuid4().hex}"
-    status_line: Optional[str] = None
-    render_needed = True
     color_enabled = supports_color()
     prompt_text = colorize("> ", LogColors.GREEN, enable=color_enabled)
     full_history: List[Dict[str, Any]] = list(message_history)
     turn = 0
+    render_header(session_id, color_enabled=color_enabled)
+    last_rendered_len = len(message_history)
 
     while True:
-        if render_needed:
-            transcript = format_transcript(message_history)
-            render_screen(session_id, transcript, status_line, color_enabled=color_enabled)
-            render_needed = False
         try:
             user_input = (await ainput(prompt_text)).strip()
         except (KeyboardInterrupt, EOFError):
@@ -296,8 +287,6 @@ async def run_cli(args: CLIArgs) -> None:
             return
 
         if not user_input:
-            status_line = None
-            render_needed = True
             continue
 
         if user_input in {"/exit", "/quit", "/q"}:
@@ -306,8 +295,6 @@ async def run_cli(args: CLIArgs) -> None:
 
         if user_input == "/help":
             print("\n" + HELP_TEXT + "\n")
-            status_line = None
-            render_needed = True
             continue
 
         if user_input == "/reset":
@@ -315,8 +302,8 @@ async def run_cli(args: CLIArgs) -> None:
             if system_prompt:
                 message_history.append({"role": "system", "content": system_prompt})
             full_history = list(message_history)
-            status_line = colorize("[reset] Conversation cleared.", LogColors.YELLOW, enable=color_enabled)
-            render_needed = True
+            last_rendered_len = len(message_history)
+            print(colorize("[reset] Conversation cleared.", LogColors.YELLOW, enable=color_enabled))
             continue
 
         if user_input.startswith("/save"):
@@ -330,23 +317,29 @@ async def run_cli(args: CLIArgs) -> None:
                     json.dumps(full_history, ensure_ascii=False, indent=2),
                     encoding="utf-8",
                 )
-                status_line = colorize(
-                    f"[saved] Conversation history → {save_path}",
-                    LogColors.GREEN,
-                    enable=color_enabled,
+                print(
+                    colorize(
+                        f"[saved] Conversation history → {save_path}",
+                        LogColors.GREEN,
+                        enable=color_enabled,
+                    )
                 )
             except OSError as exc:
-                status_line = colorize(
-                    f"[error] Failed to save history: {exc}",
-                    LogColors.RED,
-                    enable=color_enabled,
+                print(
+                    colorize(
+                        f"[error] Failed to save history: {exc}",
+                        LogColors.RED,
+                        enable=color_enabled,
+                    )
                 )
-            render_needed = True
             continue
 
         user_message = {"role": "user", "content": user_input}
         message_history.append(user_message)
         full_history.append(dict(user_message))
+        last_rendered_len = print_new_messages(
+            message_history, last_rendered_len, color_enabled=color_enabled
+        )
         turn += 1
 
         try:
@@ -361,21 +354,28 @@ async def run_cli(args: CLIArgs) -> None:
             err_text = f"[error] {type(exc).__name__}: {exc}"
             print(colorize(err_text, LogColors.RED, enable=color_enabled))
             message_history.append({"role": "assistant", "content": err_text})
-            status_line = err_text
-            render_needed = True
+            last_rendered_len = print_new_messages(
+                message_history, last_rendered_len, color_enabled=color_enabled
+            )
             continue
 
         history_result = result.get("msg_history", []) or []
         full_history = history_result
         message_history = [dict(m) for m in full_history]
+        last_rendered_len = print_new_messages(
+            message_history, last_rendered_len, color_enabled=color_enabled
+        )
         knowledge_info = result.get("knowledge_result")
         if knowledge_info and args.generate_knowledge:
             added = knowledge_info.get("count")
             target_display = str(knowledge_file) if knowledge_file else "N/A"
-            status_line = f"Knowledge updated ({added or 0} entries) → {target_display}"
-        else:
-            status_line = None
-        render_needed = True
+            print(
+                colorize(
+                    f"Knowledge updated ({added or 0} entries) → {target_display}",
+                    LogColors.YELLOW,
+                    enable=color_enabled,
+                )
+            )
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
