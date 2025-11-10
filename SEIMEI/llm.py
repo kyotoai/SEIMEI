@@ -306,7 +306,6 @@ class LLMClient:
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
         prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=bool(system))
-        print("normal_system_count: ")
         if normal_system_count > 1:
             print(
                 colorize(
@@ -332,9 +331,6 @@ class LLMClient:
             for drop_key in ("agent", "log", "code", "chosen_instructions"):
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
-
-        print()
-        print("payload_msgs: ", payload_msgs)
 
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
