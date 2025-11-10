@@ -34,7 +34,26 @@ pip install duckduckgo_search requests
 
 ---
 
+## Set API key
+
+```bash
+export OPENAI_API_KEY = "(your_openai_api_key)"
+export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
+```
+
+---
+
+
 ## Quick start
+
+### In CLI app
+
+```bash
+seimei
+```
+
+
+### python code
 
 ```python
 import asyncio

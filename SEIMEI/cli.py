@@ -39,7 +39,7 @@ DEFAULT_LLM_KWARGS: Dict[str, Any] = {
 
 # rmsearch: https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch
 # emnbed: https://si3trdzr984v57-8000.proxy.runpod.net/embed
-DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://si3trdzr984v57-8000.proxy.runpod.net/embed", "agent_routing":False, "knowledge_search":True}
+DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch", "agent_routing":False, "knowledge_search":True}
 DEFAULT_MAX_STEPS = 12
 DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
