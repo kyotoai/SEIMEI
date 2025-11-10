@@ -239,7 +239,7 @@ class seimei:
         final_timeout = timeout if timeout is not None else config.get("timeout")
 
         print()
-        print("--- rmsearch ---")
+        print("--- rmsearch 1 ---")
         print("query: ", query)
 
         try:
@@ -269,6 +269,10 @@ class seimei:
         key_payload, index_map, text_map = self._format_rmsearch_keys(keys)
         if not key_payload:
             return []
+        
+        print()
+        print("--- rmsearch 2 ---")
+        print("serialized_query: ", serialized_query)
 
         payload: Dict[str, Any] = {
             "queries": [serialized_query],
@@ -449,7 +453,7 @@ class seimei:
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
-            "Try to think longer if the problem is difficult and answer quickly if not."
+            "Try to think at least 2, 3 steps and provide answer."
         )
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
