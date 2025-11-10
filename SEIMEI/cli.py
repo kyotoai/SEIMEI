@@ -42,9 +42,9 @@ DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
 DEFAULT_ALLOWED_COMMANDS: Optional[Sequence[str]] = None
 DEFAULT_MAX_TOKENS_PER_QUESTION = 40_000
-DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge2.csv"
-DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge2_output.csv"
-DEFAULT_KNOWLEDGE_PROMPT_PATH = "seimei/knowledge/prompts/user_intent_alignment2.md"
+DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge3.csv"
+DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge3_output.csv"
+DEFAULT_KNOWLEDGE_PROMPT_PATH = "seimei/knowledge/prompts/user_intent_alignment3.md"
 DEFAULT_GENERATE_KNOWLEDGE = True
 DEFAULT_LOG_DIR = "./seimei_runs"
 
