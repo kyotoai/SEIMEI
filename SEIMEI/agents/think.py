@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
@@ -54,6 +55,15 @@ def _recent_agent_findings(messages: List[Dict[str, Any]], limit: int = 3) -> Li
             break
     findings.reverse()
     return findings
+
+
+def _limit_sentences(text: str, max_sentences: int = 3) -> str:
+    if not text:
+        return ""
+    parts = re.split(r"(?<=[.!?])\s+", text.strip())
+    sentences = [segment.strip() for segment in parts if segment.strip()]
+    trimmed = sentences[: max(int(max_sentences), 1)]
+    return " ".join(trimmed)
 
 
 @register
@@ -136,8 +146,51 @@ class think(Agent):
             error_note = "Search function unavailable."
 
         chosen_texts = [payload.get("key", "") for payload in selected_payloads if payload.get("key")]
-        plan_lines = ["Selected knowledge cues:"]
-        plan_lines.extend(f"- {text}" for text in chosen_texts)
+
+        llm = shared_ctx.get("llm")
+        analysis_text: Optional[str] = None
+        analysis_note: Optional[str] = None
+        analysis_input: Optional[str] = None
+        analysis_system_prompt: Optional[str] = None
+
+        if llm is not None:
+            knowledge_section = "\n".join(f"- {text}" for text in chosen_texts) or "- None."
+            findings_section = "\n".join(f"- {item}" for item in findings) or "- None yet."
+            question_section = user_request or "[missing user request]"
+            analysis_input = (
+                f"User question:\n{question_section}\n\n"
+                f"Relevant knowledge cues:\n{knowledge_section}\n\n"
+                f"Recent agent findings:\n{findings_section}\n\n"
+                "Provide 2 sentences (3 max). "
+                "Sentence 1: summarize the most important facts or evidence above. "
+                "Sentence 2 (and 3 if absolutely needed): outline the single next action or question the agents should pursue."
+                "Be concrete, avoid bullet points, and do not mention this is a summary."
+            )
+            analysis_system_prompt = (
+                "You are the think agent coordinating the next action in a multi-agent system. "
+                "Analyze the supplied context and respond succinctly with 2 sentences (3 max): "
+                "what you now believe plus the immediate next step."
+            )
+            try:
+                llm_response, _ = await llm.chat(
+                    messages=[{"role": "user", "content": analysis_input}],
+                    system=analysis_system_prompt,
+                )
+            except Exception as exc:
+                analysis_note = f"LLM analysis failed: {exc}"
+            else:
+                llm_response = (llm_response or "").strip()
+                analysis_text = _limit_sentences(llm_response, max_sentences=3)
+        else:
+            analysis_note = "LLM unavailable for think agent."
+
+        if not analysis_text:
+            knowledge_summary = "; ".join(chosen_texts) if chosen_texts else "no curated knowledge yet"
+            findings_summary = "; ".join(findings) if findings else "no prior findings yet"
+            analysis_text = (
+                f"Key cues: {knowledge_summary}. "
+                f"Next, build on {findings_summary} to decide the following command."
+            )
 
         log_data: Dict[str, Any] = {
             "query": query or user_request,
@@ -145,9 +198,16 @@ class think(Agent):
         }
         if error_note:
             log_data["warning"] = error_note
+        if analysis_note:
+            log_data["analysis_warning"] = analysis_note
+        if analysis_input:
+            log_data["analysis_prompt"] = {
+                "system": analysis_system_prompt,
+                "content": analysis_input,
+            }
 
         return {
-            "content": "\n".join(plan_lines),
+            "content": analysis_text,
             "chosen_knowledge": chosen_texts,
             "log": log_data,
         }
