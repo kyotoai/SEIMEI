@@ -332,6 +332,9 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
+        print()
+        print("payload_msgs: ", payload_msgs)
+
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
             token_limiter.ensure_available()
@@ -389,6 +392,9 @@ class LLMClient:
             data = resp.json()
             self.last_response = data
             content = self._extract_content(data)
+
+            print()
+            print("content: ", content)
 
             if isinstance(data, dict):
                 usage_raw = data.get("usage") or {}

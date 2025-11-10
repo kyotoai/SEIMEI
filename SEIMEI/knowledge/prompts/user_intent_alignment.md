@@ -26,6 +26,16 @@ Return a JSON array, for example:
 ]
 ```
 
+```json
+[
+  {
+    "agent": "think",
+    "knowledge": "Your concrete guidance here.",
+    "tags": ["memory", "cpu"]
+  }
+]
+```
+
 Rules:
 - Use lowercase agent identifiers (typically `answer`, `think`, or other agents seen in the run).
 - Keep each `knowledge` entry under 220 characters; make it specific to what satisfied (or would
