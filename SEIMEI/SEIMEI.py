@@ -238,6 +238,10 @@ class seimei:
 
         final_timeout = timeout if timeout is not None else config.get("timeout")
 
+        print()
+        print("--- rmsearch ---")
+        print("query: ", query)
+
         try:
             return self._rmsearch_http(
                 url=url,
