@@ -45,8 +45,8 @@ class seimei:
 
     def __init__(
         self,
-        agent_config: Sequence[Dict[str, Any]],
-        llm_kwargs: Dict[str, Any],
+        agent_config: Optional[Sequence[Dict[str, Any]]] = None,
+        llm_kwargs: Optional[Dict[str, Any]] = None,
         rm_kwargs: Optional[Dict[str, Any]] = None,
         log_dir: str = "./seimei_runs",
         max_steps: int = 8,
@@ -61,6 +61,8 @@ class seimei:
         os.makedirs(self.log_dir, exist_ok=True)
 
         # LLM
+        if llm_kwargs is None:
+            raise ValueError("llm_kwargs must be provided")
         self.llm = LLMClient(**llm_kwargs)
 
         # Routing
@@ -81,7 +83,8 @@ class seimei:
 
         # Load agents
         self.agents: Dict[str, Agent] = {}
-        self._load_agents(agent_config)
+        normalized_agent_config = list(agent_config or [])
+        self._load_agents(normalized_agent_config)
 
         # Attach shared ctx visible to agents (e.g., llm, rmsearch, safety flags)
         self.shared_ctx = {
