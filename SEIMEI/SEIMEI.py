@@ -393,8 +393,21 @@ class seimei:
         key_map = {item.get("key"): item for item in keys if isinstance(item, dict) and item.get("key")}
         _, conversation_text, focus_text = self._prepare_query_input(query)
         rm_query = focus_text or conversation_text
+        if isinstance(query, str):
+            stripped_query = query.strip()
+            if stripped_query:
+                rm_query = stripped_query
 
         purpose = self._normalize_purpose((context or {}).get("purpose"))
+        query_override = None
+        if isinstance(context, dict):
+            for key in ("query_override", "knowledge_query"):
+                value = context.get(key)
+                if isinstance(value, str) and value.strip():
+                    query_override = value.strip()
+                    break
+        if query_override:
+            rm_query = query_override
         try:
             rm_result = self._rmsearch(
                 query=rm_query,

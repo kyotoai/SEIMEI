@@ -34,7 +34,7 @@ DEFAULT_AGENT_CONFIG: List[Dict[str, Any]] = [
     {"file_path": "seimei/agents/code_act.py"},
 ]
 DEFAULT_LLM_KWARGS: Dict[str, Any] = {
-    "model": "gpt-5-nano",
+    "model": "gpt-5-mini",
 }
 DEFAULT_RM_KWARGS: Dict[str, Any] = {}
 DEFAULT_MAX_STEPS = 12

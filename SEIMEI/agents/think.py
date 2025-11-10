@@ -72,6 +72,7 @@ class think(Agent):
     ) -> Dict[str, Any]:
         search_fn = shared_ctx.get("search")
         knowledge_entries = get_agent_knowledge(shared_ctx, "think")
+        knowledge_ranked = bool(knowledge_entries)
         if not knowledge_entries:
             knowledge_entries = list(DEFAULT_THINK_KNOWLEDGE)
         top_k = instruction_k or shared_ctx.get("instruction_top_k") or 3
@@ -105,30 +106,34 @@ class think(Agent):
                 "log": {"query": query or user_request, "knowledge": []},
             }
 
-        ranked: List[Dict[str, Any]] = []
+        selected_payloads: List[Dict[str, Any]] = []
         error_note: Optional[str] = None
-        if callable(search_fn):
+        if knowledge_ranked:
+            selected_payloads = list(keys[: max(int(top_k), 1)])
+        elif callable(search_fn):
             try:
                 ranked = await search_fn(
                     query=query or user_request,
                     keys=keys,
                     k=max(int(top_k), 1),
-                    context={"purpose": "knowledge_selection"},
+                    context={
+                        "purpose": "knowledge_selection",
+                        "query_override": shared_ctx.get("knowledge_query"),
+                    },
                 )
             except Exception as exc:
-                ranked = []
                 error_note = f"Search failed: {exc}"
+                ranked = []
+            else:
+                for item in ranked:
+                    payload = item.get("payload") or {}
+                    if payload:
+                        selected_payloads.append(payload)
+            if not selected_payloads:
+                selected_payloads = list(keys[: max(int(top_k), 1)])
         else:
-            ranked = []
-            error_note = "Search function unavailable."
-
-        selected_payloads: List[Dict[str, Any]] = []
-        for item in ranked:
-            payload = item.get("payload") or {}
-            if payload:
-                selected_payloads.append(payload)
-        if not selected_payloads:
             selected_payloads = list(keys[: max(int(top_k), 1)])
+            error_note = "Search function unavailable."
 
         chosen_texts = [payload.get("key", "") for payload in selected_payloads if payload.get("key")]
         plan_lines = ["Selected knowledge cues:"]
