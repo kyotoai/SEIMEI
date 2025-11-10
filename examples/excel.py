@@ -10,7 +10,7 @@ async def demo_code_act():
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
         max_tokens_per_question=20000,
-        load_knowledge_path="seimei_knowledge/excel.csv",
+        #load_knowledge_path="seimei_knowledge/excel.csv",
     )
 
     result = await orchestrator(
