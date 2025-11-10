@@ -92,38 +92,40 @@ async def generate_knowledge_from_runs(
         prompt_path = Path(prompt_path)
     prompt_template = prompt_path.read_text(encoding="utf-8")
 
-    run_context_text = _build_run_context(
-        run_ids=run_ids,
-        runs_dir=runs_dir,
-        live_messages=messages,
-    )
-    prompt_text = prompt_template.replace("<<RUN_CONTEXT>>", run_context_text)
-
     client = LLMClient(
         model=model,
         api_key=api_key,
         base_url=base_url,
     )
 
-    response, usage = await client.chat(
-        messages=[{"role": "user", "content": prompt_text}],
-        system=system_prompt,
-    )
-    knowledge_entries = _parse_response(response)
-    run_identifier = (
-        str(run_ids[0])
-        if len(run_ids) == 1
-        else ",".join(str(run_id) for run_id in run_ids)
-    )
-    for entry in knowledge_entries:
-        if entry.get("run_id"):
-            entry["run_id"] = str(entry["run_id"])
-        else:
-            entry["run_id"] = run_identifier
-    _append_csv(knowledge_entries, save_file_path)
+    all_entries: List[Dict[str, Any]] = []
+    usage_records: List[Dict[str, Any]] = []
+    live_messages_run = run_ids[-1] if run_ids else None
+
+    for run_id in run_ids:
+        run_context_text = _build_run_context(
+            run_ids=[run_id],
+            runs_dir=runs_dir,
+            live_messages=messages if run_id == live_messages_run else None,
+        )
+        prompt_text = prompt_template.replace("<<RUN_CONTEXT>>", run_context_text)
+        response, usage = await client.chat(
+            messages=[{"role": "user", "content": prompt_text}],
+            system=system_prompt,
+        )
+        knowledge_entries = _parse_response(response)
+        for entry in knowledge_entries:
+            entry["run_id"] = str(entry.get("run_id") or run_id)
+        all_entries.extend(knowledge_entries)
+        if usage:
+            usage_record = dict(usage)
+            usage_record["run_id"] = str(run_id)
+            usage_records.append(usage_record)
+
+    _append_csv(all_entries, save_file_path)
     return {
-        "usage": usage,
-        "count": len(knowledge_entries),
+        "usage": usage_records,
+        "count": len(all_entries),
         "output": str(save_file_path),
         "runs": list(run_ids),
     }
@@ -331,14 +333,17 @@ def _parse_response(text: str) -> List[Dict[str, Any]]:
         raise RuntimeError("LLM output must be a JSON array.")
 
     cleaned: List[Dict[str, Any]] = []
+
+    print(data)
+
     for idx, item in enumerate(data):
         if not isinstance(item, dict):
             raise RuntimeError(f"Knowledge entry at index {idx} is not an object.")
         agent = str(item.get("agent", "")).strip()
         knowledge = str(item.get("knowledge", "")).strip()
-        condition = str(item.get("condition", "")).strip()
+        #condition = str(item.get("condition", "")).strip()
         tags = item.get("tags", [])
-        if not agent or not knowledge or not condition:
+        if not agent or not knowledge:
             raise RuntimeError(f"Knowledge entry at index {idx} missing agent or knowledge text.")
         if isinstance(tags, str):
             tags_list = [tag.strip() for tag in tags.split(",") if tag.strip()]
@@ -346,7 +351,7 @@ def _parse_response(text: str) -> List[Dict[str, Any]]:
             tags_list = [str(tag).strip() for tag in tags if str(tag).strip()]
         else:
             tags_list = []
-        cleaned.append({"agent": agent, "knowledge": knowledge, "condition": condition, "tags": tags_list})
+        cleaned.append({"agent": agent, "knowledge": knowledge, "tags": tags_list})
     return cleaned
 
 
@@ -355,7 +360,7 @@ def _append_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
         return
     output_path = output_path.expanduser()
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    fieldnames = ["run_id", "agent", "knowledge", "condition", "tags"]
+    fieldnames = ["run_id", "agent", "knowledge", "tags"]
 
     needs_overwrite = False
     write_header = True
@@ -386,7 +391,7 @@ def _append_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
             "run_id": str(raw.get("run_id") or "").strip(),
             "agent": str(raw.get("agent") or "").strip(),
             "knowledge": str(raw.get("knowledge") or "").strip(),
-            "condition": str(raw.get("condition") or "").strip(),
+            #"condition": str(raw.get("condition") or "").strip(),
             "tags": "[]",
         }
         tags_value = raw.get("tags")
@@ -400,12 +405,14 @@ def _append_csv(rows: List[Dict[str, Any]], output_path: Path) -> None:
         else:
             serialized["tags"] = "[]"
         extras = raw.get(None)
+        '''
         if not serialized["condition"] and isinstance(extras, list) and extras:
             serialized["condition"] = str(extras[0]).strip()
             if len(extras) > 1 and serialized["tags"] == "[]":
                 fallback_tags = extras[1]
                 if isinstance(fallback_tags, str) and fallback_tags:
                     serialized["tags"] = fallback_tags
+        '''
         return serialized
 
     if needs_overwrite:
