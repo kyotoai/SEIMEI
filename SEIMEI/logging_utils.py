@@ -11,6 +11,7 @@ class LogColors:
 
     GREEN = "\033[92m"
     CYAN = "\033[96m"
+    GRAY = "\033[90m"
     BOLD_MAGENTA = "\033[1m\033[95m"
     RED = "\033[91m"
     YELLOW = "\033[93m"
