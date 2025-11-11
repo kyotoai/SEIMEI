@@ -332,6 +332,8 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
+        
+
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
             token_limiter.ensure_available()
