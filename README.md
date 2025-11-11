@@ -189,6 +189,15 @@ pip install -e SEIMEI/
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
+### Set API key
+
+```bash
+export OPENAI_API_KEY = "(your_openai_api_key)"
+export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
+```
+
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
 
 <!-- USAGE EXAMPLES -->
 ## Usage
@@ -197,13 +206,13 @@ Here's an usage example using /Experts/Math module. This module answers mathemat
 
 ### Quick Start
 
-### In CLI app
+#### In CLI app
 
 ```bash
 seimei
 ```
 
-### python code
+#### python code
 
 ```python
 import asyncio
