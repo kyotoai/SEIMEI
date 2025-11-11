@@ -177,34 +177,14 @@ SEIMEI can be applied to make these useful functions!!
 This is an example of how you build SEIMEI on local gpu or rental server gpu.
 You can use it by installing seimei using `pip install` or downloading this directory into your local folder.
 
-### Prerequisites
-
-You need to install RMSearch and SEIMEI library on Cuda & PyTorch Environment.
-* RMSearch
-  ```sh
-  git clone https://github.com/kyotoai/RMSearch.git
-  cd RMSearch
-  pip install -e .
-  ```
-
 ### Installation
 
-* by `pip install`
-  
-1. Install SEIMEI (not prepared yet)
-   ```sh
-   pip install SEIMEI
-   ```
+You can install SEIMEI using git clone the library
 
-
-* by downloading SEIMEI repository
-  
-1. Download the repo
-   ```sh
-   git clone https://github.com/kyotoai/SEIMEI.git
-   cd SEIMEI
-   pip install -e .
-   ```
+```sh
+git clone https://github.com/kyotoai/SEIMEI.git
+pip install -e SEIMEI/
+```
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
@@ -217,67 +197,37 @@ Here's an usage example using /Experts/Math module. This module answers mathemat
 
 ### Quick Start
 
-1. Download LLMs in local directory
-    ```sh
-    cd /workspace
-    pip install "huggingface_hub[hf_transfer]"
-    pip install hf_transfer
-    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Qwen/Qwen2.5-3B-Instruct --local-dir ./qwen3b/
-    HF_HUB_ENABLE_HF_TRANSFER=1 huggingface-cli download Ray2333/GRM-Llama3.2-3B-rewardmodel-ft --local-dir ./llama3b-rm/
-    ```
-    
-2. Define seimei
-    ```py
-    from SEIMEI import SEIMEI
+### In CLI app
 
-    # problems from Kaggle/AIMO2
-    problems = [
-        "Three airline companies operate flights from Dodola island. Each company has a different schedule of departures. The first company departs every 100 days, the second every 120 days and the third every 150 days. What is the greatest positive integer $d$ for which it is true that there will be $d$ consecutive days without a flight from Dodola island, regardless of the departure times of the various airlines?",
-        "Fred and George take part in a tennis tournament with $4046$ other players. In each round, the players are paired into $2024$ matches. How many ways are there to arrange the first round such that Fred and George do not have to play each other? (Two arrangements for the first round are \textit{different} if there is a player with a different opponent in the two arrangements.)",
-        "Triangle $ABC$ has side length $AB = 120$ and circumradius $R = 100$. Let $D$ be the foot of the perpendicular from $C$ to the line $AB$. What is the greatest possible length of segment $CD$?",
-        "Find the three-digit number $n$ such that writing any other three-digit number $10^{2024}$ times in a row and $10^{2024}+2$ times in a row results in two numbers divisible by $n$.",
-        "We call a sequence $a_1, a_2, \ldots$ of non-negative integers \textit{delightful} if there exists a positive integer $N$ such that for all $n > N$, $a_n = 0$, and for all $i \geq 1$, $a_i$ counts the number of multiples of $i$ in $a_1, a_2, \ldots, a_N$. How many delightful sequences of non-negative integers are there?",
-        "Let $ABC$ be a triangle with $BC=108$, $CA=126$, and $AB=39$. Point $X$ lies on segment $AC$ such that $BX$ bisects $\angle CBA$. Let $\omega$ be the circumcircle of triangle $ABX$. Let $Y$ be a point on $\omega$ different from $X$ such that $CX=CY$. Line $XY$ meets $BC$ at $E$. The length of the segment $BE$ can be written as $\frac{m}{n}$, where $m$ and $n$ are coprime positive integers. Find $m+n$.",
-        "For a positive integer $n$, let $S(n)$ denote the sum of the digits of $n$ in base 10. Compute $S(S(1)+S(2)+\cdots+S(N))$ with $N=10^{100}-2$.",
-        """For positive integers $x_1,\ldots, x_n$ define $G(x_1, \ldots, x_n)$ to be the sum of their $\frac{n(n-1)}{2}$ pairwise greatest common divisors. We say that an integer $n \geq 2$ is \emph{artificial} if there exist $n$ different positive integers $a_1, ..., a_n$ such that 
-    \[a_1 + \cdots + a_n = G(a_1, \ldots, a_n) +1.\]
-    Find the sum of all artificial integers $m$ in the range $2 \leq m \leq 40$.""",
-        "The Fibonacci numbers are defined as follows: $F_0 = 0$, $F_1 = 1$, and $F_{n+1} = F_n + F_{n-1}$ for $n \geq 1$. There are $N$ positive integers $n$ strictly less than $10^{101}$ such that $n^2 + (n+1)^2$ is a multiple of 5 but $F_{n-1}^2 + F_n^2$ is not. How many prime factors does $N$ have, counted with multiplicity?",
-        "Alice writes all positive integers from $1$ to $n$ on the board for some positive integer $n \geq 11$. Bob then erases ten of them. The mean of the remaining numbers is $3000/37$. The sum of the numbers Bob erased is $S$. What is the remainder when $n \times S$ is divided by $997$?",
-    ]
+```bash
+seimei
+```
 
-    # Make input to SEIMEI
-    queries = []
-    for problem in problems:
-        queries.append({"query":problem})
+### python code
 
-    expert_config = [
-        {
-            "dir_path" : "../Experts/Math", # can be either folder or file
-            "start_class" : ["Brainstorming"]
-        }
-    ]
+```python
+import asyncio
+from seimei import seimei  # class name is `seimei` (lowercase) for convenience
 
-    # Define seimei object
-    seimei = SEIMEI(
-        model_name = "/workspace/qwen3b",
-        expert_config = expert_config,
-        max_inference_time = 1000,
-        tensor_parallel_size = 1,
-        max_seq_len_to_capture = 10000,
-        gpu_memory_utilization = 0.4,
-        llm_backend = "vllm",  # set to "openai" to call the OpenAI API instead of vLLM
+async def demo_code_act():
+    orchestrator = seimei(
+        llm_kwargs={"model": "gpt-5-nano"},
+        rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
+        allow_code_exec=True,
+        agent_log_head_lines=1,
+        max_tokens_per_question=30000,
+        load_knowledge_path="seimei_knowledge/knwoledge.csv",
     )
-    ```
-    
-3. Get answer by seimei
-    ```py
-    answers = await seimei.get_answer(queries = queries)
-    
-    print()
-    print()
-    print(answers)
-    ```
+
+    result = await orchestrator(
+        messages=[
+            {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
+        ],
+    )
+
+asyncio.run(demo_code_act())
+```
+
 
 ### Built-in Agent Demos
 
@@ -369,31 +319,6 @@ result = await orchestrator(
 
 The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance. The default retrospection prompt lives at `seimei/knowledge/prompts/generate_from_runs.md`, but you can point `knowledge_prompt_path` at an alternative such as `seimei/knowledge/prompts/excel.md` for domain-specific guidance.
 
-### Using the OpenAI API backend
-
-SEIMEI can run entirely through the OpenAI API, which removes the requirement for a local GPU or vLLM runtime.
-
-1. Install the optional dependencies:
-   ```sh
-   pip install openai python-dotenv
-   ```
-2. Provide your API key via environment variable. The project auto-loads a `.env` file when `python-dotenv` is installed:
-   ```dotenv
-   OPENAI_API_KEY=sk-your-key
-   ```
-3. Initialize SEIMEI with the OpenAI backend. Pick the model you want to call and (optionally) keep a Hugging Face tokenizer for tasks such as document chunking:
-   ```py
-   seimei = SEIMEI(
-       expert_config = expert_config,
-       llm_backend = "openai",
-       openai_model = "gpt-5-nano",
-       tokenizer_name = "Qwen/Qwen2.5-3B-Instruct",  # optional but recommended for chunking utilities
-   )
-   ```
-   - Pass `openai_api_key="..."` at initialization if you prefer not to use environment variables.
-   - Use `openai_base_url="https://..."` when routing requests through Azure OpenAI or a compatible proxy.
-4. Call `await seimei.get_answer(...)` exactly as in the GPU setup. Requests are queued using the same scheduling logic as the vLLM backend.
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
 
@@ -401,10 +326,10 @@ SEIMEI can run entirely through the OpenAI API, which removes the requirement fo
 <!-- ROADMAP -->
 ## Roadmap
 
-- [ ] Search Integration Mechanism for Experts
-  - [ ] Permanent Expert
-- [ ] Auto Log System in Jupyter Notebook
-- [ ] High Precision Code & Textbook RAG
+- [x] Basic Agents
+- [x] CLI Chat App Feature
+- [x] Knowledge Retrieval
+- [ ] Automatical Dataset Generation for RMSearch
 
 See the [open issues](https://github.com/github_username/repo_name/issues) for a full list of proposed features (and known issues).
 
@@ -449,9 +374,9 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 <!-- CONTACT --><!-- [@twitter_handle](https://twitter.com/twitter_handle) -->
 ## Contact
 
-* Kentaro Seki - seki.kentaro@kyotoai.org
+* KyotoAI Inc. - office@kyotoai.org
 
-KyotoAI homepage: [https://kyotoai.org](https://kyotoai.org)
+KyotoAI homepage: [https://kyotoai.net](https://kyotoai.net)
 
 Project Link: [https://github.com/kyotoai/SEIMEI](https://github.com/kyotoai/SEIMEI)
 
