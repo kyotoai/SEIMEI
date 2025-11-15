@@ -63,7 +63,7 @@
         >
           <div>
             <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
-              Get Started
+              GET STARTED
             </h3>
             <ul class="space-y-1">
               <li>
@@ -75,23 +75,9 @@
               </li>
               <li>
                 <a
-                  href="#core-concepts"
+                  href="#quick-start"
                   class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >Core Concepts</a
-                >
-              </li>
-              <li>
-                <a
-                  href="#architecture"
-                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >Architecture</a
-                >
-              </li>
-              <li>
-                <a
-                  href="#workflow"
-                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >Typical Workflow</a
+                  >Quick Start</a
                 >
               </li>
             </ul>
@@ -99,28 +85,28 @@
 
           <div>
             <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
-              Client Usage
+              AGENT USAGE
             </h3>
             <ul class="space-y-1">
               <li>
                 <a
-                  href="#python"
+                  href="#code-act"
                   class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >Python Client</a
+                  >Code Act</a
                 >
               </li>
               <li>
                 <a
-                  href="#javascript"
+                  href="#web-search"
                   class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >JavaScript Client</a
+                  >Web Search</a
                 >
               </li>
               <li>
                 <a
-                  href="#rmsearch"
+                  href="#custom-agent"
                   class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  >Using RMSearch</a
+                  >Custom Agent</a
                 >
               </li>
             </ul>
@@ -128,7 +114,7 @@
 
           <div>
             <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
-              Operations
+              OPERATIONS
             </h3>
             <ul class="space-y-1">
               <li>
@@ -178,7 +164,7 @@
             SEIMEI – Search-Enhanced Interface for Multi-Expertise Inference
           </h1>
           <p class="text-slate-300 text-base sm:text-lg max-w-3xl">
-            SEIMEI is KyotoAI’s AI Scientist system. It uses
+            SEIMEI is KyotoAI’s agent system. It uses
             <span class="font-semibold">reward-model-based search (RMSearch)</span>
             to guide thousands of reasoning agents, keeping long chains of
             thought accurate and grounded in your data.
@@ -193,33 +179,37 @@
         </header>
 
         <section
-          id="core-concepts"
           class="prose prose-invert max-w-none prose-headings:scroll-mt-24"
         >
           <h2 class="text-xl font-semibold text-slate-50 mb-3">
-            What problem does SEIMEI solve?
+            What the READMEs highlight
           </h2>
           <p class="text-slate-300">
-            General-purpose LLMs struggle with long reasoning chains. Once the
-            context is large and the task requires multiple steps –
-            cross-checking papers, running simulations, comparing hypotheses –
-            accuracy quietly decays. Reinforcement learning on the full model
-            can help, but it is extremely expensive and hard to retarget to new
-            domains.
+            This page condenses the two READMEs in the repository
+            (<code>README.md</code> and <code>seimei/README.md</code>). Together
+            they describe SEIMEI as a search-enhanced orchestrator where RMSearch
+            picks the next reasoning step and lightweight agents execute the
+            plan.
           </p>
-          <p class="text-slate-300">
-            SEIMEI takes a different route. Instead of retraining the entire
-            LLM, we train a
-            <span class="font-semibold">lightweight search model</span>
-            (RMSearch) that learns which reasoning paths are promising. The LLM
-            remains mostly frozen, but the search model is tuned on your domain
-            so that the system repeatedly chooses
-            <span class="font-semibold"
-              >“what to read next” and “which trajectory to extend”</span
-            >.
-          </p>
+          <ul class="text-slate-300 list-disc list-inside space-y-1.5">
+            <li>
+              <span class="font-semibold">Reward-model guidance</span> – stay
+              close to the process shown in the main README image gallery:
+              search a large pool of experts and favor the most promising
+              thought chain.
+            </li>
+            <li>
+              <span class="font-semibold">Composable orchestrator</span> – the
+              `seimei` class (documented in <code>seimei/README.md</code>)
+              loads agents, enforces token limits, and logs every run.
+            </li>
+            <li>
+              <span class="font-semibold">Dataset logging</span> – each run
+              writes artifacts under <code>seimei_runs/</code> so you can train
+              RMSearch or replay experiments.
+            </li>
+          </ul>
 
-          <!-- Callout -->
           <div
             class="mt-5 mb-6 flex gap-3 rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4"
           >
@@ -229,22 +219,22 @@
               <span class="text-sky-300 text-xs font-bold">i</span>
             </div>
             <div class="text-sm text-slate-100 space-y-1.5">
-              <p class="font-semibold">Key idea</p>
+              <p class="font-semibold">Key idea from README.md</p>
               <p class="text-slate-200/90">
-                Teach a small search model to optimize the
-                <span class="italic">sequence of thoughts</span> rather than the
-                full LLM weights. This is cheaper to train, easier to adapt, and
-                meshes naturally with retrieval-augmented generation.
+                Train a smaller RMSearch model to choose the next branch instead
+                of constantly fine-tuning the base LLM. The orchestrator stays
+                fast, reusable, and far cheaper to adapt to new domains.
               </p>
             </div>
           </div>
 
-          <h2 id="architecture" class="text-xl font-semibold text-slate-50 mb-3">
-            High-level architecture
+          <h2 class="text-xl font-semibold text-slate-50 mb-3">
+            Architecture at a glance
           </h2>
           <p class="text-slate-300">
-            SEIMEI is a modular system. You can use it purely as an RM-powered
-            search engine, or as a full AI Scientist orchestrator.
+            Borrowing the "Search the Best Agent" and "The Most Intelligent
+            Search Engine" sections from the main README, SEIMEI flows through
+            four repeating steps:
           </p>
 
           <div
@@ -253,339 +243,353 @@
             <div
               class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
             >
-              <h3 class="text-sm font-semibold mb-1.5">1. Ingestion</h3>
+              <h3 class="text-sm font-semibold mb-1.5">1. Ingest & index</h3>
               <p class="text-slate-300 text-sm">
-                Papers, code, experiment logs, and meeting notes are chunked,
-                embedded, and indexed. You can plug in your existing vector
-                store or use KyotoAI’s managed index.
+                Pull papers, repos, experiment logs, or meeting notes into an
+                index. Combine your own vector store with the RMSearch training
+                data mentioned in the README walkthrough.
               </p>
             </div>
             <div
               class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
             >
-              <h3 class="text-sm font-semibold mb-1.5">2. RMSearch reranker</h3>
+              <h3 class="text-sm font-semibold mb-1.5">2. Reward rerank</h3>
               <p class="text-slate-300 text-sm">
-                A cross-encoder-style reward model scores candidate snippets and
-                reasoning states. It can be trained on logs, synthetic data, or
-                curated demonstrations from your domain experts.
+                RMSearch scores "agent × question" pairs and reasoning states,
+                similar to the comparison plots shown in the README. High scorers
+                get scheduled next.
               </p>
             </div>
             <div
               class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
             >
-              <h3 class="text-sm font-semibold mb-1.5">
-                3. SEIMEI orchestration
-              </h3>
+              <h3 class="text-sm font-semibold mb-1.5">3. Agent execution</h3>
               <p class="text-slate-300 text-sm">
-                SEIMEI spins up many lightweight agents (planners, skeptics,
-                summarizers, tool callers) and lets the reward model choose
-                which branches to extend.
+                The orchestrator from <code>seimei/README.md</code> loads
+                planners, tool users, and synthesis agents, applying allowlists
+                and shared context.
               </p>
             </div>
             <div
               class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
             >
-              <h3 class="text-sm font-semibold mb-1.5">
-                4. Final synthesis & report
-              </h3>
+              <h3 class="text-sm font-semibold mb-1.5">4. Final response</h3>
               <p class="text-slate-300 text-sm">
-                The last step compresses the surviving trajectories into a
-                concise answer, complete with citations, assumptions, and
-                suggested follow-up experiments.
+                When an agent returns <code>final_output</code>, SEIMEI
+                summarizes the reasoning traces, saves logs, and (optionally)
+                feeds the run back into the knowledge base.
               </p>
             </div>
           </div>
 
-          <h2 id="workflow" class="mt-8 text-xl font-semibold text-slate-50 mb-3">
+          <h2 class="mt-8 text-xl font-semibold text-slate-50 mb-3">
             Typical workflow
           </h2>
           <ol class="list-decimal list-inside space-y-1.5 text-slate-300">
-            <li>Sync your corpus (papers, repos, logs) into a collection.</li>
-            <li>Optionally fine-tune an RMSearch model for your domain.</li>
+            <li>Sync your corpus and agents into a directory.</li>
             <li>
-              Call SEIMEI’s API with a research question or task description.
+              Train or plug in RMSearch (see the comparison charts in the main
+              README).
             </li>
             <li>
-              The system launches agentic search, guided by the reward model.
+              Instantiate the `seimei` orchestrator with the config shown in
+              <code>seimei/README.md</code>.
             </li>
             <li>
-              You get a structured answer plus intermediate artifacts: snippets,
-              reasoning traces, and metrics.
+              Let RMSearch rank instructions/agents on every step, keeping
+              reasoning grounded and affordable.
+            </li>
+            <li>
+              Persist the run for later evaluation or dataset generation under
+              <code>seimei_runs/</code>.
             </li>
           </ol>
         </section>
 
-        <!-- PYTHON CLIENT -->
-        <section id="python" class="mt-10">
-          <h2 class="text-xl font-semibold text-slate-50 mb-2">
-            Using SEIMEI from Python
-          </h2>
-          <p class="text-slate-300 mb-3">
-            The Python client is ideal for notebooks and pipelines. The snippet
-            below assumes you’ve already created an API key and a collection
-            named <code class="text-indigo-300">"research-notes"</code>.
+        <section id="quick-start" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">Quick Start</h2>
+          <p class="text-slate-300 mb-4">
+            Follow the same steps documented in
+            <code>README.md</code> and <code>seimei/README.md</code>: install
+            the package, export your API keys, and run either the CLI or a small
+            Python script. Everything below is a lightly formatted version of
+            those instructions.
           </p>
 
-          <div
-            class="code-group mt-4 mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
-            data-code-group
-          >
-            <!-- Header with tabs + copy button ABOVE the code -->
+          <div class="grid gap-4 md:grid-cols-2">
             <div
-              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-200"
             >
-              <div class="flex items-center gap-2 text-xs">
+              <h3 class="text-sm font-semibold mb-2">
+                Install from source (README.md)
+              </h3>
+              <p class="text-slate-300">
+                Clone the repository locally and install it in editable mode so
+                the CLI and Python import paths stay in sync with your edits.
+              </p>
+              <pre
+                class="mt-3 rounded-xl border border-slate-800 bg-black/30 p-3 font-mono text-xs thin-scrollbar overflow-x-auto"
+              ><code>git clone https://github.com/kyotoai/SEIMEI.git
+cd SEIMEI
+pip install -e .</code></pre>
+              <p class="mt-3 text-slate-400">
+                Optional: <code>pip install duckduckgo_search requests</code> to
+                enable the web-search agent showcased below.
+              </p>
+            </div>
+            <div
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-200"
+            >
+              <h3 class="text-sm font-semibold mb-2">
+                Set API keys (both READMEs)
+              </h3>
+              <p class="text-slate-300">
+                Export your OpenAI-compatible key (for LLM calls) and the
+                KyotoAI key (for RMSearch). The CLI inherits them automatically.
+              </p>
+              <pre
+                class="mt-3 rounded-xl border border-slate-800 bg-black/30 p-3 font-mono text-xs thin-scrollbar overflow-x-auto"
+              ><code>export OPENAI_API_KEY="your-openai-api-key"
+export KYOTOAI_API_KEY="your-kyotoai-api-key"</code></pre>
+              <p class="mt-3 text-slate-400">
+                Prefix these commands with <code>set -a</code> in zsh or add them
+                to your shell profile if you want them available for every
+                session.
+              </p>
+            </div>
+          </div>
+
+          <div
+            class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-200"
+          >
+            <h3 class="text-sm font-semibold mb-2">Example commands</h3>
+            <p class="text-slate-300">
+              Use the CLI for a fast smoke test or the Python orchestrator for a
+              full-featured run. Both snippets are lifted directly from the
+              READMEs.
+            </p>
+
+            <div
+              class="code-group mt-4 rounded-xl border border-slate-800 bg-slate-950/50 overflow-hidden"
+              data-code-group
+            >
+              <div
+                class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+              >
+                <div class="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                    data-lang-tab="shell"
+                  >
+                    Shell
+                  </button>
+                  <button
+                    type="button"
+                    class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                    data-lang-tab="python"
+                  >
+                    Python
+                  </button>
+                </div>
                 <button
                   type="button"
-                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
-                  data-lang-tab="python"
+                  class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+                  data-copy
                 >
-                  Python
-                </button>
-                <button
-                  type="button"
-                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  data-lang-tab="shell"
-                >
-                  Shell
+                  Copy
                 </button>
               </div>
-              <button
-                type="button"
-                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
-                data-copy
+
+              <div
+                class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
               >
-                Copy
-              </button>
+                <pre data-lang="shell">
+<code># Start the CLI that mirrors seimei/README.md
+seimei
+
+# Sample prompt:
+# "Analyze the files inside this folder and explain what SEIMEI is."</code>
+                </pre>
+
+                <pre data-lang="python" class="hidden">
+<code>import asyncio
+from seimei import seimei
+
+async def demo():
+    orchestrator = seimei(
+        llm_kwargs={"model": "gpt-5-nano"},
+        rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing": False, "knowledge_search": True},
+        allow_code_exec=True,
+        agent_log_head_lines=1,
+        max_tokens_per_question=30000,
+        load_knowledge_path="seimei_knowledge/knowledge.csv",
+    )
+
+    result = await orchestrator(
+        messages=[{"role": "user", "content": "Design a 7-day turbulence plan based on my history."}],
+    )
+    print(result["output"])
+
+asyncio.run(demo())</code>
+                </pre>
+              </div>
             </div>
+          </div>
 
-            <!-- Code body -->
-            <div
-              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
-            >
-              <pre data-lang="python">
-<code># pip install &quot;seimei-client&quot;  # TODO: replace with your actual package name
-import os
-from seimei_client import SeimeiClient  # hypothetical client
-
-client = SeimeiClient(
-    api_key=os.environ[&quot;KYOTOAI_API_KEY&quot;],
-    base_url=&quot;https://api.kyotoai.net&quot;,  # adjust if self-hosting
-)
-
-question = &quot;Summarize recent results on RM-based search for code generation.&quot;
-
-response = client.run_scientist(
-    project=&quot;bigcode-benchmark&quot;,
-    query=question,
-    collection=&quot;research-notes&quot;,
-    max_steps=32,
-    rm_model=&quot;renka-1&quot;,  # your RMSearch model name
-)
-
-print(response.answer)
-print(&quot;--- cited snippets ---&quot;)
-for s in response.snippets[:5]:
-    print(f&quot;• {s.score:.3f} :: {s.source_id} :: {s.text[:80]}...&quot;)</code>
-              </pre>
-
-              <pre data-lang="shell" class="hidden">
-<code># Example: set your API key and test connectivity
-export KYOTOAI_API_KEY=&quot;sk-your-key&quot;
-
-curl -X POST https://api.kyotoai.net/seimei/run-scientist \
-  -H &quot;Authorization: Bearer $KYOTOAI_API_KEY&quot; \
-  -H &quot;Content-Type: application/json&quot; \
-  -d '{
-    &quot;project&quot;: &quot;fusion-lab&quot;,
-    &quot;query&quot;: &quot;Design a surrogate modeling strategy for turbulence.&quot;,
-    &quot;collection&quot;: &quot;lab-notes&quot;,
-    &quot;rm_model&quot;: &quot;renka-1&quot;
-  }'</code>
-              </pre>
-            </div>
+          <div
+            class="mt-6 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-200"
+          >
+            <h3 class="text-sm font-semibold mb-2">
+              Log every run to knowledge (README.md)
+            </h3>
+            <p class="text-slate-300">
+              Set <code>generate_knowledge=True</code> to append retrospectives
+              into <code>seimei_knowledge/</code>. The helper
+              <code>seimei.knowledge.generate_from_runs</code> mirrors the
+              snippet in the root README.
+            </p>
+            <pre
+              class="mt-3 rounded-xl border border-slate-800 bg-black/30 p-3 font-mono text-xs thin-scrollbar overflow-x-auto"
+            ><code>result = await orchestrator(
+    messages=[{"role": "user", "content": "Find ways to speed up the ETL pipeline."}],
+    generate_knowledge=True,
+    save_knowledge_path="seimei_knowledge/knowledge.csv",
+    knowledge_prompt_path="seimei/knowledge/prompts/generate_from_runs.md",
+)</code></pre>
           </div>
         </section>
 
-        <!-- JAVASCRIPT CLIENT -->
-        <section id="javascript" class="mt-10">
+        <section id="code-act" class="mt-12">
           <h2 class="text-xl font-semibold text-slate-50 mb-2">
-            Using SEIMEI from JavaScript / TypeScript
+            Code Act agent
           </h2>
           <p class="text-slate-300 mb-3">
-            For web apps and Node services, you can call SEIMEI via a lightweight
-            TypeScript client or directly via <code class="text-indigo-300"
-              >fetch</code
-            >.
+            Reproduce the built-in
+            <code>seimei/agents/code_act.py</code> example from
+            <code>seimei/README.md</code>. It executes whitelisted shell
+            commands, streams logs, and can write knowledge after every run.
           </p>
-
+          <ul class="text-slate-300 list-disc list-inside space-y-1.5 mb-4">
+            <li>
+              Turn on <code>allow_code_exec=True</code> and restrict
+              <code>allowed_commands</code> to keep the sandbox tight.
+            </li>
+            <li>
+              Pass a <code>system</code> message if you need stricter execution
+              etiquette (e.g., "never run unasked commands").
+            </li>
+            <li>
+              Inspect <code>result["msg_history"][-2]</code> for the agent’s raw
+              reply, exactly as depicted in the README snippet.
+            </li>
+          </ul>
           <div
-            class="code-group mt-4 mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
-            data-code-group
+            class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 font-mono text-sm text-slate-100 thin-scrollbar overflow-x-auto"
           >
-            <div
-              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
-            >
-              <div class="flex items-center gap-2 text-xs">
-                <button
-                  type="button"
-                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
-                  data-lang-tab="ts"
-                >
-                  TypeScript
-                </button>
-                <button
-                  type="button"
-                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  data-lang-tab="fetch"
-                >
-                  fetch()
-                </button>
-              </div>
-              <button
-                type="button"
-                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
-                data-copy
-              >
-                Copy
-              </button>
-            </div>
+            <pre><code>import asyncio
+from seimei import seimei
 
-            <div
-              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
-            >
-              <pre data-lang="ts">
-<code>// npm install seimei-client  // TODO: replace with your actual package name
-import { SeimeiClient } from &quot;seimei-client&quot;;
+async def demo_code_act():
+    orchestrator = seimei(
+        agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+        llm_kwargs={"model": "gpt-4o-mini"},
+        allow_code_exec=True,
+        allowed_commands=["ls", "cat", "python"],
+        agent_log_head_lines=1,
+        max_tokens_per_question=2000,
+    )
 
-const client = new SeimeiClient({
-  apiKey: process.env.KYOTOAI_API_KEY!,
-  baseUrl: &quot;https://api.kyotoai.net&quot;, // or your self-hosted URL
-});
+    result = await orchestrator(
+        messages=[
+            {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
+            {"role": "user", "content": "List the repo root and summarize the files."},
+        ],
+    )
+    print(result["msg_history"][-2]["content"])
 
-async function main() {
-  const res = await client.runScientist({
-    project: &quot;ecommerce-negotiation&quot;,
-    query: &quot;Find failure cases where the agent overestimates discounts.&quot;,
-    collection: &quot;market-logs&quot;,
-    rmModel: &quot;renka-1&quot;,
-    maxSteps: 24,
-  });
-
-  console.log(res.answer);
-  console.log(res.snippets.map(s =&gt; [s.score, s.text.slice(0, 80)]));
-}
-
-main().catch(console.error);</code>
-              </pre>
-
-              <pre data-lang="fetch" class="hidden">
-<code>const resp = await fetch(&quot;https://api.kyotoai.net/seimei/run-scientist&quot;, {
-  method: &quot;POST&quot;,
-  headers: {
-    &quot;Authorization&quot;: `Bearer ${process.env.KYOTOAI_API_KEY}`,
-    &quot;Content-Type&quot;: &quot;application/json&quot;,
-  },
-  body: JSON.stringify({
-    project: &quot;physics-lab&quot;,
-    query: &quot;Explain the main bottlenecks in fusion turbulence simulations.&quot;,
-    collection: &quot;papers&quot;,
-    rm_model: &quot;renka-1&quot;,
-  }),
-});
-
-const data = await resp.json();
-console.log(data.answer);</code>
-              </pre>
-            </div>
+asyncio.run(demo_code_act())</code></pre>
           </div>
         </section>
 
-        <!-- RMSEARCH -->
-        <section id="rmsearch" class="mt-10">
+        <section id="web-search" class="mt-12">
           <h2 class="text-xl font-semibold text-slate-50 mb-2">
-            Using RMSearch directly (reranker API)
+            Web Search agent
           </h2>
           <p class="text-slate-300 mb-3">
-            You can also use the RMSearch reranker independently of the full
-            SEIMEI orchestration. This is useful for classic RAG pipelines,
-            ranking past conversations, or comparing candidate plans.
+            The README also ships a
+            <code>seimei/agents/web_search.py</code> demo. Install
+            <code>duckduckgo_search</code> (see Quick Start) and use the agent to
+            collect quick facts without leaving the orchestrator.
           </p>
-
           <div
-            class="code-group mt-4 mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
-            data-code-group
+            class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 font-mono text-sm text-slate-100 thin-scrollbar overflow-x-auto"
           >
-            <div
-              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
-            >
-              <div class="flex items-center gap-2 text-xs">
-                <button
-                  type="button"
-                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
-                  data-lang-tab="python-rm"
-                >
-                  Python
-                </button>
-                <button
-                  type="button"
-                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
-                  data-lang-tab="curl-rm"
-                >
-                  curl
-                </button>
-              </div>
-              <button
-                type="button"
-                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
-                data-copy
-              >
-                Copy
-              </button>
-            </div>
+            <pre><code>import asyncio
+from seimei import seimei
 
-            <div
-              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
-            >
-              <pre data-lang="python-rm">
-<code>from seimei_client import RMSearchClient  # hypothetical import
+async def demo_web_search():
+    orchestrator = seimei(
+        agent_config=[{"file_path": "seimei/agents/web_search.py"}],
+        llm_kwargs={"model": "gpt-4o-mini"},
+        agent_log_head_lines=2,
+        max_tokens_per_question=4000,
+    )
 
-rm = RMSearchClient(
-    api_key=os.environ[&quot;KYOTOAI_API_KEY&quot;],
-    base_url=&quot;https://api.kyotoai.net&quot;,
-)
+    result = await orchestrator(
+        messages=[
+            {"role": "system", "content": "You gather concise search summaries."},
+            {"role": "user", "content": "Search for recent applications of perovskite solar cells."},
+        ]
+    )
+    print(result["msg_history"][-2]["content"])
 
-documents = [
-    &quot;4&quot;,
-    &quot;The answer is definitely 1 million.&quot;,
-]
-
-result = rm.rerank(
-    model=&quot;renka-1&quot;,
-    query=&quot;What is 2 + 2?&quot;,
-    documents=documents,
-)
-
-for item in result.results:
-    idx = item.index
-    print(item.score, &quot;-&quot;, documents[idx])</code>
-              </pre>
-
-              <pre data-lang="curl-rm" class="hidden">
-<code>curl -X POST https://api.kyotoai.net/rmsearch/rerank \
-  -H &quot;Authorization: Bearer $KYOTOAI_API_KEY&quot; \
-  -H &quot;Content-Type: application/json&quot; \
-  -d '{
-    &quot;model&quot;: &quot;renka-1&quot;,
-    &quot;query&quot;: &quot;What is 2 + 2?&quot;,
-    &quot;documents&quot;: [
-      &quot;4&quot;,
-      &quot;The answer is definitely 1 million.&quot;
-    ]
-  }'</code>
-              </pre>
-            </div>
+asyncio.run(demo_web_search())</code></pre>
           </div>
+        </section>
+
+        <section id="custom-agent" class="mt-12">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Custom agent skeleton
+          </h2>
+          <p class="text-slate-300 mb-3">
+            Extend SEIMEI by following the “Create an agent” guide inside
+            <code>seimei/README.md</code>. Drop new files anywhere and add them
+            to <code>agent_config</code>.
+          </p>
+          <div
+            class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 font-mono text-sm text-slate-100 thin-scrollbar overflow-x-auto"
+          >
+            <pre><code>from seimei import Agent
+
+class prioritise_docs(Agent):
+    """Rank documentation chunks that should be read next."""
+
+    description = "Select document chunks relevant to the latest user request."
+
+    async def inference(self, messages, shared_ctx, **kwargs):
+        search = shared_ctx.get("search")
+        if not search:
+            return {"content": "search helper unavailable", "log": {}}
+
+        question = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        candidates = [{"key": text, "section": name} for name, text in kwargs.get("docs", [])]
+
+        ranked = await search(
+            query=question,
+            keys=candidates,
+            k=3,
+            context={"purpose": "doc_ranking"},
+        )
+        plan = "\n".join(f"- {item['payload']['section']}" for item in ranked if item.get("payload"))
+        return {"content": f"Review next:\n{plan}", "log": {"query": question, "sections": ranked}}
+</code></pre>
+          </div>
+          <p class="text-slate-400 text-sm mt-3">
+            Use <code>agent_config=[{"dir_path": "my_agents"}]</code> to load
+            every Python file in that directory. The shared context exposes the
+            RMSearch helper, instruction list, and run-scoped LLM proxy.
+          </p>
         </section>
 
         <!-- LIMITS -->
