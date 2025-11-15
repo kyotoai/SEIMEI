@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SEIMEI – KyotoAI Documentation</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <!-- Tailwind CDN (for static docs this is usually fine) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <style>
+      :root {
+        --primary: 129 140 248; /* indigo-400 */
+        --primary-dark: 79 70 229; /* indigo-600 */
+        --bg-dark: 15 23 42; /* slate-900 */
+        --bg-darker: 0 0 0;
+      }
+
+      body {
+        background-color: rgb(var(--bg-dark));
+        color: rgb(226, 232, 240);
+      }
+
+      ::selection {
+        background: rgba(129, 140, 248, 0.35);
+      }
+
+      /* Thin scrollbar similar to the docs you pasted */
+      .thin-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .thin-scrollbar::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.6);
+        border-radius: 999px;
+      }
+
+      pre code {
+        font-variant-ligatures: none;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen antialiased">
+    <div class="min-h-screen flex bg-slate-950 text-slate-100">
+      <!-- SIDEBAR -->
+      <aside
+        class="hidden lg:flex w-64 flex-col border-r border-slate-800 bg-slate-950/90 backdrop-blur-sm"
+      >
+        <div class="px-6 py-4 border-b border-slate-800 flex items-center gap-3">
+          <div
+            class="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-400 via-purple-500 to-sky-400 flex items-center justify-center text-xs font-bold"
+          >
+            K
+          </div>
+          <div class="flex flex-col">
+            <span class="text-sm font-semibold tracking-tight">KyotoAI</span>
+            <span class="text-xs text-slate-400">SEIMEI Documentation</span>
+          </div>
+        </div>
+
+        <nav
+          class="flex-1 overflow-y-auto thin-scrollbar px-4 py-4 text-sm space-y-6"
+        >
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Get Started
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#intro"
+                  class="block rounded-lg px-2 py-1.5 text-slate-200 bg-slate-900/70 font-medium"
+                  >Introduction</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#core-concepts"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Core Concepts</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#architecture"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Architecture</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#workflow"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Typical Workflow</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Client Usage
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#python"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Python Client</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#javascript"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >JavaScript Client</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#rmsearch"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Using RMSearch</a
+                >
+              </li>
+            </ul>
+          </div>
+
+          <div>
+            <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+              Operations
+            </h3>
+            <ul class="space-y-1">
+              <li>
+                <a
+                  href="#limits"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Rate Limits</a
+                >
+              </li>
+              <li>
+                <a
+                  href="#pricing"
+                  class="block rounded-lg px-2 py-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  >Pricing & Deployment</a
+                >
+              </li>
+            </ul>
+          </div>
+        </nav>
+
+        <div
+          class="border-t border-slate-800 px-4 py-3 text-xs text-slate-500 space-y-1"
+        >
+          <div class="flex items-center justify-between">
+            <span>Docs Version</span>
+            <span class="font-mono text-slate-300">v0.1</span>
+          </div>
+          <div class="flex items-center justify-between">
+            <span>Project</span>
+            <span class="font-mono text-slate-300">SEIMEI</span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- MAIN CONTENT -->
+      <main
+        class="flex-1 max-w-5xl mx-auto px-4 sm:px-6 lg:px-12 py-10 lg:py-12"
+      >
+        <!-- Top breadcrumb / header -->
+        <header id="intro" class="mb-8">
+          <div class="mb-2 text-sm font-semibold text-indigo-300">
+            Get Started
+          </div>
+          <h1
+            class="text-3xl sm:text-4xl font-bold tracking-tight text-slate-50 mb-3"
+          >
+            SEIMEI – Search-Enhanced Interface for Multi-Expertise Inference
+          </h1>
+          <p class="text-slate-300 text-base sm:text-lg max-w-3xl">
+            SEIMEI is KyotoAI’s AI Scientist system. It uses
+            <span class="font-semibold">reward-model-based search (RMSearch)</span>
+            to guide thousands of reasoning agents, keeping long chains of
+            thought accurate and grounded in your data.
+          </p>
+
+          <div
+            class="mt-4 inline-flex items-center gap-2 rounded-full border border-indigo-500/40 bg-indigo-500/10 px-3 py-1 text-xs text-indigo-200"
+          >
+            <span class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+            <span>Alpha – API stable, internals evolving</span>
+          </div>
+        </header>
+
+        <section
+          id="core-concepts"
+          class="prose prose-invert max-w-none prose-headings:scroll-mt-24"
+        >
+          <h2 class="text-xl font-semibold text-slate-50 mb-3">
+            What problem does SEIMEI solve?
+          </h2>
+          <p class="text-slate-300">
+            General-purpose LLMs struggle with long reasoning chains. Once the
+            context is large and the task requires multiple steps –
+            cross-checking papers, running simulations, comparing hypotheses –
+            accuracy quietly decays. Reinforcement learning on the full model
+            can help, but it is extremely expensive and hard to retarget to new
+            domains.
+          </p>
+          <p class="text-slate-300">
+            SEIMEI takes a different route. Instead of retraining the entire
+            LLM, we train a
+            <span class="font-semibold">lightweight search model</span>
+            (RMSearch) that learns which reasoning paths are promising. The LLM
+            remains mostly frozen, but the search model is tuned on your domain
+            so that the system repeatedly chooses
+            <span class="font-semibold"
+              >“what to read next” and “which trajectory to extend”</span
+            >.
+          </p>
+
+          <!-- Callout -->
+          <div
+            class="mt-5 mb-6 flex gap-3 rounded-2xl border border-sky-400/40 bg-sky-500/10 p-4"
+          >
+            <div
+              class="mt-0.5 h-5 w-5 flex-none rounded-full bg-sky-500/20 flex items-center justify-center"
+            >
+              <span class="text-sky-300 text-xs font-bold">i</span>
+            </div>
+            <div class="text-sm text-slate-100 space-y-1.5">
+              <p class="font-semibold">Key idea</p>
+              <p class="text-slate-200/90">
+                Teach a small search model to optimize the
+                <span class="italic">sequence of thoughts</span> rather than the
+                full LLM weights. This is cheaper to train, easier to adapt, and
+                meshes naturally with retrieval-augmented generation.
+              </p>
+            </div>
+          </div>
+
+          <h2 id="architecture" class="text-xl font-semibold text-slate-50 mb-3">
+            High-level architecture
+          </h2>
+          <p class="text-slate-300">
+            SEIMEI is a modular system. You can use it purely as an RM-powered
+            search engine, or as a full AI Scientist orchestrator.
+          </p>
+
+          <div
+            class="mt-4 grid gap-4 sm:grid-cols-2 text-sm text-slate-200/90"
+          >
+            <div
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+            >
+              <h3 class="text-sm font-semibold mb-1.5">1. Ingestion</h3>
+              <p class="text-slate-300 text-sm">
+                Papers, code, experiment logs, and meeting notes are chunked,
+                embedded, and indexed. You can plug in your existing vector
+                store or use KyotoAI’s managed index.
+              </p>
+            </div>
+            <div
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+            >
+              <h3 class="text-sm font-semibold mb-1.5">2. RMSearch reranker</h3>
+              <p class="text-slate-300 text-sm">
+                A cross-encoder-style reward model scores candidate snippets and
+                reasoning states. It can be trained on logs, synthetic data, or
+                curated demonstrations from your domain experts.
+              </p>
+            </div>
+            <div
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+            >
+              <h3 class="text-sm font-semibold mb-1.5">
+                3. SEIMEI orchestration
+              </h3>
+              <p class="text-slate-300 text-sm">
+                SEIMEI spins up many lightweight agents (planners, skeptics,
+                summarizers, tool callers) and lets the reward model choose
+                which branches to extend.
+              </p>
+            </div>
+            <div
+              class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4"
+            >
+              <h3 class="text-sm font-semibold mb-1.5">
+                4. Final synthesis & report
+              </h3>
+              <p class="text-slate-300 text-sm">
+                The last step compresses the surviving trajectories into a
+                concise answer, complete with citations, assumptions, and
+                suggested follow-up experiments.
+              </p>
+            </div>
+          </div>
+
+          <h2 id="workflow" class="mt-8 text-xl font-semibold text-slate-50 mb-3">
+            Typical workflow
+          </h2>
+          <ol class="list-decimal list-inside space-y-1.5 text-slate-300">
+            <li>Sync your corpus (papers, repos, logs) into a collection.</li>
+            <li>Optionally fine-tune an RMSearch model for your domain.</li>
+            <li>
+              Call SEIMEI’s API with a research question or task description.
+            </li>
+            <li>
+              The system launches agentic search, guided by the reward model.
+            </li>
+            <li>
+              You get a structured answer plus intermediate artifacts: snippets,
+              reasoning traces, and metrics.
+            </li>
+          </ol>
+        </section>
+
+        <!-- PYTHON CLIENT -->
+        <section id="python" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Using SEIMEI from Python
+          </h2>
+          <p class="text-slate-300 mb-3">
+            The Python client is ideal for notebooks and pipelines. The snippet
+            below assumes you’ve already created an API key and a collection
+            named <code class="text-indigo-300">"research-notes"</code>.
+          </p>
+
+          <div
+            class="code-group mt-4 mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
+            data-code-group
+          >
+            <!-- Header with tabs + copy button ABOVE the code -->
+            <div
+              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+            >
+              <div class="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                  data-lang-tab="python"
+                >
+                  Python
+                </button>
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  data-lang-tab="shell"
+                >
+                  Shell
+                </button>
+              </div>
+              <button
+                type="button"
+                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+                data-copy
+              >
+                Copy
+              </button>
+            </div>
+
+            <!-- Code body -->
+            <div
+              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
+            >
+              <pre data-lang="python">
+<code># pip install &quot;seimei-client&quot;  # TODO: replace with your actual package name
+import os
+from seimei_client import SeimeiClient  # hypothetical client
+
+client = SeimeiClient(
+    api_key=os.environ[&quot;KYOTOAI_API_KEY&quot;],
+    base_url=&quot;https://api.kyotoai.net&quot;,  # adjust if self-hosting
+)
+
+question = &quot;Summarize recent results on RM-based search for code generation.&quot;
+
+response = client.run_scientist(
+    project=&quot;bigcode-benchmark&quot;,
+    query=question,
+    collection=&quot;research-notes&quot;,
+    max_steps=32,
+    rm_model=&quot;renka-1&quot;,  # your RMSearch model name
+)
+
+print(response.answer)
+print(&quot;--- cited snippets ---&quot;)
+for s in response.snippets[:5]:
+    print(f&quot;• {s.score:.3f} :: {s.source_id} :: {s.text[:80]}...&quot;)</code>
+              </pre>
+
+              <pre data-lang="shell" class="hidden">
+<code># Example: set your API key and test connectivity
+export KYOTOAI_API_KEY=&quot;sk-your-key&quot;
+
+curl -X POST https://api.kyotoai.net/seimei/run-scientist \
+  -H &quot;Authorization: Bearer $KYOTOAI_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;project&quot;: &quot;fusion-lab&quot;,
+    &quot;query&quot;: &quot;Design a surrogate modeling strategy for turbulence.&quot;,
+    &quot;collection&quot;: &quot;lab-notes&quot;,
+    &quot;rm_model&quot;: &quot;renka-1&quot;
+  }'</code>
+              </pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- JAVASCRIPT CLIENT -->
+        <section id="javascript" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Using SEIMEI from JavaScript / TypeScript
+          </h2>
+          <p class="text-slate-300 mb-3">
+            For web apps and Node services, you can call SEIMEI via a lightweight
+            TypeScript client or directly via <code class="text-indigo-300"
+              >fetch</code
+            >.
+          </p>
+
+          <div
+            class="code-group mt-4 mb-8 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
+            data-code-group
+          >
+            <div
+              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+            >
+              <div class="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                  data-lang-tab="ts"
+                >
+                  TypeScript
+                </button>
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  data-lang-tab="fetch"
+                >
+                  fetch()
+                </button>
+              </div>
+              <button
+                type="button"
+                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+                data-copy
+              >
+                Copy
+              </button>
+            </div>
+
+            <div
+              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
+            >
+              <pre data-lang="ts">
+<code>// npm install seimei-client  // TODO: replace with your actual package name
+import { SeimeiClient } from &quot;seimei-client&quot;;
+
+const client = new SeimeiClient({
+  apiKey: process.env.KYOTOAI_API_KEY!,
+  baseUrl: &quot;https://api.kyotoai.net&quot;, // or your self-hosted URL
+});
+
+async function main() {
+  const res = await client.runScientist({
+    project: &quot;ecommerce-negotiation&quot;,
+    query: &quot;Find failure cases where the agent overestimates discounts.&quot;,
+    collection: &quot;market-logs&quot;,
+    rmModel: &quot;renka-1&quot;,
+    maxSteps: 24,
+  });
+
+  console.log(res.answer);
+  console.log(res.snippets.map(s =&gt; [s.score, s.text.slice(0, 80)]));
+}
+
+main().catch(console.error);</code>
+              </pre>
+
+              <pre data-lang="fetch" class="hidden">
+<code>const resp = await fetch(&quot;https://api.kyotoai.net/seimei/run-scientist&quot;, {
+  method: &quot;POST&quot;,
+  headers: {
+    &quot;Authorization&quot;: `Bearer ${process.env.KYOTOAI_API_KEY}`,
+    &quot;Content-Type&quot;: &quot;application/json&quot;,
+  },
+  body: JSON.stringify({
+    project: &quot;physics-lab&quot;,
+    query: &quot;Explain the main bottlenecks in fusion turbulence simulations.&quot;,
+    collection: &quot;papers&quot;,
+    rm_model: &quot;renka-1&quot;,
+  }),
+});
+
+const data = await resp.json();
+console.log(data.answer);</code>
+              </pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- RMSEARCH -->
+        <section id="rmsearch" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Using RMSearch directly (reranker API)
+          </h2>
+          <p class="text-slate-300 mb-3">
+            You can also use the RMSearch reranker independently of the full
+            SEIMEI orchestration. This is useful for classic RAG pipelines,
+            ranking past conversations, or comparing candidate plans.
+          </p>
+
+          <div
+            class="code-group mt-4 mb-6 rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden"
+            data-code-group
+          >
+            <div
+              class="flex items-center justify-between border-b border-slate-800 px-4 py-2"
+            >
+              <div class="flex items-center gap-2 text-xs">
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                  data-lang-tab="python-rm"
+                >
+                  Python
+                </button>
+                <button
+                  type="button"
+                  class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                  data-lang-tab="curl-rm"
+                >
+                  curl
+                </button>
+              </div>
+              <button
+                type="button"
+                class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+                data-copy
+              >
+                Copy
+              </button>
+            </div>
+
+            <div
+              class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto"
+            >
+              <pre data-lang="python-rm">
+<code>from seimei_client import RMSearchClient  # hypothetical import
+
+rm = RMSearchClient(
+    api_key=os.environ[&quot;KYOTOAI_API_KEY&quot;],
+    base_url=&quot;https://api.kyotoai.net&quot;,
+)
+
+documents = [
+    &quot;4&quot;,
+    &quot;The answer is definitely 1 million.&quot;,
+]
+
+result = rm.rerank(
+    model=&quot;renka-1&quot;,
+    query=&quot;What is 2 + 2?&quot;,
+    documents=documents,
+)
+
+for item in result.results:
+    idx = item.index
+    print(item.score, &quot;-&quot;, documents[idx])</code>
+              </pre>
+
+              <pre data-lang="curl-rm" class="hidden">
+<code>curl -X POST https://api.kyotoai.net/rmsearch/rerank \
+  -H &quot;Authorization: Bearer $KYOTOAI_API_KEY&quot; \
+  -H &quot;Content-Type: application/json&quot; \
+  -d '{
+    &quot;model&quot;: &quot;renka-1&quot;,
+    &quot;query&quot;: &quot;What is 2 + 2?&quot;,
+    &quot;documents&quot;: [
+      &quot;4&quot;,
+      &quot;The answer is definitely 1 million.&quot;
+    ]
+  }'</code>
+              </pre>
+            </div>
+          </div>
+        </section>
+
+        <!-- LIMITS -->
+        <section id="limits" class="mt-10">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Rate limiting & usage units
+          </h2>
+          <p class="text-slate-300">
+            SEIMEI and RMSearch are billed and rate-limited using
+            <span class="font-semibold">UTF-8 bytes</span>, not tokens. This
+            makes costs predictable across languages and models.
+          </p>
+
+          <div
+            class="mt-4 rounded-2xl border border-slate-800 bg-slate-900/70 p-4 text-sm text-slate-200"
+          >
+            <p class="font-semibold mb-2">Per-minute soft limit (example)</p>
+            <p class="mb-2">
+              Suppose we allow
+              <code class="text-indigo-300">2,000,000 bytes/minute</code>
+              per API key:
+            </p>
+
+            <div
+              class="mt-3 rounded-xl border border-slate-800 bg-black/20 p-3 font-mono text-xs thin-scrollbar overflow-x-auto"
+            >
+              <pre><code>Total bytes for one RMSearch call =
+  overhead_bytes
+  + len(query.encode("utf-8"))
+  + sum(len(doc_i.encode("utf-8")) for each document)</code></pre>
+            </div>
+
+            <p class="mt-3 text-slate-300">
+              When you exceed the soft limit, requests may still succeed but be
+              throttled into a higher-latency mode. For production deployments
+              we recommend aggregating queries and using streaming where
+              possible.
+            </p>
+          </div>
+        </section>
+
+        <!-- PRICING -->
+        <section id="pricing" class="mt-10 mb-16">
+          <h2 class="text-xl font-semibold text-slate-50 mb-2">
+            Pricing & deployment model
+          </h2>
+          <p class="text-slate-300 mb-3">
+            SEIMEI is designed to work in both open-source and managed modes.
+            The exact pricing will depend on your deployment, but a typical
+            setup looks like:
+          </p>
+
+          <ul class="list-disc list-inside text-slate-300 space-y-1.5">
+            <li>
+              <span class="font-semibold">Open-source core</span> – the SEIMEI
+              orchestration code and RMSearch reference models under an
+              Apache-2.0-style license.
+            </li>
+            <li>
+              <span class="font-semibold">Managed API</span> – KyotoAI hosts
+              SEIMEI and RMSearch for you with SLAs, monitoring, and scaling.
+            </li>
+            <li>
+              <span class="font-semibold">Custom deployments</span> – on-prem or
+              VPC setups for sensitive scientific workloads.
+            </li>
+          </ul>
+
+          <div
+            class="mt-4 flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm"
+          >
+            <div
+              class="mt-0.5 h-5 w-5 flex-none rounded-full bg-amber-400/20 flex items-center justify-center"
+            >
+              <span class="text-amber-300 text-xs font-bold">!</span>
+            </div>
+            <div class="space-y-1.5 text-amber-100">
+              <p class="font-semibold">Contract note</p>
+              <p>
+                If you are providing a project-specific search model or SEIMEI
+                deployment under a non-exclusive contract, make sure your terms
+                explicitly distinguish between:
+              </p>
+              <ul class="list-disc list-inside text-amber-100/90">
+                <li>the trained model weights and interface, and</li>
+                <li>any customer-owned data or analysis deliverables.</li>
+              </ul>
+              <p class="mt-1">
+                That way you can open-source SEIMEI and RMSearch while keeping
+                customer data private and respecting their usage rights.
+              </p>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- Minimal JS for tabs + copy buttons -->
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const groups = document.querySelectorAll("[data-code-group]");
+
+        groups.forEach((group) => {
+          const tabs = group.querySelectorAll("[data-lang-tab]");
+          const pres = group.querySelectorAll("pre[data-lang]");
+          const copyBtn = group.querySelector("[data-copy]");
+
+          if (!tabs.length || !pres.length || !copyBtn) return;
+
+          let activeLang =
+            tabs[0].dataset.langTab || pres[0].dataset.lang || "python";
+
+          function setActive(lang) {
+            activeLang = lang;
+            tabs.forEach((tab) => {
+              const isActive = tab.dataset.langTab === lang;
+              tab.classList.toggle("bg-slate-800", isActive);
+              tab.classList.toggle("text-indigo-300", isActive);
+              tab.classList.toggle("font-medium", isActive);
+              tab.classList.toggle("text-slate-400", !isActive);
+            });
+            pres.forEach((pre) => {
+              pre.classList.toggle("hidden", pre.dataset.lang !== lang);
+            });
+          }
+
+          tabs.forEach((tab) => {
+            tab.addEventListener("click", () => {
+              setActive(tab.dataset.langTab);
+            });
+          });
+
+          copyBtn.addEventListener("click", async () => {
+            const codeEl = group.querySelector(
+              `pre[data-lang="${activeLang}"] code`
+            );
+            if (!codeEl) return;
+
+            const text = codeEl.textContent || "";
+            try {
+              await navigator.clipboard.writeText(text);
+              const old = copyBtn.textContent;
+              copyBtn.textContent = "Copied";
+              setTimeout(() => {
+                copyBtn.textContent = old;
+              }, 1200);
+            } catch (e) {
+              console.error("copy failed", e);
+            }
+          });
+
+          // Initialize
+          setActive(activeLang);
+        });
+      });
+    </script>
+  </body>
+</html>
