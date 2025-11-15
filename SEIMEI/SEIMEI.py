@@ -33,6 +33,7 @@ LOG_BLOCK_COLOR = LogColors.CYAN
 ANSWER_BLOCK_COLOR = LogColors.BOLD_MAGENTA
 ERROR_COLOR = LogColors.RED
 KNOWLEDGE_COLOR = LogColors.YELLOW
+DEFAULT_RMSEARCH_URL = "https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch"
 
 class seimei:
     """Main orchestrator.
@@ -66,7 +67,11 @@ class seimei:
         self.llm = LLMClient(**llm_kwargs)
 
         # Routing
-        default_rm_settings = {"agent_routing": False, "knowledge_search": True}
+        default_rm_settings = {
+            "agent_routing": False,
+            "knowledge_search": True,
+            "url": DEFAULT_RMSEARCH_URL,
+        }
         provided_rm_kwargs = rm_kwargs or {}
         self.rm_kwargs = {**default_rm_settings, **provided_rm_kwargs}
         self.max_steps = max_steps
@@ -282,7 +287,16 @@ class seimei:
         if purpose:
             payload["purpose"] = purpose
 
-        response = requests.post(url, json=payload, timeout=timeout or 10)
+        api_key = os.getenv("KYOTOAI_API_KEY")
+        if not api_key:
+            raise RuntimeError("KYOTOAI_API_KEY environment variable is not set")
+
+        headers = {
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        }
+
+        response = requests.post(url, json=payload, headers=headers, timeout=timeout or 10)
         response.raise_for_status()
         try:
             data = response.json()
