@@ -21,8 +21,8 @@ CLI_NAME = "SEIMEI CLI"
 ASCII_ART = r"""
   _____  ______ _____ __  __ ______ _____ 
  / ____|/ ____|_   _|  \/  |  ____|_   _|
-| (___ | |__    | | | \  / | |__    | |  
- \___ \|  __|   | | | |\/| |  __|   | |  
+| (___ | |____  | | | \  / | |____  | |  
+ \___ \|  ____| | | | |\/| |  ____| | |  
  ____) | |____ _| |_| |  | | |____ _| |_ 
 |_____/ \_____|_____|_|  |_|______|_____|
 """
@@ -37,9 +37,7 @@ DEFAULT_LLM_KWARGS: Dict[str, Any] = {
     "model": "gpt-5-mini",
 }
 
-# rmsearch: https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch
-# emnbed: https://si3trdzr984v57-8000.proxy.runpod.net/embed
-DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch", "agent_routing":False, "knowledge_search":True}
+DEFAULT_RM_KWARGS: Dict[str, Any] = {"url":"https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch", "agent_routing":False, "knowledge_search":True}
 DEFAULT_MAX_STEPS = 12
 DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
