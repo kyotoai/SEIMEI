@@ -29,7 +29,7 @@ def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
     blocks: List[str] = []
     for idx, msg in enumerate(agent_messages, start=1):
         block_lines: List[str] = []
-        header = f"AGENT OUTPUT {idx}"
+        header = f"[AGENT OUTPUT STEP {idx+1}]"
         content = msg.get("content")
         if content is None:
             continue
@@ -305,7 +305,7 @@ class LLMClient:
         token_limiter: Optional[TokenLimiter] = None,
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
-        prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=bool(system))
+        prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=False) #bool(system))
         if normal_system_count > 1:
             print(
                 colorize(
@@ -332,7 +332,8 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
-        
+        print("\n----------")
+        print("payload_msgs: ", payload_msgs)
 
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:

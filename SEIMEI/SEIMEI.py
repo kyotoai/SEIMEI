@@ -479,8 +479,7 @@ class seimei:
             '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
             f"Candidates:\n{numbered}\n"
-            f"Select up to {k} candidates most relevant to the conversation.\n"
-            "You must rank think at the top when you don't have at least 4, 5 agent output. After you get 6, 7 agent outputs, you must rank answer agent high to finish your inference."
+            f"Select up to {k} candidates most relevant to the conversation."
         )
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
