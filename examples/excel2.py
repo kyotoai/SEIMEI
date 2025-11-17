@@ -6,6 +6,7 @@ from typing import Any, Dict
 
 from seimei import seimei
 
+EVAL_DIR = "exp5"
 EVAL_NAME = "excel_eval_v1"
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
@@ -94,7 +95,7 @@ async def score_answer(orchestrator_llm, question: str, reference_answer: str, m
 
 async def demo_code_act():
 
-    with open("exp5/dataset.json") as f:
+    with open(f"{EVAL_DIR}/dataset.json") as f:
         dataset = json.load(f)
     
     orchestrator = seimei(
@@ -164,7 +165,7 @@ async def demo_code_act():
         "records": eval_records,
     }
 
-    eval_dir = Path("exp5/evals")
+    eval_dir = Path(f"{EVAL_DIR}/evals")
     eval_dir.mkdir(parents=True, exist_ok=True)
     eval_path = eval_dir / f"{EVAL_NAME}.json"
     with eval_path.open("w", encoding="utf-8") as f:
