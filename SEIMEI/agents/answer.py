@@ -96,7 +96,11 @@ class answer(Agent):
             #"sources": findings,
         }
         if knowledge_entries:
+            log_data["knowledge"] = knowledge_entries[:8]
             log_data["knowledge_used"] = [item.get("text") for item in knowledge_entries[:8]]
+            knowledge_ids = [item.get("id") for item in knowledge_entries[:8] if item.get("id") is not None]
+            if knowledge_ids:
+                log_data["knowledge_id"] = knowledge_ids
         return {
             "content": final_answer,
             "stop": True,

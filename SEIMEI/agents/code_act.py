@@ -3,7 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
-from typing import Any, Dict, List, NamedTuple, Optional, Sequence
+from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
 from seimei.knowledge.utils import get_agent_knowledge
@@ -51,15 +51,21 @@ class code_act(Agent):
         approve_cb = shared_ctx.get("approval_callback")
 
         
-        code = await _generate_command(messages, shared_ctx, allowed)
+        code, knowledge_used = await _generate_command(messages, shared_ctx, allowed)
 
         if not code:
-            return {
+            resp: Dict[str, Any] = {
                 "content": (
                     "No executable command detected or generated. "
                     "Provide a command wrapped in <cmd>...</cmd> or a clear analysis request."
                 )
             }
+            if knowledge_used:
+                resp["knowledge"] = knowledge_used
+                knowledge_ids = [item.get("id") for item in knowledge_used if item.get("id") is not None]
+                if knowledge_ids:
+                    resp["knowledge_id"] = knowledge_ids
+            return resp
 
         '''
         code = _normalize_command(code)
@@ -99,7 +105,13 @@ class code_act(Agent):
         stderr = (proc_out.stderr or "").strip()
         rc = proc_out.returncode
         summary = f"$ {code}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
-        return {"content": summary, "code": code, "log": {"command": code, "output": stdout, "error": stderr}}
+        log_data: Dict[str, Any] = {"command": code, "output": stdout, "error": stderr}
+        if knowledge_used:
+            log_data["knowledge"] = knowledge_used
+            knowledge_ids = [item.get("id") for item in knowledge_used if item.get("id") is not None]
+            if knowledge_ids:
+                log_data["knowledge_id"] = knowledge_ids
+        return {"content": summary, "code": code, "log": log_data}
 
 
 _CMD_TAG_RE = re.compile(r"<cmd>(.*?)</cmd>", re.DOTALL | re.IGNORECASE)
@@ -205,17 +217,17 @@ async def _generate_command(
     messages: List[Dict[str, Any]],
     shared_ctx: Dict[str, Any],
     allowed: Optional[Sequence[str]],
-) -> Optional[str]:
+) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     llm = shared_ctx.get("llm")
+    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act", max_items=3)
     if llm is None:
-        return None
+        return None, knowledge_entries
 
     chat_history = messages
 
     allowed_list = list(allowed) if allowed else []
     allowed_hint = ", ".join(allowed_list) if allowed_list else "python, python3"
 
-    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act", max_items=3)
     knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries)
 
     system_lines = [
@@ -236,7 +248,7 @@ async def _generate_command(
             system="\n\n".join(system_lines),
         )
     except Exception:
-        return None
+        return None, knowledge_entries
 
     command = _extract_tagged_command(response)
 
@@ -249,4 +261,4 @@ async def _generate_command(
             return None
     '''
 
-    return command
+    return command, knowledge_entries

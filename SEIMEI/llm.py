@@ -328,12 +328,12 @@ class LLMClient:
             payload_msgs.append({"role": "system", "content": system})
         for msg in prepared_msgs:
             entry = dict(msg)
-            for drop_key in ("agent", "log", "code", "chosen_instructions"):
+            for drop_key in ("agent", "log", "code", "chosen_instructions", "knowledge", "knowledge_id"):
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
-        print("\n----------")
-        print("payload_msgs: ", payload_msgs)
+        #print("\n----------")
+        #print("payload_msgs: ", payload_msgs)
 
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
