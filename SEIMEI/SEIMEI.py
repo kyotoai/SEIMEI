@@ -632,7 +632,19 @@ class seimei:
         knowledge_prompt_path: Optional[Union[str, Path]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
-        msg_history: List[Dict[str, Any]] = [dict(m) for m in messages]
+        msg_history: List[Dict[str, Any]] = []
+        for raw in messages:
+            msg = dict(raw)
+            k_texts, k_ids = self._extract_message_knowledge(msg)
+            k_value = self._collapse_knowledge_field(k_texts)
+            k_id_value = None
+            if any(kid is not None for kid in k_ids):
+                k_id_value = self._collapse_knowledge_field(k_ids, keep_none=True)
+            if k_value is not None:
+                msg["knowledge"] = k_value
+            if k_id_value is not None:
+                msg["knowledge_id"] = k_id_value
+            msg_history.append(msg)
         run_label = (run_name or "").strip()
         log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
         color_enabled = supports_color()
@@ -731,6 +743,16 @@ class seimei:
 
             step_res = self._apply_agent_output_limit(step_res)
 
+            knowledge_texts, knowledge_ids = self._extract_message_knowledge(step_res)
+            knowledge_value = self._collapse_knowledge_field(knowledge_texts)
+            knowledge_id_value = None
+            if any(kid is not None for kid in knowledge_ids):
+                knowledge_id_value = self._collapse_knowledge_field(knowledge_ids, keep_none=True)
+            if knowledge_value is not None and "knowledge" not in step_res:
+                step_res["knowledge"] = knowledge_value
+            if knowledge_id_value is not None and "knowledge_id" not in step_res:
+                step_res["knowledge_id"] = knowledge_id_value
+
             if step_res.get("final_output"):
                 final_agent_output = str(step_res.get("final_output"))
                 final_agent_name = agent_obj.name
@@ -741,6 +763,10 @@ class seimei:
                 "name": agent_obj.name,
                 "content": step_res.get("content", ""),
             }
+            if knowledge_value is not None or step_res.get("knowledge") is not None:
+                agent_msg["knowledge"] = step_res.get("knowledge", knowledge_value)
+            if knowledge_id_value is not None or step_res.get("knowledge_id") is not None:
+                agent_msg["knowledge_id"] = step_res.get("knowledge_id", knowledge_id_value)
             # Optional fields for richer dataset
             for k in ("code", "chosen_instructions", "log"):
                 if k in step_res:
@@ -749,12 +775,17 @@ class seimei:
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Persist step
-            write_step({
+            step_payload = {
                 "step": step_idx,
                 "agent": agent_obj.name,
                 "result": step_res,
                 "time": time.time(),
-            })
+            }
+            if "knowledge" in step_res:
+                step_payload["knowledge"] = step_res["knowledge"]
+            if "knowledge_id" in step_res:
+                step_payload["knowledge_id"] = step_res["knowledge_id"]
+            write_step(step_payload)
 
             print(colorize(f"{step_label}: Done {agent_obj.name} agent", STEP_TITLE_COLOR, enable=color_enabled))
 
@@ -1201,3 +1232,129 @@ class seimei:
             return json.dumps(data, ensure_ascii=False)
         except TypeError:
             return str(data)
+
+    @staticmethod
+    def _coerce_knowledge_items_with_ids(value: Any) -> List[Tuple[str, Any]]:
+        items: List[Tuple[str, Any]] = []
+        if value is None:
+            return items
+        if isinstance(value, (int, float, bool)):
+            return items
+        if isinstance(value, str):
+            text = value.strip()
+            if text:
+                items.append((text, None))
+            return items
+        if isinstance(value, dict):
+            kid = value.get("knowledge_id") or value.get("id")
+            text_candidate: Optional[str] = None
+            for key in ("knowledge", "text", "content", "key", "value"):
+                candidate = value.get(key)
+                if isinstance(candidate, str) and candidate.strip():
+                    text_candidate = candidate.strip()
+                    break
+                if isinstance(candidate, dict):
+                    nested_text = seimei._stringify_knowledge_dict(candidate)
+                    nested_id = candidate.get("id") or candidate.get("knowledge_id")
+                    if nested_text and not text_candidate:
+                        text_candidate = nested_text
+                    if nested_id is not None and kid is None:
+                        kid = nested_id
+            if text_candidate is None:
+                text_candidate = seimei._stringify_knowledge_dict(value)
+            if text_candidate:
+                items.append((text_candidate, kid))
+            for alt_key in ("knowledge", "knowledge_used", "chosen_knowledge"):
+                alt_val = value.get(alt_key)
+                if alt_val is not None:
+                    items.extend(seimei._coerce_knowledge_items_with_ids(alt_val))
+            return items
+        if isinstance(value, (list, tuple, set)):
+            for entry in value:
+                items.extend(seimei._coerce_knowledge_items_with_ids(entry))
+            return items
+        try:
+            text = str(value).strip()
+        except Exception:
+            return items
+        if text:
+            items.append((text, None))
+        return items
+
+    @staticmethod
+    def _pair_knowledge_and_ids(knowledge_value: Any, ids_value: Any) -> List[Tuple[str, Any]]:
+        if knowledge_value is None or ids_value is None:
+            return []
+        knowledge_items: List[str] = []
+        if isinstance(knowledge_value, (list, tuple, set)):
+            for entry in knowledge_value:
+                if isinstance(entry, str) and entry.strip():
+                    knowledge_items.append(entry.strip())
+        elif isinstance(knowledge_value, str) and knowledge_value.strip():
+            knowledge_items.append(knowledge_value.strip())
+        if not knowledge_items:
+            return []
+
+        if isinstance(ids_value, (list, tuple, set)):
+            ids_list = list(ids_value)
+        else:
+            ids_list = [ids_value]
+        if not ids_list:
+            return []
+
+        if len(ids_list) == len(knowledge_items):
+            return list(zip(knowledge_items, ids_list))
+        if len(ids_list) == 1:
+            return [(text, ids_list[0]) for text in knowledge_items]
+        return []
+
+    @staticmethod
+    def _dedupe_knowledge_items(items: Sequence[Tuple[str, Any]]) -> List[Tuple[str, Any]]:
+        deduped: List[Tuple[str, Any]] = []
+        seen: set = set()
+        for text, kid in items:
+            if not text:
+                continue
+            key = (text, kid)
+            if key in seen:
+                continue
+            seen.add(key)
+            deduped.append((text, kid))
+        return deduped
+
+    def _extract_message_knowledge(self, payload: Dict[str, Any]) -> Tuple[List[str], List[Any]]:
+        if not isinstance(payload, dict):
+            return [], []
+        sources: List[Any] = []
+        for key in ("knowledge", "chosen_knowledge", "knowledge_used"):
+            if key in payload:
+                sources.append(payload.get(key))
+        log_data = payload.get("log")
+        if isinstance(log_data, dict):
+            for key in ("knowledge", "knowledge_used", "chosen_knowledge"):
+                if key in log_data:
+                    sources.append(log_data.get(key))
+        items: List[Tuple[str, Any]] = []
+        for src in sources:
+            items.extend(self._coerce_knowledge_items_with_ids(src))
+        if "knowledge" in payload or "knowledge_id" in payload:
+            items.extend(self._pair_knowledge_and_ids(payload.get("knowledge"), payload.get("knowledge_id")))
+        if isinstance(log_data, dict) and ("knowledge" in log_data or "knowledge_id" in log_data):
+            items.extend(self._pair_knowledge_and_ids(log_data.get("knowledge"), log_data.get("knowledge_id")))
+        deduped = self._dedupe_knowledge_items(items)
+        texts = [text for text, _ in deduped]
+        ids = [kid for _, kid in deduped]
+        return texts, ids
+
+    @staticmethod
+    def _collapse_knowledge_field(values: Sequence[Any], *, keep_none: bool = False) -> Optional[Union[Any, List[Any]]]:
+        filtered = list(values or [])
+        if not filtered:
+            return None
+        if not keep_none:
+            filtered = [v for v in filtered if v is not None]
+            if not filtered:
+                return None
+        if len(filtered) == 1:
+            return filtered[0]
+        return filtered
