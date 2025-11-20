@@ -173,6 +173,29 @@ This gives you a clean training/eval dataset with full provenance.
 
 ---
 
+## Resume or replay runs
+
+`messages.json` stores the exact `role="agent"` entries that SEIMEI appended while the run was executing. Feeding those messages back into the orchestrator lets you continue the workflow without changing the prompt that the final LLM call will see.
+
+```python
+from seimei import seimei, load_run_messages
+
+orchestrator = seimei(...)
+
+messages = load_run_messages(
+    "run-20251119-211751-e7aeb350",
+    runs_dir="seimei_runs",
+    step=3,  # optional: stop after the 3rd agent step before the previous assistant reply
+)
+
+result = await orchestrator(messages=messages)
+```
+
+- Omit `step` to replay the full transcript (including the prior assistant message). Provide a 1-indexed `step` to stop the history after that agent turn when you want SEIMEI to keep working from that point forward.
+- `load_run_messages` simply returns the stored dictionaries, so the LLM payload that produces the final answer stays byte-for-byte identical whether the agent continued immediately or you resumed it in a later call.
+
+---
+
 ## `seimei.__init__`
 
 **Arguments**
