@@ -6,7 +6,7 @@ import subprocess
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge
+from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
 
 _SAFE_DEFAULTS = [
     "echo",
@@ -33,71 +33,6 @@ _SAFE_DEFAULTS = [
 ]
 
 
-def _extract_int_id(value: Any) -> Optional[int]:
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return int(value)
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        if value.is_integer():
-            return int(value)
-        return None
-    if isinstance(value, str):
-        candidate = value.strip()
-        if not candidate:
-            return None
-        if candidate.isdigit() or (candidate.startswith("-") and candidate[1:].isdigit()):
-            try:
-                return int(candidate)
-            except ValueError:
-                return None
-        match = re.search(r"(\d+)", candidate)
-        if match:
-            try:
-                return int(match.group(1))
-            except ValueError:
-                return None
-    return None
-
-
-def _prepare_knowledge_payload(entries: Optional[Sequence[Dict[str, Any]]]) -> Tuple[List[Dict[str, Any]], List[str], List[int]]:
-    normalized: List[Dict[str, Any]] = []
-    log_texts: List[str] = []
-    id_list: List[int] = []
-    if not entries:
-        return normalized, log_texts, id_list
-
-    for entry in entries:
-        if not isinstance(entry, dict):
-            continue
-        text = (
-            entry.get("text")
-            or entry.get("knowledge")
-            or entry.get("content")
-            or entry.get("value")
-            or ""
-        )
-        text_str = str(text).strip()
-        if not text_str:
-            continue
-        normalized_entry: Dict[str, Any] = {"text": text_str}
-        tags = entry.get("tags")
-        if isinstance(tags, list):
-            normalized_entry["tags"] = tags
-        elif isinstance(tags, (set, tuple)):
-            normalized_entry["tags"] = [str(tag).strip() for tag in tags if str(tag).strip()]
-        kid = entry.get("id") or entry.get("knowledge_id")
-        kid_int = _extract_int_id(kid)
-        if kid_int is not None:
-            normalized_entry["id"] = kid_int
-            id_list.append(kid_int)
-        normalized.append(normalized_entry)
-        log_texts.append(text_str)
-    return normalized, log_texts, id_list
-
-
 @register
 class code_act(Agent):
     """Execute *whitelisted* shell commands chosen from the conversation."""
@@ -117,7 +52,7 @@ class code_act(Agent):
 
         
         code, knowledge_used = await _generate_command(messages, shared_ctx, allowed)
-        knowledge_payload, knowledge_log_texts, knowledge_ids = _prepare_knowledge_payload(knowledge_used)
+        knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_used)
 
         if not code:
             resp: Dict[str, Any] = {
