@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
 from seimei.llm import TokenLimitExceeded
-from seimei.knowledge.utils import get_agent_knowledge
+from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
 
 
 def _latest_user_message(messages: List[Dict[str, Any]]) -> str:
@@ -49,6 +49,8 @@ class answer(Agent):
         user_question = _latest_user_message(messages)
         findings = _aggregate_agent_findings(messages)
         knowledge_entries = get_agent_knowledge(shared_ctx, "answer")
+        knowledge_subset = knowledge_entries[:8]
+        knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_subset)
 
         system_prompt = (
             "You are the final answer agent for SEIMEI. "
@@ -95,15 +97,17 @@ class answer(Agent):
             "seimei_output": final_answer,
             #"sources": findings,
         }
-        if knowledge_entries:
-            log_data["knowledge"] = knowledge_entries[:8]
-            log_data["knowledge_used"] = [item.get("text") for item in knowledge_entries[:8]]
-            knowledge_ids = [item.get("id") for item in knowledge_entries[:8] if item.get("id") is not None]
-            if knowledge_ids:
-                log_data["knowledge_id"] = knowledge_ids
-        return {
+        if knowledge_log_texts:
+            log_data["knowledge"] = knowledge_log_texts
+            log_data["knowledge_used"] = list(knowledge_log_texts)
+        result: Dict[str, Any] = {
             "content": final_answer,
             "stop": True,
             "final_output": final_answer,
             "log": log_data,
         }
+        if knowledge_payload:
+            result["knowledge"] = knowledge_payload
+        if knowledge_ids:
+            result["knowledge_id"] = knowledge_ids
+        return result

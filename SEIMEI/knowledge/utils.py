@@ -5,7 +5,7 @@ import json
 import random
 import re
 from pathlib import Path
-from typing import Any, Dict, Iterable, Iterator, List, Optional, Union
+from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
 
 def get_agent_knowledge(
@@ -194,6 +194,52 @@ def _coerce_numeric_id(value: Any) -> Optional[int]:
             except ValueError:
                 return None
     return None
+
+
+def prepare_knowledge_payload(
+    entries: Optional[Sequence[Dict[str, Any]]]
+) -> Tuple[List[Dict[str, Any]], List[str], List[int]]:
+    normalized: List[Dict[str, Any]] = []
+    log_texts: List[str] = []
+    id_list: List[int] = []
+    if not entries:
+        return normalized, log_texts, id_list
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        text_value = (
+            entry.get("text")
+            or entry.get("knowledge")
+            or entry.get("content")
+            or entry.get("value")
+            or ""
+        )
+        text_str = str(text_value).strip()
+        if not text_str:
+            continue
+
+        normalized_entry: Dict[str, Any] = {"text": text_str}
+        tags_raw = entry.get("tags")
+        tags_list: List[str] = []
+        if isinstance(tags_raw, (list, tuple, set)):
+            for tag in tags_raw:
+                tag_str = str(tag).strip()
+                if tag_str:
+                    tags_list.append(tag_str)
+        if tags_list:
+            normalized_entry["tags"] = tags_list
+
+        kid = entry.get("id") or entry.get("knowledge_id")
+        kid_int = _coerce_numeric_id(kid)
+        if kid_int is not None:
+            normalized_entry["id"] = kid_int
+            id_list.append(kid_int)
+
+        normalized.append(normalized_entry)
+        log_texts.append(text_str)
+
+    return normalized, log_texts, id_list
 
 
 def _load_json(path: Path) -> List[Dict[str, Any]]:

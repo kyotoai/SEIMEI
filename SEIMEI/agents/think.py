@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge
+from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
 
 DEFAULT_THINK_KNOWLEDGE: List[Dict[str, Any]] = [
     {
@@ -145,7 +145,16 @@ class think(Agent):
             selected_payloads = list(keys[: max(int(top_k), 1)])
             error_note = "Search function unavailable."
 
-        chosen_texts = [payload.get("key", "") for payload in selected_payloads if payload.get("key")]
+        knowledge_entries_payload: List[Dict[str, Any]] = []
+        for payload in selected_payloads:
+            entry_data = payload.get("knowledge")
+            if isinstance(entry_data, dict):
+                knowledge_entries_payload.append(entry_data)
+            else:
+                knowledge_entries_payload.append(payload)
+        knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_entries_payload)
+
+        chosen_texts = knowledge_log_texts or [payload.get("key", "") for payload in selected_payloads if payload.get("key")]
 
         llm = shared_ctx.get("llm")
         analysis_text: Optional[str] = None
@@ -194,8 +203,9 @@ class think(Agent):
 
         log_data: Dict[str, Any] = {
             "query": query or user_request,
-            "knowledge": selected_payloads,
         }
+        if knowledge_log_texts:
+            log_data["knowledge"] = knowledge_log_texts
         if error_note:
             log_data["warning"] = error_note
         if analysis_note:
@@ -206,8 +216,13 @@ class think(Agent):
                 "content": analysis_input,
             }
 
-        return {
+        result: Dict[str, Any] = {
             "content": analysis_text,
             "chosen_knowledge": chosen_texts,
             "log": log_data,
         }
+        if knowledge_payload:
+            result["knowledge"] = knowledge_payload
+        if knowledge_ids:
+            result["knowledge_id"] = knowledge_ids
+        return result

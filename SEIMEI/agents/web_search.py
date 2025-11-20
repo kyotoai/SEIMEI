@@ -8,7 +8,7 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import requests
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge
+from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
 
 _MAX_SEARCH_RESULTS = 8
 _MAX_FETCHED_PAGES = 4
