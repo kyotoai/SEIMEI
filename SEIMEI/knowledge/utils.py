@@ -3,6 +3,7 @@ from __future__ import annotations
 import csv
 import json
 import random
+import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Union
 
@@ -27,7 +28,7 @@ def get_agent_knowledge(
             if not normalized:
                 continue
             if not normalized.get("id"):
-                normalized["id"] = f"{agent_name}_{len(collected)}"
+                normalized["id"] = len(collected) + 1
             collected.append(normalized)
     if not collected:
         return []
@@ -91,8 +92,15 @@ def _normalize_entry(entry: Dict[str, Any]) -> Dict[str, Any]:
     else:
         tags = []
 
+    raw_id = entry.get("id") or entry.get("knowledge_id")
+    normalized_id = _coerce_numeric_id(raw_id)
+    if normalized_id is None:
+        meta = entry.get("meta")
+        if isinstance(meta, dict):
+            normalized_id = _coerce_numeric_id(meta.get("row_index"))
+
     normalized: Dict[str, Any] = {
-        "id": entry.get("id") or entry.get("knowledge_id"),
+        "id": normalized_id,
         "text": text,
         "tags": tags,
     }
@@ -128,7 +136,7 @@ def _load_csv(path: Path) -> List[Dict[str, Any]]:
     rows: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
-        for raw in reader:
+        for idx, raw in enumerate(reader, start=1):
             agent = (raw.get("agent") or "").strip()
             knowledge_text = (
                 raw.get("knowledge")
@@ -140,8 +148,11 @@ def _load_csv(path: Path) -> List[Dict[str, Any]]:
             if not agent or not knowledge_text:
                 continue
             entry: Dict[str, Any] = {"agent": agent, "knowledge": knowledge_text}
-            if raw.get("id"):
-                entry["id"] = raw["id"]
+            explicit_id = raw.get("id")
+            if explicit_id not in (None, ""):
+                entry["id"] = explicit_id
+            else:
+                entry["id"] = idx
             tags = _parse_tags(raw.get("tags"))
             if tags:
                 entry["tags"] = tags
@@ -151,8 +162,38 @@ def _load_csv(path: Path) -> List[Dict[str, Any]]:
                 value = raw.get(extra_key)
                 if value not in (None, ""):
                     entry.setdefault("meta", {})[extra_key] = value
+            entry.setdefault("meta", {})["row_index"] = idx
             rows.append(entry)
     return rows
+
+
+def _coerce_numeric_id(value: Any) -> Optional[int]:
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return int(value)
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if value.is_integer():
+            return int(value)
+        return None
+    if isinstance(value, str):
+        candidate = value.strip()
+        if not candidate:
+            return None
+        if candidate.isdigit() or (candidate.startswith("-") and candidate[1:].isdigit()):
+            try:
+                return int(candidate)
+            except ValueError:
+                return None
+        match = re.search(r"(\d+)", candidate)
+        if match:
+            try:
+                return int(match.group(1))
+            except ValueError:
+                return None
+    return None
 
 
 def _load_json(path: Path) -> List[Dict[str, Any]]:

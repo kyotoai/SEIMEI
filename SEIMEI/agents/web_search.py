@@ -69,29 +69,37 @@ class web_search(Agent):
             lines.append("")
             lines.append("LLM synthesis:")
             lines.extend(f"  {line}" for line in synthesis.splitlines() if line)
-        if knowledge_entries:
+        knowledge_payload = knowledge_entries[:6]
+        knowledge_texts = [item.get("text") for item in knowledge_payload if item.get("text")]
+        knowledge_ids = [item.get("id") for item in knowledge_payload if item.get("id") is not None]
+        if knowledge_payload:
             lines.append("")
             lines.append("Knowledge heuristics considered:")
-            lines.extend(f"- {item['text']}" for item in knowledge_entries[:6])
+            lines.extend(f"- {item['text']}" for item in knowledge_payload if item.get("text"))
         if refinement_note:
             lines.append("")
             lines.append(refinement_note)
 
         if not results:
             lines.append("No results returned; consider adjusting the keywords or broadening the query.")
-        return {
+        payload: Dict[str, Any] = {
             "content": "\n".join(lines),
             "log": {
                 "query": query,
                 "refined_query": refined_query,
                 "results": results,
                 "pages": [{**page, "content": page["content"][:1000]} for page in pages],
-                "knowledge": knowledge_entries[:6],
-                "knowledge_id": [item.get("id") for item in knowledge_entries[:6] if item.get("id") is not None],
                 "refinement_note": refinement_note,
                 "synthesis": synthesis,
             },
         }
+        if knowledge_texts:
+            payload["log"]["knowledge"] = knowledge_texts
+        if knowledge_payload:
+            payload["knowledge"] = knowledge_payload
+        if knowledge_ids:
+            payload["knowledge_id"] = knowledge_ids
+        return payload
 
 
 def _extract_last_user_query(messages: List[Dict[str, Any]]) -> Optional[str]:
