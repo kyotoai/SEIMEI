@@ -225,13 +225,13 @@ async def demo_code_act():
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=30000,
-        load_knowledge_path="seimei_knowledge/knwoledge.csv",
     )
 
     result = await orchestrator(
         messages=[
             {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
+        load_knowledge_path="seimei_knowledge/knwoledge.csv",
     )
 
 asyncio.run(demo_code_act())
@@ -323,6 +323,7 @@ result = await orchestrator(
     generate_knowledge=True,
     save_knowledge_path="seimei_knowledge/knowledge.csv",
     knowledge_prompt_path="seimei/knowledge/prompts/generate_from_runs.md",  # or point at a custom prompt
+    load_knowledge_path="seimei_knowledge/knowledge.csv",
 )
 ```
 
