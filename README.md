@@ -231,7 +231,9 @@ async def demo_code_act():
         messages=[
             {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
-        load_knowledge_path="seimei_knowledge/knwoledge.csv",
+        knowledge_config={
+            "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
+        },
     )
 
 asyncio.run(demo_code_act())
@@ -315,19 +317,65 @@ All defaults (model, agent file, knowledge paths, banners, limits, etc.) sit at 
 
 ### Automatic knowledge accumulation
 
-Set `generate_knowledge=True` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
+Set `knowledge_config["generate_knowledge"] = True` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
 
 ```python
 result = await orchestrator(
     messages=[{"role": "user", "content": "Find clever ways to speed up our ETL pipeline."}],
-    generate_knowledge=True,
-    save_knowledge_path="seimei_knowledge/knowledge.csv",
-    knowledge_prompt_path="seimei/knowledge/prompts/generate_from_runs.md",  # or point at a custom prompt
-    load_knowledge_path="seimei_knowledge/knowledge.csv",
+    knowledge_config={
+        "generate_knowledge": True,
+        "save_knowledge_path": "seimei_knowledge/knowledge.csv",
+        "knowledge_prompt_path": "seimei/knowledge/prompts/generate_from_runs.md",  # or a custom prompt
+        "load_knowledge_path": "seimei_knowledge/knowledge.csv",
+    },
 )
 ```
 
 The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance. The default retrospection prompt lives at `seimei/knowledge/prompts/generate_from_runs.md`, but you can point `knowledge_prompt_path` at an alternative such as `seimei/knowledge/prompts/excel.md` for domain-specific guidance.
+
+### Knowledge configuration reference
+
+Pass a `knowledge_config` dictionary to `seimei.__call__` to control every knowledge-related behavior for that run:
+
+- `load_knowledge_path`: CSV/JSON/JSONL file to load before the run (set to `None` to clear the current store).
+- `generate_knowledge`: Append a retrospective for the run using `seimei.knowledge.generate_from_runs`.
+- `save_knowledge_path`: Destination file for auto-generated knowledge (defaults to the last loaded path if omitted).
+- `knowledge_prompt_path`: Prompt template used during generation (defaults to `seimei/knowledge/prompts/generate_from_runs.md`).
+- `knowledge`: Inline knowledge payloads. Accepts a string, list of strings, single dict, or list of dicts. Each dict supports:
+  - `step`: int or list of ints (1-based). Limits the knowledge to specific agent steps; omitted means "all steps".
+  - `id`: Optional numeric identifier.
+  - `load_knowledge_path`: Merge an additional knowledge file only for the selected steps.
+  - `text`: Free-form knowledge snippet (stored under the `*` wildcard agent).
+  - `tags`: Optional list of short labels.
+
+Example:
+
+```python
+knowledge_config = {
+    "load_knowledge_path": "seimei_knowledge/yc_demo_knowledge4.csv",
+    "generate_knowledge": True,
+    "save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
+    "knowledge_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
+    "knowledge": [
+        {
+            "text": "Prefer concise shell commands when drafting automation plans.",
+            "tags": ["code_act", "heuristic"],
+        },
+        {
+            "step": [1, 2],
+            "load_knowledge_path": "seimei_knowledge/design_briefs.csv",
+        },
+        {
+            "step": 3,
+            "text": "Before final answers double-check every cited number against the workspace files.",
+            "id": 9001,
+        },
+    ],
+}
+result = await orchestrator(messages=dialogue, knowledge_config=knowledge_config)
+```
+
+Step-scoped knowledge is merged into `shared_ctx["knowledge"]` right before the corresponding agent runs, so agents automatically pick it up through helpers such as `seimei.knowledge.utils.get_agent_knowledge`.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

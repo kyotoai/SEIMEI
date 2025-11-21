@@ -12,7 +12,8 @@ import types
 import uuid
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
+from collections import defaultdict
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 import requests
 
@@ -170,6 +171,217 @@ class seimei:
         if candidate:
             return Path(candidate).expanduser()
         return Path("seimei_knowledge") / "knowledge.csv"
+
+    def _normalize_knowledge_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+        cfg = dict(config or {})
+        manual_entries, manual_stores = self._normalize_manual_knowledge(cfg.get("knowledge"))
+
+        load_path_provided = "load_knowledge_path" in cfg
+        load_value = cfg.get("load_knowledge_path")
+        normalized_load_path = self._coerce_path_string(load_value)
+
+        save_value = cfg.get("save_knowledge_path")
+        save_path = Path(save_value).expanduser() if save_value not in (None, "") else None
+
+        prompt_value = cfg.get("knowledge_prompt_path")
+        prompt_path = Path(prompt_value).expanduser() if prompt_value not in (None, "") else None
+
+        return {
+            "generate_knowledge": bool(cfg.get("generate_knowledge", False)),
+            "save_knowledge_path": save_path,
+            "knowledge_prompt_path": prompt_path,
+            "load_knowledge_path": normalized_load_path,
+            "load_path_provided": load_path_provided,
+            "manual_entries": manual_entries,
+            "manual_stores": manual_stores,
+        }
+
+    def _normalize_manual_knowledge(
+        self, value: Any
+    ) -> Tuple[Dict[Optional[int], List[Dict[str, Any]]], Dict[Optional[int], List[Dict[str, Any]]]]:
+        entry_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
+        store_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
+        entries = self._coerce_manual_knowledge_list(value)
+        if not entries:
+            return {}, {}
+
+        for raw in entries:
+            steps = self._coerce_step_targets(raw.get("step"))
+            targets = steps or [None]
+            tags = self._coerce_tags(raw.get("tags"))
+            agent_name = str(raw.get("agent") or "*").strip() or "*"
+            text_value = raw.get("text") or raw.get("knowledge") or raw.get("content") or raw.get("value")
+            text = str(text_value).strip() if text_value is not None else ""
+            entry_id = self._coerce_optional_int(raw.get("id"))
+            load_path_value = raw.get("load_knowledge_path")
+            load_path = self._coerce_path_string(load_path_value)
+
+            entry_payload: Optional[Dict[str, Any]] = None
+            if text:
+                entry_payload = {"agent": agent_name, "knowledge": text}
+                if tags:
+                    entry_payload["tags"] = tags
+                if entry_id is not None:
+                    entry_payload["id"] = entry_id
+
+            store_payload: Optional[Dict[str, List[Dict[str, Any]]]] = None
+            if load_path:
+                store_payload = self._load_manual_knowledge_store(load_path)
+                if not store_payload:
+                    store_payload = None
+
+            for step in targets:
+                if entry_payload:
+                    entry_map[step].append(dict(entry_payload))
+                if store_payload:
+                    store_map[step].append(store_payload)
+
+        return dict(entry_map), dict(store_map)
+
+    def _coerce_manual_knowledge_list(self, raw: Any) -> List[Dict[str, Any]]:
+        if raw is None:
+            return []
+        if isinstance(raw, str):
+            return [{"text": raw}]
+        if isinstance(raw, dict):
+            return [dict(raw)]
+        if isinstance(raw, Iterable):
+            entries: List[Dict[str, Any]] = []
+            for item in raw:
+                if isinstance(item, str):
+                    entries.append({"text": item})
+                elif isinstance(item, dict):
+                    entries.append(dict(item))
+            return entries
+        return []
+
+    @staticmethod
+    def _coerce_step_targets(value: Any) -> List[int]:
+        if value is None:
+            return []
+        if isinstance(value, (list, tuple, set)):
+            steps: List[int] = []
+            for item in value:
+                coerced = seimei._coerce_positive_int(item)
+                if coerced is not None:
+                    steps.append(coerced)
+            return steps
+        coerced = seimei._coerce_positive_int(value)
+        return [coerced] if coerced is not None else []
+
+    @staticmethod
+    def _coerce_positive_int(value: Any) -> Optional[int]:
+        if value is None:
+            return None
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        return number if number > 0 else None
+
+    @staticmethod
+    def _coerce_optional_int(value: Any) -> Optional[int]:
+        if value in (None, ""):
+            return None
+        try:
+            number = int(value)
+        except (TypeError, ValueError):
+            return None
+        return number
+
+    @staticmethod
+    def _coerce_tags(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            return [part.strip() for part in value.split(",") if part.strip()]
+        if isinstance(value, Iterable):
+            tags: List[str] = []
+            for item in value:
+                text = str(item).strip()
+                if text:
+                    tags.append(text)
+            return tags
+        return []
+
+    def _compose_step_knowledge(
+        self,
+        *,
+        base_store: Dict[str, List[Dict[str, Any]]],
+        manual_entries: Dict[Optional[int], List[Dict[str, Any]]],
+        manual_stores: Dict[Optional[int], List[Dict[str, Any]]],
+        step: Optional[int],
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        merged: Dict[str, List[Dict[str, Any]]] = {}
+
+        def _merge_store(store: Dict[str, List[Dict[str, Any]]]) -> None:
+            for agent, entries in store.items():
+                if not isinstance(entries, list):
+                    continue
+                agent_entries = merged.setdefault(agent, [])
+                for entry in entries:
+                    if isinstance(entry, dict):
+                        agent_entries.append(dict(entry))
+
+        if isinstance(base_store, dict):
+            for agent, entries in base_store.items():
+                if isinstance(entries, list):
+                    merged[agent] = [dict(entry) for entry in entries if isinstance(entry, dict)]
+
+        for store in manual_stores.get(None, []):
+            if isinstance(store, dict):
+                _merge_store(store)
+        if step is not None:
+            for store in manual_stores.get(step, []):
+                if isinstance(store, dict):
+                    _merge_store(store)
+
+        def _merge_entries(entry_list: List[Dict[str, Any]]) -> None:
+            for entry in entry_list:
+                if not isinstance(entry, dict):
+                    continue
+                agent_name = str(entry.get("agent") or "*").strip() or "*"
+                merged.setdefault(agent_name, []).append(dict(entry))
+
+        _merge_entries(manual_entries.get(None, []))
+        if step is not None:
+            _merge_entries(manual_entries.get(step, []))
+
+        return merged
+
+    def _load_manual_knowledge_store(
+        self, path: Union[str, Path]
+    ) -> Dict[str, List[Dict[str, Any]]]:
+        try:
+            store = load_knowledge(path)
+            print(
+                colorize(
+                    f"[seimei] Manual knowledge loaded from {path}",
+                    KNOWLEDGE_COLOR,
+                    enable=supports_color(),
+                )
+            )
+            return store
+        except FileNotFoundError as exc:
+            print(
+                colorize(f"[seimei] Manual knowledge file not found: {exc}", ERROR_COLOR, enable=supports_color()),
+                file=sys.stderr,
+            )
+        except Exception as exc:  # pragma: no cover - auxiliary loads best effort
+            print(
+                colorize(f"[seimei] Failed to load manual knowledge from {path}: {exc}", ERROR_COLOR, enable=supports_color()),
+                file=sys.stderr,
+            )
+        return {}
+
+    @staticmethod
+    def _coerce_path_string(value: Any) -> Optional[str]:
+        if value in (None, ""):
+            return None
+        try:
+            return str(Path(value).expanduser())
+        except Exception:
+            return None
 
     # -------------------------- Shared search --------------------------
 
@@ -626,10 +838,7 @@ class seimei:
         stop_when: Optional[Callable[[List[Dict[str, Any]]], bool]] = None,
         return_usage: bool = True,
         run_name: Optional[str] = None,
-        generate_knowledge: bool = False,
-        save_knowledge_path: Optional[str] = None,
-        knowledge_prompt_path: Optional[Union[str, Path]] = None,
-        load_knowledge_path: Optional[str] = None,
+        knowledge_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = []
@@ -648,6 +857,18 @@ class seimei:
         run_label = (run_name or "").strip()
         log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
         color_enabled = supports_color()
+
+        normalized_config = self._normalize_knowledge_config(knowledge_config)
+        manual_entry_map = normalized_config["manual_entries"]
+        manual_store_map = normalized_config["manual_stores"]
+        config_load_path = normalized_config["load_knowledge_path"]
+        if normalized_config["load_path_provided"]:
+            self.load_knowledge_path = config_load_path
+            if config_load_path:
+                self.knowledge_store = self._load_knowledge_store(config_load_path)
+            else:
+                self.knowledge_store = {}
+            self.shared_ctx["knowledge"] = self.knowledge_store
 
         run_id = str(uuid.uuid4())
         run_dir = self._make_run_dirs(run_id)
@@ -681,15 +902,20 @@ class seimei:
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         token_limiter: Optional[TokenLimiter] = None
-        if load_knowledge_path is not None:
-            normalized_load_path = str(load_knowledge_path) if load_knowledge_path else None
-            self.load_knowledge_path = normalized_load_path
-            if normalized_load_path:
-                self.knowledge_store = self._load_knowledge_store(normalized_load_path)
-            else:
-                self.knowledge_store = {}
-            self.shared_ctx["knowledge"] = self.knowledge_store
+        run_generate_knowledge: bool = normalized_config["generate_knowledge"]
+        run_save_path = normalized_config["save_knowledge_path"]
+        run_prompt_path = normalized_config["knowledge_prompt_path"]
         run_shared_ctx = dict(self.shared_ctx)
+
+        def _update_run_knowledge(step: Optional[int]) -> None:
+            run_shared_ctx["knowledge"] = self._compose_step_knowledge(
+                base_store=self.knowledge_store,
+                manual_entries=manual_entry_map,
+                manual_stores=manual_store_map,
+                step=step,
+            )
+
+        _update_run_knowledge(None)
         if self.max_tokens_per_question and self.max_tokens_per_question > 0:
             token_limiter = TokenLimiter(self.max_tokens_per_question)
             run_shared_ctx["token_limiter"] = token_limiter
@@ -707,14 +933,16 @@ class seimei:
         final_agent_name: Optional[str] = None
         knowledge_generation_result: Optional[Dict[str, Any]] = None
         resolved_prompt_path: Optional[Path] = None
-        if knowledge_prompt_path is not None:
-            resolved_prompt_path = Path(knowledge_prompt_path).expanduser()
+        if run_prompt_path is not None:
+            resolved_prompt_path = run_prompt_path
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
         while step_idx < self.max_steps:
             step_idx += 1
 
+            run_shared_ctx["current_step"] = step_idx
+            _update_run_knowledge(step_idx)
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Decide which agent to run
@@ -931,8 +1159,9 @@ class seimei:
             dataset_record["run_name"] = run_name
         self._append_dataset(dataset_record)
 
-        if generate_knowledge:
-            target_path = self._resolve_knowledge_output_path(save_knowledge_path)
+        if run_generate_knowledge:
+            target_override = str(run_save_path) if run_save_path else None
+            target_path = self._resolve_knowledge_output_path(target_override)
             print(
                 colorize(
                     f"{log_prefix} Knowledge generation: starting (target={target_path})",

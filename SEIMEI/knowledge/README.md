@@ -34,14 +34,22 @@ Each CSV row stores:
 The generated file can be loaded at runtime and injected into `shared_ctx["knowledge"]` for agents to consume.
 
 ## Using knowledge in SEIMEI
-- Instantiate the orchestrator with the `save_knowledge_path` argument:
+- Instantiate the orchestrator as usual and pass a `knowledge_config` dictionary whenever you invoke it:
   ```python
-  orchestrator = seimei(
-      agent_config=[{"dir_path": "seimei/agents"}],
-      llm_kwargs={"model": "gpt-4o-mini"},
-      save_knowledge_path="seimei_knowledge/knowledge.csv",
+  result = await orchestrator(
+      messages=[{"role": "user", "content": "Summarize the ETL runbook."}],
+      knowledge_config={
+          "load_knowledge_path": "seimei_knowledge/knowledge.csv",
+          "generate_knowledge": True,
+          "save_knowledge_path": "seimei_knowledge/knowledge_output.csv",
+          "knowledge": [
+              {"text": "Favor pandas for quick CSV exploration.", "tags": ["code_act"]},
+              {"step": 2, "load_knowledge_path": "seimei_knowledge/audit_notes.csv"},
+          ],
+      },
   )
   ```
-- The file can be CSV, JSON, or JSONL. Entries are grouped by the `agent` field, with `*` acting as a wildcard shared by all agents.
+- The referenced files can be CSV, JSON, or JSONL. Entries are grouped by the `agent` field, with `*` acting as a wildcard shared by all agents.
+- Inline knowledge entries accept optional `step`, `id`, `load_knowledge_path`, `text`, and `tags` fields. When `step` is omitted, the knowledge applies to every agent step; otherwise it is injected only when the specified step runs.
 - At runtime the knowledge is available through `shared_ctx["knowledge"]`, and helper utilities (e.g., `get_agent_knowledge`) deliver normalized snippets to each agent.
-- When calling the orchestrator you can set `generate_knowledge=True` to append fresh insights from each run into `seimei_knowledge/knowledge.csv` (or a custom path via `save_knowledge_path`). The knowledge store is reloaded automatically after each append.
+- Automatic retrospectives run whenever `knowledge_config["generate_knowledge"]` is true. The helper appends fresh insights to `save_knowledge_path` (defaulting to the last load path) and the orchestrator transparently reloads the store.

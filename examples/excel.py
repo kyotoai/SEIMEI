@@ -16,10 +16,12 @@ async def demo_code_act():
             {"role": "system", "content": "You are an execution assistant that never runs unasked commands."},
             {"role": "user", "content": "Analyze exp1/csv/ecommerce_orders_001.csv inside and see some features in the csv file."},
         ],
-        generate_knowledge=True,
-        save_knowledge_path="seimei_knowledge/excel.csv",
-        knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
-        load_knowledge_path="seimei_knowledge/excel.csv",
+        knowledge_config={
+            "generate_knowledge": True,
+            "save_knowledge_path": "seimei_knowledge/excel.csv",
+            "knowledge_prompt_path": "seimei/knowledge/prompts/excel.md",
+            "load_knowledge_path": "seimei_knowledge/excel.csv",
+        },
     )
     # The code_act reply is stored as the last agent message
     # print(result["msg_history"][-2]["content"])

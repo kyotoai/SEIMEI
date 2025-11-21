@@ -72,7 +72,9 @@ async def demo_code_act():
         messages=[
             {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
-        load_knowledge_path="seimei_knowledge/knwoledge.csv",
+        knowledge_config={
+            "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
+        },
     )
 
 asyncio.run(demo_code_act())

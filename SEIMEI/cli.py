@@ -254,6 +254,14 @@ async def run_cli(args: CLIArgs) -> None:
         Path(args.knowledge_prompt).expanduser() if args.knowledge_prompt else None
     )
     ensure_parent_dir(knowledge_file)
+    knowledge_prompt_value = str(knowledge_prompt) if knowledge_prompt else None
+    knowledge_file_value = str(knowledge_file) if knowledge_file else None
+    base_knowledge_config = {
+        "generate_knowledge": args.generate_knowledge,
+        "save_knowledge_path": knowledge_file_value,
+        "knowledge_prompt_path": knowledge_prompt_value,
+        "load_knowledge_path": args.load_knowledge_path,
+    }
 
     orchestrator = SeimeiOrchestrator(
         agent_config=agent_config,
@@ -346,10 +354,7 @@ async def run_cli(args: CLIArgs) -> None:
             result = await orchestrator(
                 messages=list(message_history),
                 #run_name=f"cli-{session_id}-turn-{turn}",
-                generate_knowledge=args.generate_knowledge,
-                save_knowledge_path=str(knowledge_file) if knowledge_file else None,
-                knowledge_prompt_path=knowledge_prompt,
-                load_knowledge_path=args.load_knowledge_path,
+                knowledge_config=base_knowledge_config,
             )
         except Exception as exc:  # pragma: no cover - interactive best effort
             err_text = f"[error] {type(exc).__name__}: {exc}"
