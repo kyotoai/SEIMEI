@@ -161,6 +161,13 @@ log_dir/
     meta.json          # run metadata (model, timings, etc.)
 ```
 
+Each saved run folder keeps everything you need to replay or audit the workflow:
+- `messages.json` — the entire conversation transcript, including inserted `role="agent"` blocks.
+- `steps.jsonl` — streaming log where each line records `{step, agent, result, time, knowledge}` for debugging or analytics.
+- `output.txt` — the exact final assistant reply that was returned to the caller.
+- `meta.json` — a rich summary covering model usage, stop reason, orchestrator flags (code execution, allowed commands, approval callback), rmsearch + LLM configuration, agent roster/run order, and the full `knowledge_config` (paths, manual entries, manual store sources, generate flags, and any knowledge generation result snapshots).
+- `dataset.jsonl` (in the parent directory) — append-only dataset rows that mirror `meta.json` fields plus the full steps list for offline training/eval.
+
 Each JSON record in `dataset.jsonl` has fields:
 - `schema_version` (e.g., `1`)
 - `run_id`

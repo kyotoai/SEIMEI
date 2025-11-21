@@ -44,6 +44,18 @@ class seimei:
     """
 
     AGENT_OUTPUT_LIMIT = 8000
+    _SENSITIVE_METADATA_KEYS = {
+        "api_key",
+        "apikey",
+        "api_token",
+        "access_token",
+        "refresh_token",
+        "auth_token",
+        "authorization",
+        "bearer_token",
+        "secret",
+        "password",
+    }
 
     def __init__(
         self,
@@ -89,6 +101,9 @@ class seimei:
         # Load agents
         self.agents: Dict[str, Agent] = {}
         normalized_agent_config = list(agent_config or [])
+        self.agent_config_spec = [
+            dict(cfg) for cfg in normalized_agent_config if isinstance(cfg, dict)
+        ]
         self._load_agents(normalized_agent_config)
 
         # Attach shared ctx visible to agents (e.g., llm, rmsearch, safety flags)
@@ -174,7 +189,7 @@ class seimei:
 
     def _normalize_knowledge_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         cfg = dict(config or {})
-        manual_entries, manual_stores = self._normalize_manual_knowledge(cfg.get("knowledge"))
+        manual_entries, manual_stores, manual_store_sources = self._normalize_manual_knowledge(cfg.get("knowledge"))
 
         load_path_provided = "load_knowledge_path" in cfg
         load_value = cfg.get("load_knowledge_path")
@@ -194,16 +209,22 @@ class seimei:
             "load_path_provided": load_path_provided,
             "manual_entries": manual_entries,
             "manual_stores": manual_stores,
+            "manual_store_sources": manual_store_sources,
         }
 
     def _normalize_manual_knowledge(
         self, value: Any
-    ) -> Tuple[Dict[Optional[int], List[Dict[str, Any]]], Dict[Optional[int], List[Dict[str, Any]]]]:
+    ) -> Tuple[
+        Dict[Optional[int], List[Dict[str, Any]]],
+        Dict[Optional[int], List[Dict[str, Any]]],
+        Dict[Optional[int], List[Dict[str, Any]]],
+    ]:
         entry_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         store_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
+        store_source_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         entries = self._coerce_manual_knowledge_list(value)
         if not entries:
-            return {}, {}
+            return {}, {}, {}
 
         for raw in entries:
             steps = self._coerce_step_targets(raw.get("step"))
@@ -225,9 +246,21 @@ class seimei:
                     entry_payload["id"] = entry_id
 
             store_payload: Optional[Dict[str, List[Dict[str, Any]]]] = None
+            store_meta: Optional[Dict[str, Any]] = None
             if load_path:
+                store_meta = {"path": load_path, "loaded": False}
                 store_payload = self._load_manual_knowledge_store(load_path)
-                if not store_payload:
+                if store_payload:
+                    store_meta["loaded"] = True
+                    total_entries = 0
+                    agent_names: List[str] = []
+                    for agent, entries_list in store_payload.items():
+                        agent_names.append(str(agent))
+                        if isinstance(entries_list, list):
+                            total_entries += len(entries_list)
+                    store_meta["entries"] = total_entries
+                    store_meta["agents"] = sorted(set(agent_names))
+                else:
                     store_payload = None
 
             for step in targets:
@@ -235,8 +268,12 @@ class seimei:
                     entry_map[step].append(dict(entry_payload))
                 if store_payload:
                     store_map[step].append(store_payload)
+                if store_meta:
+                    store_source_map[step].append(dict(store_meta))
+                elif load_path:
+                    store_source_map[step].append({"path": load_path, "loaded": False})
 
-        return dict(entry_map), dict(store_map)
+        return dict(entry_map), dict(store_map), dict(store_source_map)
 
     def _coerce_manual_knowledge_list(self, raw: Any) -> List[Dict[str, Any]]:
         if raw is None:
@@ -829,6 +866,262 @@ class seimei:
             f.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
+    # -------------------------- Metadata helpers --------------------------
+
+    @classmethod
+    def _is_sensitive_metadata_key(cls, key: Optional[str]) -> bool:
+        if not key:
+            return False
+        normalized = str(key).strip().lower().replace("-", "_")
+        return normalized in cls._SENSITIVE_METADATA_KEYS
+
+    @classmethod
+    def _prepare_metadata_value(cls, value: Any, *, key_hint: Optional[str] = None) -> Any:
+        if key_hint and cls._is_sensitive_metadata_key(key_hint):
+            return "<redacted>"
+        if isinstance(value, dict):
+            prepared: Dict[str, Any] = {}
+            for raw_key, raw_val in value.items():
+                normalized_key = "*" if raw_key is None else str(raw_key)
+                prepared[normalized_key] = cls._prepare_metadata_value(raw_val, key_hint=normalized_key)
+            return prepared
+        if isinstance(value, (list, tuple)):
+            return [cls._prepare_metadata_value(item) for item in value]
+        if isinstance(value, set):
+            prepared_items = [cls._prepare_metadata_value(item) for item in value]
+            try:
+                return sorted(
+                    prepared_items,
+                    key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True)
+                    if isinstance(item, (dict, list))
+                    else str(item),
+                )
+            except TypeError:
+                return prepared_items
+        if isinstance(value, Path):
+            return str(value)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            return value
+        return str(value)
+
+    @staticmethod
+    def _summarize_role_counts(messages: Sequence[Dict[str, Any]]) -> Dict[str, int]:
+        counts: Dict[str, int] = {}
+        for msg in messages or []:
+            if not isinstance(msg, dict):
+                continue
+            role = str(msg.get("role") or "user").lower()
+            counts[role] = counts.get(role, 0) + 1
+        return counts
+
+    def _build_run_metadata(
+        self,
+        *,
+        run_id: str,
+        run_dir: str,
+        run_name: Optional[str],
+        started_at: float,
+        completed_at: float,
+        usage: Dict[str, int],
+        input_messages: Sequence[Dict[str, Any]],
+        message_history: Sequence[Dict[str, Any]],
+        system_prompt: Optional[str],
+        step_sequence: Sequence[str],
+        stop_reason: Optional[str],
+        final_response_source: str,
+        final_agent_name: Optional[str],
+        token_limit_hit: bool,
+        token_limit_error: Optional[TokenLimitExceeded],
+        token_limiter: Optional[TokenLimiter],
+        normalized_knowledge_config: Dict[str, Any],
+        manual_store_map: Dict[Optional[int], List[Dict[str, Any]]],
+        raw_knowledge_config: Optional[Dict[str, Any]],
+        knowledge_generation_result: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        started_ts = float(started_at)
+        completed_ts = float(completed_at)
+        total_sec = max(completed_ts - started_ts, 0.0)
+        run_dir_path = Path(run_dir)
+        try:
+            artifact_files = sorted(os.listdir(run_dir))
+        except FileNotFoundError:
+            artifact_files = []
+
+        resolved_stop_reason = stop_reason or ("token_limit_hit" if token_limit_hit else "completed")
+        system_text = system_prompt or ""
+        system_meta: Dict[str, Any] = {
+            "provided": bool(system_text),
+            "length": len(system_text),
+        }
+        if system_text:
+            system_meta["preview"] = system_text[:200]
+
+        agent_snapshot = [
+            {
+                "name": name,
+                "class": agent_obj.__class__.__name__,
+                "module": agent_obj.__class__.__module__,
+                "description": getattr(agent_obj, "description", None),
+            }
+            for name, agent_obj in sorted(self.agents.items())
+        ]
+
+        allowed_commands = list(self.allowed_commands) if self.allowed_commands else []
+        approval_callback_name = None
+        if callable(self.approval_callback):
+            approval_callback_name = getattr(self.approval_callback, "__name__", repr(self.approval_callback))
+
+        seimei_config_meta = {
+            "log_dir": self.log_dir,
+            "max_steps": self.max_steps,
+            "agent_log_head_lines": self.agent_log_head_lines,
+            "allow_code_exec": self.allow_code_exec,
+            "allowed_commands": allowed_commands,
+            "has_approval_callback": callable(self.approval_callback),
+            "approval_callback_name": approval_callback_name,
+            "agent_config": self._prepare_metadata_value(getattr(self, "agent_config_spec", [])),
+            "max_tokens_per_question": self.max_tokens_per_question,
+        }
+
+        llm_meta = {
+            "model": self.llm.model,
+            "base_url": getattr(self.llm, "base_url", None),
+            "timeout": getattr(self.llm, "timeout", None),
+            "using_openai": getattr(self.llm, "using_openai", False),
+            "using_generate": getattr(self.llm, "using_generate", False),
+            "has_api_key": bool(getattr(self.llm, "api_key", None)),
+            "extra_headers": self._prepare_metadata_value(getattr(self.llm, "extra_headers", {})),
+            "kwargs": self._prepare_metadata_value(getattr(self.llm, "kwargs", {})),
+        }
+
+        token_limit_info: Dict[str, Any] = {
+            "limit": getattr(token_limiter, "limit", None) if token_limiter else None,
+            "consumed": getattr(token_limiter, "consumed", None) if token_limiter else None,
+            "hit": token_limit_hit,
+        }
+        if token_limit_error:
+            token_limit_info["last_error"] = {
+                "limit": getattr(token_limit_error, "limit", None),
+                "consumed": getattr(token_limit_error, "consumed", None),
+                "last_usage": getattr(token_limit_error, "last_usage", None),
+            }
+
+        manual_entry_map = normalized_knowledge_config.get("manual_entries", {}) or {}
+        manual_store_sources = normalized_knowledge_config.get("manual_store_sources", {}) or {}
+        manual_entry_counts: Dict[str, int] = {}
+        for step_key, values in manual_entry_map.items():
+            label = "*" if step_key is None else str(step_key)
+            manual_entry_counts[label] = len(values)
+
+        manual_store_counts: Dict[str, int] = {}
+        for step_key, stores in manual_store_map.items():
+            total_entries = 0
+            for store in stores:
+                if not isinstance(store, dict):
+                    continue
+                for entry_list in store.values():
+                    if isinstance(entry_list, list):
+                        total_entries += len(entry_list)
+            label = "*" if step_key is None else str(step_key)
+            manual_store_counts[label] = total_entries
+
+        knowledge_entries = 0
+        knowledge_agents: List[str] = []
+        if isinstance(self.knowledge_store, dict):
+            for agent_name, entries in self.knowledge_store.items():
+                knowledge_agents.append(str(agent_name))
+                if isinstance(entries, list):
+                    knowledge_entries += len(entries)
+
+        knowledge_meta = {
+            "generate_knowledge": bool(normalized_knowledge_config.get("generate_knowledge")),
+            "load_path": normalized_knowledge_config.get("load_knowledge_path"),
+            "load_path_provided": bool(normalized_knowledge_config.get("load_path_provided")),
+            "save_path": str(normalized_knowledge_config.get("save_knowledge_path"))
+            if normalized_knowledge_config.get("save_knowledge_path")
+            else None,
+            "knowledge_prompt_path": str(normalized_knowledge_config.get("knowledge_prompt_path"))
+            if normalized_knowledge_config.get("knowledge_prompt_path")
+            else None,
+            "manual_entry_counts": manual_entry_counts,
+            "manual_store_counts": manual_store_counts,
+            "manual_entries": self._prepare_metadata_value(manual_entry_map),
+            "manual_store_sources": self._prepare_metadata_value(manual_store_sources),
+            "raw_config": self._prepare_metadata_value(raw_knowledge_config or {}),
+            "knowledge_store": {
+                "path": self.load_knowledge_path,
+                "entries": knowledge_entries,
+                "agents": sorted(set(knowledge_agents)),
+            },
+            "knowledge_generation_result": self._prepare_metadata_value(knowledge_generation_result)
+            if knowledge_generation_result
+            else None,
+        }
+
+        agent_steps_meta = {
+            "count": len(step_sequence),
+            "sequence": list(step_sequence),
+        }
+
+        final_response_meta = {
+            "source": final_response_source,
+            "agent_name": final_agent_name,
+        }
+
+        artifacts_meta = {
+            "directory": run_dir,
+            "folder": run_dir_path.name,
+            "files": artifact_files,
+        }
+
+        input_summary = {
+            "count": len(input_messages or []),
+            "role_counts": self._summarize_role_counts(input_messages),
+        }
+        history_summary = {
+            "count": len(message_history or []),
+            "role_counts": self._summarize_role_counts(message_history),
+        }
+
+        meta: Dict[str, Any] = {
+            "run_id": run_id,
+            "run_name": run_name,
+            "model": self.llm.model,
+            "run_directory": run_dir,
+            "run_folder": run_dir_path.name,
+            "timings": {
+                "started_at": started_ts,
+                "completed_at": completed_ts,
+                "total_sec": total_sec,
+            },
+            "usage": {k: int(v) for k, v in usage.items()},
+            "max_steps": self.max_steps,
+            "token_limit_hit": token_limit_hit,
+            "token_limit": token_limit_info,
+            "stop_reason": resolved_stop_reason,
+            "final_response": final_response_meta,
+            "input_messages": input_summary,
+            "message_history": history_summary,
+            "system_prompt": system_meta,
+            "artifacts": artifacts_meta,
+            "agent_steps": agent_steps_meta,
+            "agents": {
+                "count": len(agent_snapshot),
+                "loaded": agent_snapshot,
+            },
+            "seimei_config": self._prepare_metadata_value(seimei_config_meta),
+            "llm_config": self._prepare_metadata_value(llm_meta),
+            "rmsearch_config": self._prepare_metadata_value(self.rm_kwargs),
+            "knowledge": knowledge_meta,
+        }
+        return meta
+
+    def _write_run_metadata(self, run_dir: str, payload: Dict[str, Any]) -> None:
+        meta_path = os.path.join(run_dir, "meta.json")
+        with open(meta_path, "w", encoding="utf-8") as f:
+            json.dump(payload, f, ensure_ascii=False, indent=2)
+
+
     # -------------------------- Inference --------------------------
 
     async def __call__(
@@ -935,6 +1228,10 @@ class seimei:
         resolved_prompt_path: Optional[Path] = None
         if run_prompt_path is not None:
             resolved_prompt_path = run_prompt_path
+        executed_steps = 0
+        step_agent_sequence: List[str] = []
+        stop_reason: Optional[str] = None
+        final_response_source = "pending"
 
         # Agent loop (very simple – customize as needed)
         step_idx = 0
@@ -948,6 +1245,8 @@ class seimei:
             # Decide which agent to run
             agent_obj = await self._select_next_agent(msg_history, search_fn)
             if agent_obj is None:
+                if stop_reason is None:
+                    stop_reason = "no_agent_available"
                 break
 
             step_label = f"{log_prefix} Step {step_idx}"
@@ -978,6 +1277,8 @@ class seimei:
                 step_res = {"content": f"[agent_error] {type(e).__name__}: {e}"}
 
             step_res = self._apply_agent_output_limit(step_res)
+            executed_steps += 1
+            step_agent_sequence.append(agent_obj.name)
 
             knowledge_texts, knowledge_ids = self._extract_message_knowledge(step_res)
             knowledge_value = self._collapse_knowledge_field(knowledge_texts)
@@ -1050,14 +1351,28 @@ class seimei:
 
             # Optional termination predicate
             if stop_when and stop_when(msg_history):
+                if stop_reason is None:
+                    stop_reason = "stop_when"
                 break
 
             # Stop early if agent says so
             if step_res.get("stop", False):
+                if stop_reason is None:
+                    stop_reason = "agent_requested_stop"
                 break
 
             if token_limit_hit:
+                if stop_reason is None:
+                    stop_reason = "token_limit_hit"
                 break
+
+        if stop_reason is None:
+            if executed_steps >= self.max_steps:
+                stop_reason = "max_steps_reached"
+            elif executed_steps == 0:
+                stop_reason = "no_agent_executed"
+            else:
+                stop_reason = "completed"
 
         # Final assistant call
         if not token_limit_hit:
@@ -1065,6 +1380,7 @@ class seimei:
                 answer = final_agent_output
                 usage = {}
                 msg_history.append({"role": "assistant", "content": answer})
+                final_response_source = "agent"
                 if final_agent_name:
                     print(
                         colorize(
@@ -1076,9 +1392,13 @@ class seimei:
             else:
                 try:
                     answer, usage = await run_llm.chat(messages=msg_history, system=system)
+                    final_response_source = "llm"
                 except TokenLimitExceeded as err:
                     token_limit_hit = True
                     token_limit_error = err
+                    final_response_source = "token_limit"
+                    if stop_reason is None:
+                        stop_reason = "token_limit_hit"
                     print(
                         colorize(
                             f"{log_prefix} !! Token limit exceeded during final response: "
@@ -1101,6 +1421,9 @@ class seimei:
             )
             msg_history.append({"role": "assistant", "content": answer})
             usage = {}
+            final_response_source = "token_limit"
+            if stop_reason is None:
+                stop_reason = "token_limit_hit"
 
         # Log final assistant output without truncation
         # -> Now answer agent is doing this.
@@ -1115,25 +1438,40 @@ class seimei:
         print()
         '''
 
+        run_completed_at = time.time()
+
         # Save run artifacts
         with open(os.path.join(run_dir, "messages.json"), "w", encoding="utf-8") as f:
             json.dump(msg_history, f, ensure_ascii=False, indent=2)
 
         with open(os.path.join(run_dir, "output.txt"), "w", encoding="utf-8") as f:
             f.write(answer)
+        def persist_meta() -> None:
+            payload = self._build_run_metadata(
+                run_id=run_id,
+                run_dir=run_dir,
+                run_name=run_name,
+                started_at=t0,
+                completed_at=run_completed_at,
+                usage=usage_agg,
+                input_messages=messages,
+                message_history=msg_history,
+                system_prompt=system,
+                step_sequence=step_agent_sequence,
+                stop_reason=stop_reason,
+                final_response_source=final_response_source,
+                final_agent_name=final_agent_name,
+                token_limit_hit=token_limit_hit,
+                token_limit_error=token_limit_error,
+                token_limiter=token_limiter,
+                normalized_knowledge_config=normalized_config,
+                manual_store_map=manual_store_map,
+                raw_knowledge_config=knowledge_config,
+                knowledge_generation_result=knowledge_generation_result,
+            )
+            self._write_run_metadata(run_dir, payload)
 
-        meta = {
-            "run_id": run_id,
-            "model": self.llm.model,
-            "timings": {"total_sec": time.time() - t0},
-            "usage": usage_agg,
-            "max_steps": self.max_steps,
-            "token_limit_hit": token_limit_hit,
-        }
-        if run_name is not None:
-            meta["run_name"] = run_name
-        with open(os.path.join(run_dir, "meta.json"), "w", encoding="utf-8") as f:
-            json.dump(meta, f, ensure_ascii=False, indent=2)
+        persist_meta()
 
         # Append dataset record
         dataset_record = {
@@ -1169,6 +1507,7 @@ class seimei:
                     enable=color_enabled,
                 )
             )
+            knowledge_start = time.time()
             try:
                 knowledge_generation_result = await generate_knowledge_from_runs(
                     run_ids=[Path(run_dir).name],
@@ -1179,6 +1518,9 @@ class seimei:
                     base_url=self.llm.base_url,
                     api_key=self.llm.api_key,
                 )
+                knowledge_generation_result["duration_sec"] = time.time() - knowledge_start
+                knowledge_generation_result["target_path"] = str(target_path)
+                knowledge_generation_result["status"] = "completed"
                 self._refresh_knowledge_store(target_path)
                 added = knowledge_generation_result.get("count")
                 added_display = added if added is not None else 0
@@ -1191,6 +1533,13 @@ class seimei:
                     )
                 )
             except Exception as exc:  # pragma: no cover - knowledge generation best effort
+                knowledge_generation_result = {
+                    "error": f"{type(exc).__name__}: {exc}",
+                    "runs": [Path(run_dir).name],
+                    "target_path": str(target_path),
+                    "duration_sec": time.time() - knowledge_start,
+                    "status": "failed",
+                }
                 print(
                     colorize(
                         f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}",
@@ -1199,6 +1548,8 @@ class seimei:
                     ),
                     file=sys.stderr,
                 )
+
+        persist_meta()
 
         out: Dict[str, Any] = {"run_id": run_id, "output": answer, "msg_history": msg_history}
         if knowledge_generation_result:
