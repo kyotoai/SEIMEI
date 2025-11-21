@@ -56,7 +56,6 @@ class seimei:
         approval_callback: Optional[Callable[[str], bool]] = None,
         agent_log_head_lines: int = 3,
         max_tokens_per_question: Optional[int] = None,
-        load_knowledge_path: Optional[str] = None,
     ) -> None:
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -83,8 +82,8 @@ class seimei:
         self.allowed_commands = list(allowed_commands) if allowed_commands else None
         self.approval_callback = approval_callback
         self.agent_log_head_lines = max(int(agent_log_head_lines), 0)
-        self.load_knowledge_path = load_knowledge_path
-        self.knowledge_store = self._load_knowledge_store(load_knowledge_path)
+        self.load_knowledge_path: Optional[str] = None
+        self.knowledge_store: Dict[str, List[Dict[str, Any]]] = {}
 
         # Load agents
         self.agents: Dict[str, Agent] = {}
@@ -630,6 +629,7 @@ class seimei:
         generate_knowledge: bool = False,
         save_knowledge_path: Optional[str] = None,
         knowledge_prompt_path: Optional[Union[str, Path]] = None,
+        load_knowledge_path: Optional[str] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = []
@@ -681,6 +681,14 @@ class seimei:
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         token_limiter: Optional[TokenLimiter] = None
+        if load_knowledge_path is not None:
+            normalized_load_path = str(load_knowledge_path) if load_knowledge_path else None
+            self.load_knowledge_path = normalized_load_path
+            if normalized_load_path:
+                self.knowledge_store = self._load_knowledge_store(normalized_load_path)
+            else:
+                self.knowledge_store = {}
+            self.shared_ctx["knowledge"] = self.knowledge_store
         run_shared_ctx = dict(self.shared_ctx)
         if self.max_tokens_per_question and self.max_tokens_per_question > 0:
             token_limiter = TokenLimiter(self.max_tokens_per_question)

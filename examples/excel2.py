@@ -105,7 +105,6 @@ async def demo_code_act():
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
         max_tokens_per_question=20000,
-        #load_knowledge_path="seimei_knowledge/excel.csv",
     )
 
     orchestrators = []
@@ -123,6 +122,7 @@ async def demo_code_act():
             generate_knowledge=True,
             save_knowledge_path="seimei_knowledge/excel.csv",
             knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
+            load_knowledge_path="seimei_knowledge/excel.csv",
         ))
 
     results = await asyncio.gather(*orchestrators)

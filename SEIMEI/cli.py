@@ -265,7 +265,6 @@ async def run_cli(args: CLIArgs) -> None:
         allowed_commands=list(DEFAULT_ALLOWED_COMMANDS) if DEFAULT_ALLOWED_COMMANDS else None,
         agent_log_head_lines=DEFAULT_AGENT_LOG_HEAD_LINES,
         max_tokens_per_question=args.max_tokens,
-        load_knowledge_path=args.load_knowledge_path,
     )
 
     system_prompt = args.system_prompt or DEFAULT_SYSTEM_PROMPT
@@ -350,6 +349,7 @@ async def run_cli(args: CLIArgs) -> None:
                 generate_knowledge=args.generate_knowledge,
                 save_knowledge_path=str(knowledge_file) if knowledge_file else None,
                 knowledge_prompt_path=knowledge_prompt,
+                load_knowledge_path=args.load_knowledge_path,
             )
         except Exception as exc:  # pragma: no cover - interactive best effort
             err_text = f"[error] {type(exc).__name__}: {exc}"
