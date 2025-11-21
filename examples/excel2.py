@@ -119,10 +119,12 @@ async def demo_code_act():
                 {"role": "user", "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}"},
             ],
             run_name=f"run_{run_id}",
-            generate_knowledge=True,
-            save_knowledge_path="seimei_knowledge/excel.csv",
-            knowledge_prompt_path="seimei/knowledge/prompts/excel.md",
-            load_knowledge_path="seimei_knowledge/excel.csv",
+            knowledge_config={
+                "generate_knowledge": True,
+                "save_knowledge_path": "seimei_knowledge/excel.csv",
+                "knowledge_prompt_path": "seimei/knowledge/prompts/excel.md",
+                "load_knowledge_path": "seimei_knowledge/excel.csv",
+            },
         ))
 
     results = await asyncio.gather(*orchestrators)

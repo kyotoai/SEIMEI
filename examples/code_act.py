@@ -16,8 +16,10 @@ async def demo_code_act():
             {"role": "system", "content": "Get at least around 5 steps of agent outputs and make the answer."},
             {"role": "user", "content": "Analyze the files inside the current folder using python code and tell me what's SEIMEI."},
         ],
-        generate_knowledge=True,
-        save_knowledge_path="seimei_knowledge/knowledge.csv",
+        knowledge_config={
+            "generate_knowledge": True,
+            "save_knowledge_path": "seimei_knowledge/knowledge.csv",
+        },
     )
     # The code_act reply is stored as the last agent message
     # print(result["msg_history"][-2]["content"])
