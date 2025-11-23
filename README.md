@@ -333,6 +333,16 @@ result = await orchestrator(
 
 The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance. The default retrospection prompt lives at `seimei/knowledge/prompts/generate_from_runs.md`, but you can point `knowledge_prompt_path` at an alternative such as `seimei/knowledge/prompts/excel.md` for domain-specific guidance.
 
+Whenever the generator runs, `seimei.__call__` includes both a `knowledge_result` block (metadata, file paths, usage) and a `generated_knowledge` list that mirrors the rows added to disk:
+
+```python
+if result.get("generated_knowledge"):
+    for entry in result["generated_knowledge"]:
+        print(f"[{entry['agent']}] {entry['knowledge']} (tags={entry.get('tags', [])})")
+```
+
+This makes it easy to review new heuristics right in your notebook or CLI before they are reused in later runs.
+
 ### Knowledge configuration reference
 
 Pass a `knowledge_config` dictionary to `seimei.__call__` to control every knowledge-related behavior for that run:
