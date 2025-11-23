@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import copy
 import csv
 import json
 import re
@@ -123,11 +124,13 @@ async def generate_knowledge_from_runs(
             usage_records.append(usage_record)
 
     _append_csv(all_entries, save_file_path)
+    entries_snapshot = [copy.deepcopy(entry) for entry in all_entries]
     return {
         "usage": usage_records,
         "count": len(all_entries),
         "output": str(save_file_path),
         "runs": list(run_ids),
+        "entries": entries_snapshot,
     }
 
 

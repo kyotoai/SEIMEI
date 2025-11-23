@@ -92,6 +92,8 @@ asyncio.run(demo_code_act())
     ...
   ],
   "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...},
+  "knowledge_result": {...},        # present when knowledge_config["generate_knowledge"] is true
+  "generated_knowledge": [...],     # direct list of newly generated knowledge entries
 }
 ```
 

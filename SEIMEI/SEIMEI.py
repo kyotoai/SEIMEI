@@ -1554,6 +1554,10 @@ class seimei:
         out: Dict[str, Any] = {"run_id": run_id, "output": answer, "msg_history": msg_history}
         if knowledge_generation_result:
             out["knowledge_result"] = knowledge_generation_result
+            if "entries" in knowledge_generation_result:
+                entries_snapshot = knowledge_generation_result.get("entries")
+                if entries_snapshot is not None:
+                    out["generated_knowledge"] = entries_snapshot
         if return_usage:
             out["usage"] = usage_agg
         if run_name:

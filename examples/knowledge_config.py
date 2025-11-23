@@ -47,6 +47,10 @@ async def demo_knowledge_config() -> None:
     print(result["output"])
     if result.get("knowledge_result"):
         print("Generated knowledge entries:", result["knowledge_result"].get("count", 0))
+    if result.get("generated_knowledge"):
+        print("Latest generated knowledge:")
+        for entry in result["generated_knowledge"]:
+            print(f"- {entry.get('agent', '*')}: {entry.get('knowledge', '')}")
 
 
 if __name__ == "__main__":

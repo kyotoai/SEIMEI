@@ -25,5 +25,11 @@ async def demo_code_act():
     )
     # The code_act reply is stored as the last agent message
     # print(result["msg_history"][-2]["content"])
+    if result.get("generated_knowledge"):
+        print("Generated knowledge (excel prompt):")
+        for entry in result["generated_knowledge"]:
+            tags = entry.get("tags") or []
+            tag_suffix = f" [{', '.join(tags)}]" if tags else ""
+            print(f"- {entry.get('agent', '*')}: {entry.get('knowledge', '')}{tag_suffix}")
 
 asyncio.run(demo_code_act())
