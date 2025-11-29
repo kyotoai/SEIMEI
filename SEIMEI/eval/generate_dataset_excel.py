@@ -11,9 +11,10 @@ import subprocess
 import sys
 import textwrap
 import uuid
+from collections import defaultdict
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from seimei.llm import LLMClient
 
@@ -452,6 +453,143 @@ class DatasetEntry:
         ]
 
 
+@dataclass
+class SampleSpec:
+    topic: str
+    sample_index: int
+    prompt: str
+    module_path: Path
+    csv_paths: List[Path]
+    meta_paths: List[Path]
+    file_stub: str
+
+
+def _write_dataset(records: Sequence[Dict[str, Any]], output_path: Path) -> None:
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+    with output_path.open("w", encoding="utf-8") as fp:
+        json.dump(list(records), fp, ensure_ascii=False, indent=2)
+
+
+def _record_sample_key(record: Dict[str, Any]) -> Optional[Tuple[str, int]]:
+    topic = record.get("Topic")
+    if not isinstance(topic, str):
+        return None
+    try:
+        sample_index = int(record.get("SampleIndex"))
+    except (TypeError, ValueError):
+        return None
+    return topic, sample_index
+
+
+def _completed_samples_from_records(
+    records: Sequence[Dict[str, Any]],
+    required_hyper_params: int,
+) -> Set[Tuple[str, int]]:
+    if required_hyper_params <= 0:
+        return set()
+    hyper_counts: Dict[Tuple[str, int], Set[int]] = defaultdict(set)
+    for record in records:
+        key = _record_sample_key(record)
+        hyper_index_raw = record.get("HyperParamIndex")
+        if key is None:
+            continue
+        try:
+            hyper_index = int(hyper_index_raw)
+        except (TypeError, ValueError):
+            continue
+        hyper_counts[key].add(hyper_index)
+    return {key for key, hyper_indexes in hyper_counts.items() if len(hyper_indexes) >= required_hyper_params}
+
+
+async def _generate_sample_with_retries(
+    spec: SampleSpec,
+    args: argparse.Namespace,
+    llm: LLMClient,
+) -> Optional[DatasetEntry]:
+    prefer_import = not args.prefer_subprocess
+    max_sample_attempts = max(1, args.max_attempts)
+    for sample_attempt in range(1, max_sample_attempts + 1):
+        try:
+            if args.enable_validation:
+                entry = await request_valid_artifact(
+                    llm,
+                    spec.prompt,
+                    topic=spec.topic,
+                    max_attempts=args.max_attempts,
+                    module_path=spec.module_path,
+                    csv_paths=spec.csv_paths,
+                    meta_paths=spec.meta_paths,
+                    sample_index=spec.sample_index,
+                    n_hyper_params=args.n_hyper_params,
+                    prefer_import=prefer_import,
+                    exec_timeout=args.exec_timeout,
+                )
+            else:
+                entry = await request_artifact_once(
+                    llm,
+                    spec.prompt,
+                    topic=spec.topic,
+                    module_path=spec.module_path,
+                    csv_paths=spec.csv_paths,
+                    meta_paths=spec.meta_paths,
+                    sample_index=spec.sample_index,
+                    n_hyper_params=args.n_hyper_params,
+                    prefer_import=prefer_import,
+                    exec_timeout=args.exec_timeout,
+                )
+            return entry
+        except DatasetGenerationError as err:
+            logger.error(
+                "[%s] Generation failed for sample %s on attempt %d/%d: %s",
+                spec.topic,
+                spec.file_stub,
+                sample_attempt,
+                max_sample_attempts,
+                err,
+            )
+            cleanup_generated_artifacts(spec.module_path, spec.csv_paths, spec.meta_paths)
+            if sample_attempt >= max_sample_attempts:
+                logger.error(
+                    "[%s] Giving up on sample %s after %d attempts.",
+                    spec.topic,
+                    spec.file_stub,
+                    max_sample_attempts,
+                )
+            else:
+                logger.info(
+                    "[%s] Retrying sample %s (next attempt %d/%d).",
+                    spec.topic,
+                    spec.file_stub,
+                    sample_attempt + 1,
+                    max_sample_attempts,
+                )
+        except Exception:
+            logger.exception(
+                "[%s] Unexpected failure for sample %s on attempt %d/%d",
+                spec.topic,
+                spec.file_stub,
+                sample_attempt,
+                max_sample_attempts,
+            )
+            cleanup_generated_artifacts(spec.module_path, spec.csv_paths, spec.meta_paths)
+            if sample_attempt >= max_sample_attempts:
+                logger.error(
+                    "[%s] Giving up on sample %s after %d attempts.",
+                    spec.topic,
+                    spec.file_stub,
+                    max_sample_attempts,
+                )
+            else:
+                logger.info(
+                    "[%s] Retrying sample %s (next attempt %d/%d).",
+                    spec.topic,
+                    spec.file_stub,
+                    sample_attempt + 1,
+                    max_sample_attempts,
+                )
+    return None
+
+
 async def request_valid_artifact(
     llm: LLMClient,
     prompt: str,
@@ -715,6 +853,9 @@ async def request_artifact_once(
 
 
 async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
+    if args.batch_size <= 0:
+        raise DatasetGenerationError("--batch-size must be a positive integer.")
+
     exp_dir_arg = Path(args.exp_dir)
     exp_dir_path = Path(args.exp_dir).resolve()
     exp_dir_path.mkdir(parents=True, exist_ok=True)
@@ -743,10 +884,45 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
     llm_kwargs = {"model": args.model, **args.llm_kwargs}
     llm = LLMClient(**llm_kwargs)
 
-    dataset_entries: List[DatasetEntry] = []
+    output_path = (
+        Path(args.output_file_path).resolve() if args.output_file_path else exp_dir_path / "dataset.json"
+    )
+    existing_records: List[Dict[str, Any]] = []
+    if output_path.exists():
+        try:
+            with output_path.open("r", encoding="utf-8") as fp:
+                payload = json.load(fp)
+        except (OSError, json.JSONDecodeError) as exc:
+            raise DatasetGenerationError(
+                f"Failed to load existing dataset from {output_path}: {exc}"
+            ) from exc
+        if not isinstance(payload, list):
+            raise DatasetGenerationError(
+                f"Existing dataset file {output_path} must contain a JSON list."
+            )
+        if any(not isinstance(item, dict) for item in payload):
+            raise DatasetGenerationError(
+                f"Existing dataset file {output_path} contains non-object entries."
+            )
+        existing_records = payload
+
+    records_accumulator: List[Dict[str, Any]] = list(existing_records)
+    completed_samples = _completed_samples_from_records(existing_records, args.n_hyper_params)
+
+    sample_specs: List[SampleSpec] = []
     for topic in topics:
         slug = slugify(topic)
         for sample_index in range(1, args.n_samples_per_topic + 1):
+            if (topic, sample_index) in completed_samples:
+                logger.info(
+                    "[%s] Skipping sample %s_%d; %d hyper-params already recorded in %s.",
+                    topic,
+                    slug,
+                    sample_index,
+                    args.n_hyper_params,
+                    output_path,
+                )
+                continue
             file_stub = f"{slug}_{sample_index}"
             module_path = python_dir / f"{file_stub}.py"
             csv_paths = [
@@ -767,111 +943,52 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                 file_stub=file_stub,
             )
 
-            entry: Optional[DatasetEntry] = None
-            sample_attempt = 0
-            max_sample_attempts = max(1, args.max_attempts)
-            while sample_attempt < max_sample_attempts:
-                sample_attempt += 1
-                try:
-                    logger.info(
-                        "[%s] Generating module attempt %d/%d for sample %s",
-                        topic,
-                        sample_attempt,
-                        max_sample_attempts,
-                        file_stub,
-                    )
-                    if args.enable_validation:
-                        entry = await request_valid_artifact(
-                            llm,
-                            prompt,
-                            topic=topic,
-                            max_attempts=args.max_attempts,
-                            module_path=module_path,
-                            csv_paths=csv_paths,
-                            meta_paths=meta_paths,
-                            sample_index=sample_index,
-                            n_hyper_params=args.n_hyper_params,
-                            prefer_import=not args.prefer_subprocess,
-                            exec_timeout=args.exec_timeout,
-                        )
-                    else:
-                        entry = await request_artifact_once(
-                            llm,
-                            prompt,
-                            topic=topic,
-                            module_path=module_path,
-                            csv_paths=csv_paths,
-                            meta_paths=meta_paths,
-                            sample_index=sample_index,
-                            n_hyper_params=args.n_hyper_params,
-                            prefer_import=not args.prefer_subprocess,
-                            exec_timeout=args.exec_timeout,
-                        )
-                    break
-                except DatasetGenerationError as err:
-                    logger.error(
-                        "[%s] Generation failed for sample %s on attempt %d/%d: %s",
-                        topic,
-                        file_stub,
-                        sample_attempt,
-                        max_sample_attempts,
-                        err,
-                    )
-                    cleanup_generated_artifacts(module_path, csv_paths, meta_paths)
-                    if sample_attempt >= max_sample_attempts:
-                        logger.error(
-                            "[%s] Giving up on sample %s after %d attempts.",
-                            topic,
-                            file_stub,
-                            max_sample_attempts,
-                        )
-                    else:
-                        logger.info(
-                            "[%s] Retrying sample %s (next attempt %d/%d).",
-                            topic,
-                            file_stub,
-                            sample_attempt + 1,
-                            max_sample_attempts,
-                        )
-                except Exception as err:
-                    logger.exception(
-                        "[%s] Unexpected failure for sample %s on attempt %d/%d",
-                        topic,
-                        file_stub,
-                        sample_attempt,
-                        max_sample_attempts,
-                    )
-                    cleanup_generated_artifacts(module_path, csv_paths, meta_paths)
-                    if sample_attempt >= max_sample_attempts:
-                        logger.error(
-                            "[%s] Giving up on sample %s after %d attempts.",
-                            topic,
-                            file_stub,
-                            max_sample_attempts,
-                        )
-                    else:
-                        logger.info(
-                            "[%s] Retrying sample %s (next attempt %d/%d).",
-                            topic,
-                            file_stub,
-                            sample_attempt + 1,
-                            max_sample_attempts,
-                        )
+            sample_specs.append(
+                SampleSpec(
+                    topic=topic,
+                    sample_index=sample_index,
+                    prompt=prompt,
+                    module_path=module_path,
+                    csv_paths=csv_paths,
+                    meta_paths=meta_paths,
+                    file_stub=file_stub,
+                )
+            )
 
+    pending_sample_keys = {(spec.topic, spec.sample_index) for spec in sample_specs}
+    if pending_sample_keys:
+        records_accumulator = [
+            record
+            for record in records_accumulator
+            if _record_sample_key(record) not in pending_sample_keys
+        ]
+
+    dataset_entries: List[DatasetEntry] = []
+    if not sample_specs:
+        if not output_path.exists():
+            _write_dataset(records_accumulator, output_path)
+        print(f"Dataset written to {output_path}")
+        return dataset_entries
+
+    total_batches = (len(sample_specs) + args.batch_size - 1) // args.batch_size
+    for batch_index in range(total_batches):
+        batch_start = batch_index * args.batch_size
+        batch_specs = sample_specs[batch_start : batch_start + args.batch_size]
+        batch_tasks = [
+            _generate_sample_with_retries(spec, args, llm) for spec in batch_specs
+        ]
+        batch_entries = await asyncio.gather(*batch_tasks)
+        for spec, entry in zip(batch_specs, batch_entries):
             if entry is None:
                 continue
-
             dataset_entries.append(entry)
+            records_accumulator.extend(entry.to_records(exp_dir_arg, exp_dir_path))
+        _write_dataset(records_accumulator, output_path)
+        print(
+            f"[Batch {batch_index + 1}/{total_batches}] Saved dataset snapshot to {output_path}"
+            f" ({len(records_accumulator)} records)"
+        )
 
-    output_path = (
-        Path(args.output_file_path).resolve() if args.output_file_path else exp_dir_path / "dataset.json"
-    )
-    records: List[Dict[str, Any]] = []
-    for entry in dataset_entries:
-        records.extend(entry.to_records(exp_dir_arg, exp_dir_path))
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with output_path.open("w", encoding="utf-8") as fp:
-        json.dump(records, fp, ensure_ascii=False, indent=2)
     print(f"Dataset written to {output_path}")
     return dataset_entries
 
@@ -903,6 +1020,12 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
         type=int,
         required=True,
         help="Number of hyper-parameter variations (CSV files) per Python module.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=10,
+        help="Number of samples to generate concurrently (LLM requests are grouped with asyncio.gather).",
     )
     parser.add_argument(
         "--topics",
