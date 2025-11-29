@@ -1268,7 +1268,15 @@ class seimei:
         final_response_source = "pending"
 
         # Agent loop (very simple – customize as needed)
-        step_idx = 0
+        existing_agent_steps = 0
+        for entry in msg_history:
+            role = str(entry.get("role") or "").lower()
+            if role == "agent":
+                existing_agent_steps += 1
+                continue
+            if role == "system" and entry.get("agent"):
+                existing_agent_steps += 1
+        step_idx = existing_agent_steps
         while step_idx < self.max_steps:
             step_idx += 1
 

@@ -5,6 +5,7 @@ from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
 from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
+from seimei.llm import format_agent_history
 
 DEFAULT_THINK_KNOWLEDGE: List[Dict[str, Any]] = [
     {
@@ -42,19 +43,26 @@ def _extract_last_user_message(messages: List[Dict[str, Any]]) -> str:
     return ""
 
 
-def _recent_agent_findings(messages: List[Dict[str, Any]], limit: int = 3) -> List[str]:
-    findings: List[str] = []
+def _recent_agent_findings(messages: List[Dict[str, Any]], limit: int = 3) -> str:
+    if limit <= 0:
+        limit = 1
+    agent_msgs: List[Dict[str, Any]] = []
     for msg in reversed(messages):
         if msg.get("role") != "agent":
             continue
-        name = msg.get("name") or "agent"
-        content = msg.get("content", "")
-        if content:
-            findings.append(f"{name}: {content}")
-        if len(findings) >= limit:
+        entry = {
+            "content": msg.get("content", ""),
+        }
+        name = msg.get("name")
+        if isinstance(name, str) and name.strip():
+            entry["name"] = name.strip()
+        agent_msgs.append(entry)
+        if len(agent_msgs) >= limit:
             break
-    findings.reverse()
-    return findings
+    agent_msgs.reverse()
+    if not agent_msgs:
+        return ""
+    return format_agent_history(agent_msgs)
 
 
 def _limit_sentences(text: str, max_sentences: int = 3) -> str:
@@ -88,11 +96,11 @@ class think(Agent):
         top_k = instruction_k or shared_ctx.get("instruction_top_k") or 3
 
         user_request = _extract_last_user_message(messages)
-        findings = _recent_agent_findings(messages)
+        findings_block = _recent_agent_findings(messages)
         query = "\n".join(
             part for part in [
                 f"User request:\n{user_request}",
-                f"Recent agent findings:\n" + "\n".join(findings) if findings else None,
+                f"Recent agent findings:\n{findings_block}" if findings_block else None,
             ]
             if part
         )
@@ -164,7 +172,7 @@ class think(Agent):
 
         if llm is not None:
             knowledge_section = "\n".join(f"- {text}" for text in chosen_texts) or "- None."
-            findings_section = "\n".join(f"- {item}" for item in findings) or "- None yet."
+            findings_section = findings_block or "- None yet."
             question_section = user_request or "[missing user request]"
             analysis_input = (
                 f"User question:\n{question_section}\n\n"
@@ -195,7 +203,7 @@ class think(Agent):
 
         if not analysis_text:
             knowledge_summary = "; ".join(chosen_texts) if chosen_texts else "no curated knowledge yet"
-            findings_summary = "; ".join(findings) if findings else "no prior findings yet"
+            findings_summary = findings_block.replace("\n", " ").strip() if findings_block else "no prior findings yet"
             analysis_text = (
                 f"Key cues: {knowledge_summary}. "
                 f"Next, build on {findings_summary} to decide the following command."
