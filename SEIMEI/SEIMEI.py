@@ -721,6 +721,28 @@ class seimei:
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
         history_messages, _, focus_text = self._prepare_query_input(query)
         conversation_messages = self._convert_history_to_llm(history_messages)
+        step_note = ""
+        current_step = context.get("current_step")
+        total_steps = context.get("max_steps") or self.max_steps
+        try:
+            step_number = int(current_step)
+        except (TypeError, ValueError):
+            step_number = None
+        try:
+            total_number = int(total_steps)
+        except (TypeError, ValueError):
+            total_number = None
+        if step_number is not None:
+            if total_number and total_number >= step_number:
+                step_note = (
+                    f"\nCurrent agent step: {step_number} of {total_number}. "
+                    "Choose the agent whose skills progress this specific step."
+                )
+            else:
+                step_note = (
+                    f"\nCurrent agent step: {step_number}. "
+                    "Choose the agent whose skills progress this specific step."
+                )
         system_prompt = (
             "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
@@ -729,9 +751,16 @@ class seimei:
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
         )
+        if step_note:
+            system_prompt = f"{system_prompt}{step_note}"
         user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
         if reason_hint:
             user_prompt += f"\nAdditional context: {reason_hint}"
+        if step_number is not None and not focus_text:
+            qualifier = f"This routing decision occurs at agent step {step_number}"
+            if total_number and total_number >= step_number:
+                qualifier += f" of {total_number}"
+            user_prompt = f"{qualifier}.\n{user_prompt}"
 
         try:
             routing_messages = conversation_messages if conversation_messages else [
@@ -797,6 +826,7 @@ class seimei:
         self,
         messages: List[Dict[str, Any]],
         search_fn: Callable[..., Any],
+        step: Optional[int] = None,
     ) -> Optional[Agent]:
         if not self.agents:
             return None
@@ -812,11 +842,15 @@ class seimei:
 
         if search_fn:
             try:
+                context = {"purpose": "agent_routing"}
+                if step is not None:
+                    context["current_step"] = int(step)
+                    context["max_steps"] = self.max_steps
                 ranked = await search_fn(
                     query=query,
                     keys=keys,
                     k=1,
-                    context={"purpose": "agent_routing"},
+                    context=context,
                 )
                 if ranked:
                     agent_name = ranked[0].get("payload", {}).get("agent_name")
@@ -1243,7 +1277,7 @@ class seimei:
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Decide which agent to run
-            agent_obj = await self._select_next_agent(msg_history, search_fn)
+            agent_obj = await self._select_next_agent(msg_history, search_fn, step_idx)
             if agent_obj is None:
                 if stop_reason is None:
                     stop_reason = "no_agent_available"

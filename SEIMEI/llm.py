@@ -29,7 +29,7 @@ def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
     blocks: List[str] = []
     for idx, msg in enumerate(agent_messages, start=1):
         block_lines: List[str] = []
-        header = f"[AGENT OUTPUT STEP {idx+1}]"
+        header = f"[AGENT OUTPUT STEP {idx}]"
         content = msg.get("content")
         if content is None:
             continue
