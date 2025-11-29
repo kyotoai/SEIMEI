@@ -58,7 +58,7 @@ python -m seimei.eval.generate_dataset_excel \
   --n-samples-per-topic 1 \
   --n-hyper-params 4 \
   --exp-dir exp4 \
-  --topics-path SEIMEI/seimei/eval/data_generators/excel_topics.json \
+  --topics-path seimei/eval/data_generators/excel_topics.json \
   --model gpt-5-nano
 ```
 

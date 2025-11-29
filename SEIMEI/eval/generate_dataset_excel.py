@@ -308,6 +308,73 @@ def rows_to_table(rows: List[List[str]]) -> str:
     return "\n".join(",".join(row) for row in rows)
 
 
+def _stringify_csv_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, (int, float)):
+        return str(value)
+    if isinstance(value, (list, dict)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    return str(value)
+
+
+def expand_payload_column(csv_path: Path, meta_path: Path) -> None:
+    if not csv_path.is_file():
+        raise DatasetGenerationError(f"CSV file not found at {csv_path}")
+
+    with csv_path.open("r", encoding="utf-8", newline="") as fp:
+        reader = csv.DictReader(fp)
+        if not reader.fieldnames:
+            raise DatasetGenerationError("CSV is missing a header row.")
+        if "payload_json" not in reader.fieldnames:
+            raise DatasetGenerationError("CSV does not contain a 'payload_json' column to expand.")
+
+        meta_fields = [field for field in reader.fieldnames if field != "payload_json"]
+        payload_rows: List[Dict[str, Any]] = []
+        meta_rows: List[Dict[str, Any]] = []
+        payload_headers: List[str] = []
+
+        for row in reader:
+            payload_raw = row.get("payload_json", "")
+            try:
+                payload_obj = json.loads(payload_raw) if payload_raw else {}
+            except json.JSONDecodeError as exc:
+                raise DatasetGenerationError(f"Invalid payload_json content: {exc}") from exc
+            if not isinstance(payload_obj, dict):
+                raise DatasetGenerationError("Each payload_json entry must be a JSON object.")
+            if payload_obj:
+                for key in payload_obj:
+                    if key not in payload_headers:
+                        payload_headers.append(key)
+            payload_rows.append(payload_obj)
+            meta_rows.append({field: row.get(field, "") for field in meta_fields})
+
+    if not payload_rows:
+        raise DatasetGenerationError("CSV contains no data rows to expand.")
+    if not payload_headers:
+        raise DatasetGenerationError("payload_json entries are empty; nothing to expand.")
+
+    payload_headers = sorted(payload_headers)
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with csv_path.open("w", encoding="utf-8", newline="") as payload_fp:
+        payload_writer = csv.DictWriter(payload_fp, fieldnames=payload_headers)
+        payload_writer.writeheader()
+        for payload_row in payload_rows:
+            payload_writer.writerow({key: _stringify_csv_cell(payload_row.get(key)) for key in payload_headers})
+
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    with meta_path.open("w", encoding="utf-8", newline="") as meta_fp:
+        meta_writer = csv.DictWriter(meta_fp, fieldnames=meta_fields)
+        meta_writer.writeheader()
+        for meta_row in meta_rows:
+            meta_writer.writerow(meta_row)
+
+
 def format_dataset_path(base_arg: Path, exp_dir: Path, file_path: Path) -> str:
     try:
         relative = file_path.relative_to(exp_dir)
@@ -316,24 +383,36 @@ def format_dataset_path(base_arg: Path, exp_dir: Path, file_path: Path) -> str:
         return str(file_path)
 
 
-def cleanup_generated_artifacts(module_path: Path, csv_paths: Sequence[Path]) -> None:
+def cleanup_generated_artifacts(
+    module_path: Path,
+    csv_paths: Sequence[Path],
+    meta_paths: Optional[Sequence[Path]] = None,
+) -> None:
     if module_path.exists():
         try:
             module_path.unlink()
         except OSError:
             logger.debug("Failed to remove module %s", module_path, exc_info=True)
-    for csv_path in csv_paths:
-        if csv_path.exists():
+    for path in csv_paths:
+        if path.exists():
             try:
-                csv_path.unlink()
+                path.unlink()
             except OSError:
-                logger.debug("Failed to remove CSV %s", csv_path, exc_info=True)
+                logger.debug("Failed to remove CSV %s", path, exc_info=True)
+    if meta_paths:
+        for path in meta_paths:
+            if path.exists():
+                try:
+                    path.unlink()
+                except OSError:
+                    logger.debug("Failed to remove meta CSV %s", path, exc_info=True)
 
 
 @dataclass
 class HyperArtifact:
     index: int
     csv_path: Path
+    meta_path: Path
     csv_preview: List[List[str]] = field(default_factory=list)
 
     def to_record(
@@ -345,6 +424,7 @@ class HyperArtifact:
         record = dict(base_entry)
         record["HyperParamIndex"] = self.index
         record["CSVPath"] = format_dataset_path(exp_dir_arg, exp_dir_path, self.csv_path)
+        record["MetaPath"] = format_dataset_path(exp_dir_arg, exp_dir_path, self.meta_path)
         record["CSVPreview"] = self.csv_preview
         return record
 
@@ -380,11 +460,14 @@ async def request_valid_artifact(
     max_attempts: int,
     module_path: Path,
     csv_paths: Sequence[Path],
+    meta_paths: Sequence[Path],
     sample_index: int,
     n_hyper_params: int,
     prefer_import: bool,
     exec_timeout: int,
 ) -> DatasetEntry:
+    if len(csv_paths) != len(meta_paths):
+        raise DatasetGenerationError("CSV paths and meta paths must have the same length.")
     messages: List[Dict[str, Any]] = [{"role": "user", "content": prompt}]
     attempt = 0
     last_error: Optional[str] = None
@@ -423,10 +506,15 @@ async def request_valid_artifact(
 
         hyper_artifacts: List[HyperArtifact] = []
         generation_failed = False
-        for hyper_index, csv_path in enumerate(csv_paths, start=1):
+        for hyper_index, (csv_path, meta_path) in enumerate(zip(csv_paths, meta_paths), start=1):
             if csv_path.exists():
                 try:
                     csv_path.unlink()
+                except OSError:
+                    pass
+            if meta_path.exists():
+                try:
+                    meta_path.unlink()
                 except OSError:
                     pass
 
@@ -458,6 +546,20 @@ async def request_valid_artifact(
                 generation_failed = True
                 break
 
+            try:
+                expand_payload_column(csv_path, meta_path)
+            except DatasetGenerationError as exc:
+                last_error = str(exc)
+                feedback = (
+                    "The generated CSV could not be converted into separate payload/meta files.\n"
+                    f"Hyper-parameter index: {hyper_index}/{n_hyper_params}\n"
+                    f"Problem: {last_error}\n"
+                    "Please send a new JSON response that fixes the module output format."
+                )
+                messages.append({"role": "user", "content": feedback})
+                generation_failed = True
+                break
+
             valid, validation_message, preview = preview_csv(csv_path)
             if not valid:
                 last_error = validation_message
@@ -480,7 +582,12 @@ async def request_valid_artifact(
             )
 
             hyper_artifacts.append(
-                HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
+                HyperArtifact(
+                    index=hyper_index,
+                    csv_path=csv_path,
+                    meta_path=meta_path,
+                    csv_preview=preview,
+                )
             )
 
         if generation_failed:
@@ -510,11 +617,14 @@ async def request_artifact_once(
     *,
     module_path: Path,
     csv_paths: Sequence[Path],
+    meta_paths: Sequence[Path],
     sample_index: int,
     n_hyper_params: int,
     prefer_import: bool,
     exec_timeout: int,
 ) -> DatasetEntry:
+    if len(csv_paths) != len(meta_paths):
+        raise DatasetGenerationError("CSV paths and meta paths must have the same length.")
     response_text, _ = await llm.chat(messages=[{"role": "user", "content": prompt}], system=SYSTEM_PROMPT)
     try:
         payload = extract_json_object(response_text)
@@ -532,13 +642,20 @@ async def request_artifact_once(
     write_module(module_path, python_code)
 
     hyper_artifacts: List[HyperArtifact] = []
-    for hyper_index, csv_path in enumerate(csv_paths, start=1):
+    for hyper_index, (csv_path, meta_path) in enumerate(zip(csv_paths, meta_paths), start=1):
         if csv_path.exists():
             try:
                 csv_path.unlink()
             except OSError as exc:
                 raise DatasetGenerationError(
                     f"Failed to clear existing CSV '{csv_path}': {exc}"
+                ) from exc
+        if meta_path.exists():
+            try:
+                meta_path.unlink()
+            except OSError as exc:
+                raise DatasetGenerationError(
+                    f"Failed to clear existing meta CSV '{meta_path}': {exc}"
                 ) from exc
 
         logger.info(
@@ -562,6 +679,8 @@ async def request_artifact_once(
                 f"Execution failed for hyper-parameter {hyper_index}/{n_hyper_params}: {exec_error}"
             )
 
+        expand_payload_column(csv_path, meta_path)
+
         valid, validation_message, preview = preview_csv(csv_path)
         if not valid:
             raise DatasetGenerationError(
@@ -576,7 +695,12 @@ async def request_artifact_once(
             n_hyper_params,
         )
         hyper_artifacts.append(
-            HyperArtifact(index=hyper_index, csv_path=csv_path, csv_preview=preview)
+            HyperArtifact(
+                index=hyper_index,
+                csv_path=csv_path,
+                meta_path=meta_path,
+                csv_preview=preview,
+            )
         )
 
     return DatasetEntry(
@@ -597,8 +721,10 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
 
     python_dir = Path(args.python_dir).resolve() if args.python_dir else exp_dir_path / "python"
     csv_dir = Path(args.csv_dir).resolve() if args.csv_dir else exp_dir_path / "csv"
+    meta_dir = Path(args.meta_dir).resolve() if args.meta_dir else exp_dir_path / "meta"
     python_dir.mkdir(parents=True, exist_ok=True)
     csv_dir.mkdir(parents=True, exist_ok=True)
+    meta_dir.mkdir(parents=True, exist_ok=True)
 
     prompt_path = Path(args.prompt_path).resolve()
     base_prompt = load_prompt(prompt_path)
@@ -625,6 +751,10 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
             module_path = python_dir / f"{file_stub}.py"
             csv_paths = [
                 csv_dir / f"{slug}_{sample_index}_{hyper_index}.csv"
+                for hyper_index in range(1, args.n_hyper_params + 1)
+            ]
+            meta_paths = [
+                meta_dir / f"{slug}_{sample_index}_{hyper_index}.csv"
                 for hyper_index in range(1, args.n_hyper_params + 1)
             ]
 
@@ -658,6 +788,7 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                             max_attempts=args.max_attempts,
                             module_path=module_path,
                             csv_paths=csv_paths,
+                            meta_paths=meta_paths,
                             sample_index=sample_index,
                             n_hyper_params=args.n_hyper_params,
                             prefer_import=not args.prefer_subprocess,
@@ -670,6 +801,7 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                             topic=topic,
                             module_path=module_path,
                             csv_paths=csv_paths,
+                            meta_paths=meta_paths,
                             sample_index=sample_index,
                             n_hyper_params=args.n_hyper_params,
                             prefer_import=not args.prefer_subprocess,
@@ -685,7 +817,7 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                         max_sample_attempts,
                         err,
                     )
-                    cleanup_generated_artifacts(module_path, csv_paths)
+                    cleanup_generated_artifacts(module_path, csv_paths, meta_paths)
                     if sample_attempt >= max_sample_attempts:
                         logger.error(
                             "[%s] Giving up on sample %s after %d attempts.",
@@ -709,7 +841,7 @@ async def generate_dataset(args: argparse.Namespace) -> List[DatasetEntry]:
                         sample_attempt,
                         max_sample_attempts,
                     )
-                    cleanup_generated_artifacts(module_path, csv_paths)
+                    cleanup_generated_artifacts(module_path, csv_paths, meta_paths)
                     if sample_attempt >= max_sample_attempts:
                         logger.error(
                             "[%s] Giving up on sample %s after %d attempts.",
@@ -756,6 +888,10 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--output-file-path", help="Where to write dataset.json (defaults to <exp_dir>/dataset.json).")
     parser.add_argument("--python-dir", help="Directory to store generated Python modules (defaults to <exp_dir>/python).")
     parser.add_argument("--csv-dir", help="Directory to store generated CSV files (defaults to <exp_dir>/csv).")
+    parser.add_argument(
+        "--meta-dir",
+        help="Directory to store metadata CSV files (defaults to <exp_dir>/meta).",
+    )
     parser.add_argument(
         "--n-samples-per-topic",
         type=int,
