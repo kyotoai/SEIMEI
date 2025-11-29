@@ -235,10 +235,13 @@ async def _generate_command(
     system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
+        "Always keep the generated Python code as short and simple as possible—prefer tiny helpers, "
+        "just the essential imports, and no extra commentary.",
         "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
         "Wrap the command in `<cmd>` and `</cmd>`. Output nothing before or after the tags.",
         "Ensure the command text inside `<cmd>` contains everything needed, including any heredoc markers.",
-        "Produce the best shell command (single command) to satisfy the request. "
+        "Your entire goal is to produce the shortest viable command that inspects the mentioned file and "
+        "reports the necessary evidence.",
         "Treat user messages as instructions and tool messages as prior command outputs for context.",
     ]
     if knowledge_hint:
