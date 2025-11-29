@@ -19,6 +19,7 @@ generate_dataset_excel.py
 - Ask `seimei.llm.LLMClient` for a JSON payload containing the module source code plus the question/answer pair.
 - Persist the module, then execute it once per hyper-parameter index (naming CSVs `topic_sample_hyper.csv`).
 - Optionally run an iterative validation loop (`--enable-validation`) that re-prompts the LLM with structured feedback when execution or CSV checks fail.
+- Batch the remaining samples (default 10 at a time) and run each batch concurrently via `asyncio.gather`, checkpointing `<exp_dir>/dataset.json` after every batch so runs can resume safely.
 - Save the validated modules under `<exp_dir>/python/`, store the generated CSVs beneath `<exp_dir>/csv/`, and append a row per CSV to `dataset.json`.
 
 **Key Arguments**
@@ -26,6 +27,7 @@ generate_dataset_excel.py
 - `--model`, `--temperature`, and `--llm-kw` (repeat `--llm-kw key=value` to forward multiple OpenAI-style parameters) configure the dataset LLM client.
 - `--n-samples-per-topic` controls how many Python modules to request per topic.
 - `--n-hyper-params` sets the number of CSVs (hyper-parameter variations) generated from each module.
+- `--batch-size` toggles how many samples are generated concurrently; larger values trade latency for higher LLM parallelism (default 10).
 - `--topics` optional list of topic names (defaults to the bundled five).
 - `--topics-path` optional JSON file containing an array of topics; falls back to the bundled list when omitted.
 - `--prompt-path`, `--python-dir`, `--csv-dir`, `--output-file-path` override file locations.
@@ -64,6 +66,7 @@ python -m seimei.eval.generate_dataset_excel \
 
 **Notices**
 - By default the script runs a single-shot generation pass; add `--enable-validation` when you need automatic retries with feedback.
+- Resume runs by reusing the same `--exp-dir`: any sample that already has all requested hyper-parameter rows in `dataset.json` is skipped automatically, so only unfinished work is regenerated.
 - Repeat `--llm-kw key=value` to forward multiple parameters (e.g., `--llm-kw top_p=0.8 --llm-kw presence_penalty=0.2`).
 - The generated modules must remain pure Python (no network access, no writes outside the requested CSV path).
 - All paths recorded in `dataset.json` mirror the `--exp-dir` argument.
