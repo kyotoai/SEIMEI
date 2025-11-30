@@ -1,0 +1,627 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <title>SEIMEI Notebook</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+      :root {
+        --primary: 129 140 248;
+        --primary-dark: 79 70 229;
+        --bg-dark: 15 23 42;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        background-color: rgb(var(--bg-dark));
+        color: rgb(226, 232, 240);
+      }
+
+      .thin-scrollbar::-webkit-scrollbar {
+        width: 6px;
+        height: 6px;
+      }
+      .thin-scrollbar::-webkit-scrollbar-thumb {
+        background-color: rgba(148, 163, 184, 0.6);
+        border-radius: 999px;
+      }
+
+      pre code {
+        font-variant-ligatures: none;
+      }
+    </style>
+  </head>
+  <body class="min-h-screen bg-slate-950 text-slate-100">
+    <aside
+      class="hidden lg:flex fixed inset-y-0 left-0 w-64 flex-col border-r border-slate-800 bg-slate-950/95 backdrop-blur supports-[backdrop-filter]:backdrop-blur"
+    >
+      <div class="px-6 py-4 border-b border-slate-800 flex items-center gap-3">
+        <div
+          class="h-8 w-8 rounded-xl bg-gradient-to-br from-indigo-400 via-purple-500 to-sky-400 flex items-center justify-center text-xs font-bold"
+        >
+          K
+        </div>
+        <div class="flex flex-col">
+          <span class="text-sm font-semibold tracking-tight">KyotoAI</span>
+          <span class="text-xs text-slate-400">SEIMEI Notes</span>
+        </div>
+      </div>
+      <nav
+        class="flex-1 overflow-y-auto thin-scrollbar px-4 py-4 text-sm space-y-6"
+        data-nav-scroll
+      >
+        <div>
+          <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+            GET STARTED
+          </h3>
+          <ul class="space-y-1">
+            <li>
+              <a
+                href="#introduction"
+                data-target="introduction"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Introduction</a
+              >
+            </li>
+            <li>
+              <a
+                href="#quick-start"
+                data-target="quick-start"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Quick Start</a
+              >
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+            AGENT USAGE
+          </h3>
+          <ul class="space-y-1">
+            <li>
+              <a
+                href="#code-act"
+                data-target="code-act"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Code Act</a
+              >
+            </li>
+            <li>
+              <a
+                href="#custom-agent"
+                data-target="custom-agent"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Custom Agent</a
+              >
+            </li>
+            <li>
+              <a
+                href="#dataset-logging"
+                data-target="dataset-logging"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Dataset Logging</a
+              >
+            </li>
+          </ul>
+        </div>
+        <div>
+          <h3 class="text-xs font-semibold text-slate-500 uppercase mb-2">
+            OPERATIONS
+          </h3>
+          <ul class="space-y-1">
+            <li>
+              <a
+                href="#limits"
+                data-target="limits"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Rate Limits</a
+              >
+            </li>
+            <li>
+              <a
+                href="#pricing"
+                data-target="pricing"
+                data-nav-link
+                class="block rounded-lg px-2 py-1.5 transition-colors hover:bg-slate-900/60 hover:text-slate-100 text-slate-400"
+                >Pricing &amp; Deployment</a
+              >
+            </li>
+          </ul>
+        </div>
+      </nav>
+      <div
+        class="border-t border-slate-800 px-4 py-3 text-xs text-slate-500 space-y-1"
+      >
+        <div class="flex items-center justify-between">
+          <span>Docs Version</span>
+          <span class="font-mono text-slate-300">v0.2</span>
+        </div>
+        <div class="flex items-center justify-between">
+          <span>Project</span>
+          <span class="font-mono text-slate-300">SEIMEI</span>
+        </div>
+      </div>
+    </aside>
+
+    <main
+      class="lg:ml-64 max-w-5xl mx-auto px-4 sm:px-6 lg:px-12 py-10 lg:py-12"
+    >
+      <header class="mb-10">
+        <p class="text-sm font-semibold text-indigo-300 mb-2">SEIMEI</p>
+        <h1 class="text-3xl sm:text-4xl font-bold text-slate-50 mb-3">
+          Search-Enhanced Interface for Multi-Expertise Integration
+        </h1>
+        <p class="text-base sm:text-lg text-slate-300 max-w-3xl">
+          Notes compiled straight from <code>README.md</code> and
+          <code>seimei/README.md</code> so you can map the public instructions
+          into an explorable cheatsheet. Use the fixed table of contents to jump
+          into the workflows that matter.
+        </p>
+      </header>
+
+      <section
+        id="introduction"
+        data-section
+        class="mb-12 scroll-mt-32"
+      >
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Introduction</h2>
+        <p class="text-slate-300 mb-3">
+          The main README describes SEIMEI as the Search-Enhanced Interface for
+          Multi-Expertise Integration—KyotoAI's agent system that lets
+          thousands of reasoning specialists collaborate through a reward-model
+          search loop. Instead of retraining the base LLM, SEIMEI tunes a
+          lightweight reranker (RMSearch) to repeatedly pick the next document
+          and agent trajectory, keeping chains-of-thought grounded.
+        </p>
+        <ul class="list-disc list-inside text-slate-300 space-y-1.5 mb-4">
+          <li>
+            <span class="font-semibold">Search the best agent.</span> The
+            README example shows how each agent reads documents, interacts with
+            the LLM, and feeds an answer back through the search engine so only
+            promising threads survive.
+          </li>
+          <li>
+            <span class="font-semibold">Trainable reranker.</span> The
+            proprietary reward model outperforms embedding-only retrieval
+            because it learns which agent solves a question, not just which text
+            looks similar.
+          </li>
+          <li>
+            <span class="font-semibold">Applied workflows.</span> Screenshots
+            in <code>README.md</code> highlight scientific research, software
+            debugging, and experimentation pipelines built on SEIMEI.
+          </li>
+        </ul>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4">
+          <p class="text-sm text-slate-400 mb-2">
+            From README &ldquo;Search The Best Agent To Make Deep Reasoning&rdquo;
+          </p>
+          <img
+            src="../images/SEIMEI_example.png"
+            alt="SEIMEI overview"
+            class="rounded-xl border border-slate-800"
+          />
+        </div>
+      </section>
+
+      <section
+        id="quick-start"
+        data-section
+        class="mb-12 scroll-mt-32"
+      >
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Quick Start</h2>
+        <p class="text-slate-300 mb-4">
+          Everything below is lifted from the &ldquo;Getting Started&rdquo; and
+          &ldquo;Installation&rdquo; guidance in <code>README.md</code> together
+          with the quick start block inside <code>seimei/README.md</code>.
+        </p>
+        <ol class="list-decimal list-inside text-slate-300 space-y-2 mb-4">
+          <li>
+            Clone the repository and install it in editable mode so local
+            changes propagate immediately.
+          </li>
+          <li>Export your <code>OPENAI_API_KEY</code> and <code>KYOTOAI_API_KEY</code>.</li>
+          <li>Run <code>seimei</code> from the CLI or use the orchestrator in Python.</li>
+        </ol>
+        <div
+          class="code-group rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden mb-6"
+          data-code-group
+        >
+          <div class="flex items-center justify-between border-b border-slate-800 px-4 py-2 text-xs">
+            <div class="flex items-center gap-2">
+              <button
+                class="code-tab px-2 py-1 rounded-md bg-slate-800 text-indigo-300 font-medium"
+                data-lang-tab="shell"
+                type="button"
+              >
+                Shell
+              </button>
+              <button
+                class="code-tab px-2 py-1 rounded-md text-slate-400 hover:text-slate-100 hover:bg-slate-800/70"
+                data-lang-tab="env"
+                type="button"
+              >
+                Env
+              </button>
+            </div>
+            <button
+              class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+              data-copy
+              type="button"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto">
+            <pre data-lang="shell">
+<code>git clone https://github.com/kyotoai/SEIMEI.git
+pip install -e SEIMEI/
+seimei</code>
+            </pre>
+            <pre data-lang="env" class="hidden">
+<code>export OPENAI_API_KEY="(your_openai_api_key)"
+export KYOTOAI_API_KEY="(your_kyotoai_api_key)"</code>
+            </pre>
+          </div>
+        </div>
+        <p class="text-slate-400 text-sm">
+          The CLI step mirrors the Quick start block in
+          <code>seimei/README.md</code> (&ldquo;In CLI app&rdquo;).
+        </p>
+      </section>
+
+      <section id="code-act" data-section class="mb-12 scroll-mt-32">
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Code Act</h2>
+        <p class="text-slate-300 mb-3">
+          Section 6 of <code>seimei/README.md</code> lists the bundled agents;
+          <code>agents/code_act.py</code> executes whitelisted shell commands so
+          long-running experiments stay grounded. Enable it with
+          <code>allow_code_exec=True</code> and optionally restrict
+          <code>allowed_commands</code> (README suggests
+          <code>["python", "pip", "ls", "cat"]</code> as a starting point).
+        </p>
+        <p class="text-slate-300 mb-4">
+          The Python block below is copied verbatim from the README Quick start
+          example and demonstrates how <code>seimei</code> drives
+          <code>code_act</code> alongside RMSearch.
+        </p>
+        <div
+          class="code-group rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden mb-4"
+          data-code-group
+        >
+          <div class="flex items-center justify-between border-b border-slate-800 px-4 py-2 text-xs">
+            <span class="uppercase tracking-wide text-slate-400">Python</span>
+            <button
+              class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+              data-copy
+              type="button"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto">
+            <pre data-lang="python">
+<code>import asyncio
+from seimei import seimei  # class name is `seimei` (lowercase) for convenience
+
+async def demo_code_act():
+    orchestrator = seimei(
+        llm_kwargs={"model": "gpt-5-nano"},
+        rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
+        allow_code_exec=True,
+        agent_log_head_lines=1,
+        max_tokens_per_question=30000,
+        load_knowledge_path="seimei_knowledge/knwoledge.csv",
+    )
+
+    result = await orchestrator(
+        messages=[
+            {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
+        ],
+    )
+
+asyncio.run(demo_code_act())</code>
+            </pre>
+          </div>
+        </div>
+        <p class="text-slate-400 text-sm">
+          Lines 1-27 are identical to <code>seimei/README.md</code>; keep the
+          same structure when customizing RM URLs, token limits, or datasets.
+        </p>
+      </section>
+
+      <section id="custom-agent" data-section class="mb-12 scroll-mt-32">
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Custom Agent</h2>
+        <p class="text-slate-300 mb-4">
+          The README's &ldquo;Create an agent&rdquo; walkthrough shows how to add a
+          bespoke planner to the registry by subclassing <code>Agent</code> and
+          reusing the shared search helper. Drop the file into a folder pointed
+          to by <code>agent_config</code> and SEIMEI registers it automatically.
+        </p>
+        <div
+          class="code-group rounded-2xl border border-slate-800 bg-slate-900/70 overflow-hidden mb-4"
+          data-code-group
+        >
+          <div class="flex items-center justify-between border-b border-slate-800 px-4 py-2 text-xs">
+            <span class="uppercase tracking-wide text-slate-400">Python</span>
+            <button
+              class="copy-btn text-[11px] px-2 py-1 rounded-md border border-slate-700 text-slate-300 hover:bg-slate-800/80"
+              data-copy
+              type="button"
+            >
+              Copy
+            </button>
+          </div>
+          <div class="p-4 text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto">
+            <pre data-lang="python">
+<code>from seimei import Agent
+
+class prioritise_docs(Agent):
+    """Rank documentation chunks that should be read next."""
+
+    description = "Select document chunks relevant to the latest user request."
+
+    async def inference(self, messages, shared_ctx, **kwargs):
+        search = shared_ctx.get("search")
+        if not search:
+            return {"content": "search helper unavailable", "log": {}}
+
+        question = next((m["content"] for m in reversed(messages) if m.get("role") == "user"), "")
+        candidates = [{"key": text, "section": name} for name, text in kwargs.get("docs", [])]
+
+        ranked = await search(
+            query=question,
+            keys=candidates,
+            k=3,
+            context={"purpose": "doc_ranking"},
+        )
+        plan = "\n".join(f"- {item['payload']['section']}" for item in ranked if item.get("payload"))
+        return {"content": f"Review next:\n{plan}", "log": {"query": question, "sections": ranked}}</code>
+            </pre>
+          </div>
+        </div>
+        <p class="text-slate-300">
+          Each agent receives <code>messages</code>, the <code>shared_ctx</code>
+          (search helper, instruction list, LLM proxy), and any keyword args you
+          pass through <code>agent_config</code>. The README also calls out how
+          to override <code>instruction_list</code> when you want to re-steer
+          the planner.
+        </p>
+      </section>
+
+      <section id="dataset-logging" data-section class="mb-12 scroll-mt-32">
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Dataset Logging</h2>
+        <p class="text-slate-300 mb-3">
+          Pulling from the &ldquo;Dataset logging&rdquo; block in
+          <code>seimei/README.md</code>: every run writes structured artifacts
+          into <code>log_dir</code>, including full message history, agent
+          steps, and metadata. That makes it trivial to replay or finetune the
+          reward model.
+        </p>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-4 mb-4">
+          <pre class="text-sm font-mono leading-6 text-slate-100 thin-scrollbar overflow-x-auto">
+log_dir/
+  dataset.jsonl        # one JSON per run (append-only)
+  run-YYYYmmdd-HHMMSS-&lt;uuid&gt;/
+    messages.json      # full message history
+    steps.jsonl        # one line per agent step
+    output.txt         # final assistant text
+    meta.json          # run metadata (model, timings, etc.)
+          </pre>
+        </div>
+        <p class="text-slate-300">
+          Each JSON record exposes <code>schema_version</code>,
+          <code>run_id</code>, <code>input_messages</code>, and aggregated token
+          usage. If a token cap is hit, the limiter snapshot is persisted so you
+          can diagnose safety stops later on.
+        </p>
+      </section>
+
+      <section id="limits" data-section class="mb-12 scroll-mt-32">
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">Rate Limits</h2>
+        <div class="rounded-2xl border border-slate-800 bg-slate-900/70 p-5">
+          <h3 class="text-lg font-semibold text-slate-100 mb-3">
+            Throughput tiers
+          </h3>
+          <div class="grid gap-4 lg:grid-cols-2 text-sm text-slate-200">
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+              <p class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                Tier A – shared lab
+              </p>
+              <p>~20 concurrent agent turns, up to 200k tokens/minute aggregate.</p>
+            </div>
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+              <p class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                Tier B – managed pilot
+              </p>
+              <p>~80 concurrent agent turns, ~600k tokens/minute aggregate.</p>
+            </div>
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+              <p class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                Tier C – dedicated cluster
+              </p>
+              <p>
+                Single-tenant deployments with bespoke RMSearch models and SLAs
+                negotiated per project.
+              </p>
+            </div>
+            <div class="rounded-xl border border-slate-800/80 bg-slate-950/60 p-4">
+              <p class="text-xs uppercase tracking-wide text-slate-500 mb-1">
+                Burst mode
+              </p>
+              <p>
+                Available once logs show steady-state accuracy &lt;2% variance and
+                tooling covers rollback or throttling hooks.
+              </p>
+            </div>
+          </div>
+          <p class="mt-3 text-slate-300">
+            When you exceed the soft limit, requests may still succeed but be
+            throttled into a higher-latency mode. For production deployments we
+            recommend aggregating queries and using streaming where possible.
+          </p>
+        </div>
+      </section>
+
+      <section id="pricing" data-section class="mb-16 scroll-mt-32">
+        <h2 class="text-2xl font-semibold text-slate-50 mb-4">
+          Pricing &amp; Deployment
+        </h2>
+        <p class="text-slate-300 mb-3">
+          This matches the &ldquo;Pricing &amp; deployment model&rdquo; guidance from
+          the existing <code>demo/seimei.html</code> page.
+        </p>
+        <ul class="list-disc list-inside text-slate-300 space-y-1.5 mb-4">
+          <li>
+            <span class="font-semibold">Open-source core</span> – SEIMEI
+            orchestration and RMSearch reference models remain under
+            Apache-friendly terms.
+          </li>
+          <li>
+            <span class="font-semibold">Managed API</span> – KyotoAI hosts the
+            stack with monitoring, SLAs, and automatic scaling.
+          </li>
+          <li>
+            <span class="font-semibold">Custom deployments</span> – on-prem or
+            VPC variants for sensitive scientific workloads.
+          </li>
+        </ul>
+        <div class="mt-4 flex gap-3 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-sm">
+          <div
+            class="mt-0.5 h-5 w-5 flex-none rounded-full bg-amber-400/20 flex items-center justify-center"
+          >
+            <span class="text-amber-300 text-xs font-bold">!</span>
+          </div>
+          <div class="space-y-1.5 text-amber-100">
+            <p class="font-semibold">Contract note</p>
+            <p>
+              Separate trained weights + interface rights from customer-owned
+              data to keep SEIMEI open while respecting bespoke project terms.
+            </p>
+            <ul class="list-disc list-inside text-amber-100/90">
+              <li>Model weights and orchestration logic stay reusable.</li>
+              <li>Customer data, analysis, and deliverables remain private.</li>
+            </ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      document.addEventListener("DOMContentLoaded", () => {
+        const groups = document.querySelectorAll("[data-code-group]");
+
+        groups.forEach((group) => {
+          const tabs = group.querySelectorAll("[data-lang-tab]");
+          const pres = group.querySelectorAll("pre[data-lang]");
+          const copyBtns = group.querySelectorAll("[data-copy]");
+
+          let activeLang = tabs[0]?.dataset.langTab || pres[0]?.dataset.lang;
+
+          function setActive(lang) {
+            if (!lang) return;
+            activeLang = lang;
+            tabs.forEach((tab) => {
+              const isActive = tab.dataset.langTab === lang;
+              tab.classList.toggle("bg-slate-800", isActive);
+              tab.classList.toggle("text-indigo-300", isActive);
+              tab.classList.toggle("font-medium", isActive);
+              tab.classList.toggle("text-slate-400", !isActive);
+            });
+            pres.forEach((pre) => {
+              pre.classList.toggle("hidden", pre.dataset.lang !== lang);
+            });
+          }
+
+          tabs.forEach((tab) => {
+            tab.addEventListener("click", () => setActive(tab.dataset.langTab));
+          });
+
+          copyBtns.forEach((btn) => {
+            btn.addEventListener("click", async () => {
+              const codeEl = btn.closest("[data-code-group]")?.querySelector(
+                `pre[data-lang="${activeLang}"] code`
+              );
+              if (!codeEl) return;
+              const text = codeEl.textContent || "";
+              try {
+                await navigator.clipboard.writeText(text);
+                const prev = btn.textContent;
+                btn.textContent = "Copied";
+                setTimeout(() => {
+                  btn.textContent = prev;
+                }, 1200);
+              } catch (err) {
+                console.error("copy failed", err);
+              }
+            });
+          });
+
+          setActive(activeLang);
+        });
+
+        const navLinks = document.querySelectorAll("[data-nav-link]");
+        const navContainer = document.querySelector("[data-nav-scroll]");
+        const sections = Array.from(navLinks)
+          .map((link) => document.querySelector(link.getAttribute("href")))
+          .filter(Boolean);
+
+        function setNavActive(id, opts = { scroll: true }) {
+          if (!id) return;
+          navLinks.forEach((link) => {
+            const isActive = link.dataset.target === id;
+            link.classList.toggle("bg-slate-900/80", isActive);
+            link.classList.toggle("text-indigo-200", isActive);
+            link.classList.toggle("font-semibold", isActive);
+            link.classList.toggle("text-slate-400", !isActive);
+          });
+          if (opts.scroll && navContainer) {
+            const activeLink = Array.from(navLinks).find(
+              (link) => link.dataset.target === id
+            );
+            activeLink?.scrollIntoView({
+              behavior: "smooth",
+              block: "center",
+              inline: "nearest",
+            });
+          }
+        }
+
+        const observer = new IntersectionObserver(
+          (entries) => {
+            const visible = entries
+              .filter((entry) => entry.isIntersecting)
+              .sort((a, b) => b.intersectionRatio - a.intersectionRatio);
+            if (visible.length) {
+              setNavActive(visible[0].target.id);
+            }
+          },
+          { rootMargin: "-45% 0px -45% 0px", threshold: [0, 0.25, 0.5, 0.75, 1] }
+        );
+
+        sections.forEach((section) => observer.observe(section));
+
+        navLinks.forEach((link) => {
+          link.addEventListener("click", () => {
+            setNavActive(link.dataset.target);
+          });
+        });
+
+        if (navLinks[0]) {
+          setNavActive(navLinks[0].dataset.target, { scroll: false });
+        }
+      });
+    </script>
+  </body>
+</html>
