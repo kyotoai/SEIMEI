@@ -221,7 +221,7 @@ from seimei import seimei  # class name is `seimei` (lowercase) for convenience
 async def demo_code_act():
     orchestrator = seimei(
         llm_kwargs={"model": "gpt-5-nano"},
-        rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
+        #rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=30000,

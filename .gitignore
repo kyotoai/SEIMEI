@@ -44,6 +44,7 @@ rmsearch/train/__pycache__/
 
 # experiment folders
 exp*
+!exp8_csv_small
 
 # files created as seimei runs
 seimei_runs*
