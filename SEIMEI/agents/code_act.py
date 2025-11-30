@@ -104,7 +104,9 @@ class code_act(Agent):
         stdout = (proc_out.stdout or "").strip()
         stderr = (proc_out.stderr or "").strip()
         rc = proc_out.returncode
-        summary = f"$ {code}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
+        is_python_command = bool(python_heredoc) or _is_python_command_text(code)
+        command_for_content = _summarize_python_command(code) if is_python_command else code
+        summary = f"$ {command_for_content}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
         log_data: Dict[str, Any] = {"command": code, "output": stdout, "error": stderr}
         if knowledge_log_texts:
             log_data["knowledge"] = knowledge_log_texts
@@ -120,6 +122,7 @@ _CMD_TAG_RE = re.compile(r"<cmd>(.*?)</cmd>", re.DOTALL | re.IGNORECASE)
 _PY_HEREDOC_HEADER_RE = re.compile(
     r"^(python3?|python)(?:\s+(?P<dash>-))?\s*<<(?P<quote>['\"]?)(?P<tag>[A-Za-z0-9_]+)(?P=quote)\s*$"
 )
+_PYTHON_CMD_PREFIX_RE = re.compile(r"^(?:python3?|/usr/bin/python3?)\b")
 
 
 class _PythonHeredoc(NamedTuple):
@@ -167,6 +170,22 @@ def _parse_python_heredoc(command: str) -> Optional[_PythonHeredoc]:
     script = "\n".join(script_lines)
     has_dash = bool(match.group("dash"))
     return _PythonHeredoc(executable=executable, script=script, has_dash=has_dash)
+
+
+def _is_python_command_text(command: str) -> bool:
+    if not command:
+        return False
+    normalized = command.lstrip()
+    if not normalized:
+        return False
+    first_line = normalized.splitlines()[0]
+    return bool(_PYTHON_CMD_PREFIX_RE.match(first_line))
+
+
+def _summarize_python_command(command: str) -> str:
+    normalized = command.lstrip()
+    first_line = normalized.splitlines()[0] if normalized else "python"
+    return f"{first_line} (python script omitted)"
 
 
 def _run_command(
@@ -237,6 +256,8 @@ async def _generate_command(
         f"Only use commands that start with: {allowed_hint}.",
         "Always keep the generated Python code as short and simple as possible—prefer tiny helpers, "
         "just the essential imports, and no extra commentary.",
+        "Whenever Python prints data, describe what each value represents (e.g., `print('TODO count:', count)`) so the output is self-explanatory without seeing the code.",
+        "Assume the user cannot see the Python script—stdout must read like natural language summaries, not raw data dumps.",
         "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
         "Wrap the command in `<cmd>` and `</cmd>`. Output nothing before or after the tags.",
         "Ensure the command text inside `<cmd>` contains everything needed, including any heredoc markers.",
