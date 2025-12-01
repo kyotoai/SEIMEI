@@ -28,6 +28,7 @@ from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents r
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
 from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_knowledge
 from .logging_utils import LogColors, colorize, supports_color
+from .utils import format_query_for_rmsearch, format_key_for_rmsearch
 
 STEP_TITLE_COLOR = LogColors.GREEN
 LOG_BLOCK_COLOR = LogColors.CYAN
@@ -559,15 +560,16 @@ class seimei:
         )
 
     @staticmethod
-    def _format_rmsearch_query(query: Union[str, Sequence[Dict[str, Any]]]) -> Union[str, Dict[str, Any]]:
+    def _format_rmsearch_query(query: Union[str, Sequence[Dict[str, Any]]]) -> str:
         if isinstance(query, str):
             stripped = query.strip()
-            return stripped or query
+            return format_query_for_rmsearch(stripped or query)
         if isinstance(query, Sequence):
-            messages = [dict(m) for m in query if isinstance(m, dict)]
-            if messages:
-                return {"message": messages}
-        return str(query)
+            messages = seimei._coerce_messages(query)
+            _, conversation_text, focus_text = seimei._prepare_query_input(messages)
+            body = focus_text or conversation_text or ""
+            return format_query_for_rmsearch(body)
+        return format_query_for_rmsearch(str(query))
 
     @staticmethod
     def _format_rmsearch_keys(
@@ -582,9 +584,11 @@ class seimei:
             key_text = str(item.get("key") or "").strip()
             if not key_text:
                 continue
+            tags = seimei._coerce_tags(item.get("tags"))
+            formatted = format_key_for_rmsearch(key_text, tags=tags)
             index_map[len(payload)] = item
-            payload.append(key_text)
-            text_map.setdefault(key_text, item)
+            payload.append(formatted)
+            text_map.setdefault(formatted, item)
         return payload, index_map, text_map
 
     @staticmethod
@@ -1783,7 +1787,8 @@ class seimei:
         if knowledge_block:
             sections.append("Selected knowledge cues:\n" + knowledge_block)
 
-        return "\n\n".join(section for section in sections if section).strip()
+        body = "\n\n".join(section for section in sections if section).strip()
+        return format_query_for_rmsearch(body)
 
     def _extract_knowledge_cues(
         self,

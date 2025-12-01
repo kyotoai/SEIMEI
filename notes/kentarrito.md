@@ -1016,7 +1016,7 @@ python -m seimei.eval.generate_dataset_excel \
 
 - [x] Run `python exp7/train_v3.py` -> train_v3_dpo.json
 
-- [ ] Make dpo_converter.py
+- [x] Make dpo_converter.py
     - I wanna convert exp8_csv_small/train_v3_dpo_3.json -> exp8_csv_small/dataset_list.json
     - In dataset_list.json, the format should be like
     ```
@@ -1047,6 +1047,10 @@ python -m seimei.eval.generate_dataset_excel \
         6. make README_train_v3 including the conversion
         7. dpo_pairs should be corresponding to comparison
 
+- [x] Adjust rmsearch format
+```
+<query>...</query>\n\n<key>...</key>\n\nQuery-Key Relevance Score:
+```
 
 
 - [ ] Debug 2 exp8_csv_small/train_v3.py

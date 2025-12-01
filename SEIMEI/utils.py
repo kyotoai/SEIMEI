@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, List, Optional, Sequence, Union
 
 DEFAULT_RUNS_DIR = Path("seimei_runs")
 
@@ -107,3 +107,43 @@ def _is_agent_message(message: Dict[str, Any]) -> bool:
     if role == "system" and message.get("agent"):
         return True
     return False
+
+
+def format_query_for_rmsearch(body: str) -> str:
+    """Wrap a query body with the standardized <query>...</query> block."""
+    text = (body or "").strip()
+    if text.startswith("<query>") and "</query>" in text:
+        return text
+    if not text:
+        text = "[missing query context]"
+    return f"<query>\n{text}\n</query>"
+
+
+def format_key_for_rmsearch(
+    content: str,
+    *,
+    tags: Optional[Sequence[Any]] = None,
+) -> str:
+    """Format a candidate key with <key>...</key> and the score suffix."""
+    tag_values: List[str] = []
+    for tag in tags or []:
+        tag_text = str(tag).strip()
+        if tag_text:
+            tag_values.append(tag_text)
+
+    base_text = (content or "").strip()
+    if not base_text:
+        base_text = "[missing key text]"
+
+    if base_text.startswith("<key>") and "</key>" in base_text:
+        formatted = base_text
+    else:
+        lines = [base_text]
+        if tag_values:
+            lines.append(f"Tags: {', '.join(tag_values)}")
+        formatted = f"<key>\n{'\n'.join(lines)}\n</key>"
+
+    formatted = formatted.strip()
+    if "Query-Key Relevance Score:" not in formatted:
+        formatted = f"{formatted}\n\n\nQuery-Key Relevance Score:"
+    return formatted
