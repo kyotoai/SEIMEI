@@ -10,8 +10,8 @@ from seimei import load_run_messages, seimei
 EXP_DIR = Path("exp8_csv_small")
 DATASET_PATH = EXP_DIR / "dataset.json"
 LOAD_KLG_PATH = None #Path("seimei_knowledge/exp5_train_v2_1.csv")
-SAVE_KLG_PATH = Path("seimei_knowledge/exp8_train_v3_2.csv")
-RESULT_OUTPUT_PATH = EXP_DIR / "train_v3_dpo_2.json"
+SAVE_KLG_PATH = Path("seimei_knowledge/exp8_train_v3_3.csv")
+RESULT_OUTPUT_PATH = EXP_DIR / "train_v3_dpo_3.json"
 GEN_STEP_PROMPT_PATH = Path("seimei/knowledge/prompts/gen_step.md")
 MAX_KNOWLEDGE_ITERATIONS = 3
 BASE_SYSTEM_PROMPT_LIST = [
