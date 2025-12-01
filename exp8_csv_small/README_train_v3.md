@@ -36,8 +36,8 @@ python dpo_converter.py \
 ### Converter behavior
 
 - The converter removes the last agent step from every message history so the query mirrors the state *before* the drifted step.
-- `_format_prompt` reproduces the rmsearch query block from `seimei.py` (user query, recent agent findings, and knowledge cues) and appends the candidate knowledge text + tags.
-- Each knowledge entry becomes one `batch` element: `{"msg": [{"role": "user", "content": ...}]}`.
+- `_format_prompt` reproduces the rmsearch query block from `seimei.py` (user query, recent agent findings, and knowledge cues) and emits it in the new schema:<br>`<query>...</query>\n\n\n<key>...</key>\n\n\nQuery-Key Relevance Score:`
+- Each knowledge entry becomes one `batch` element: `{"msg": [{"role": "user", "content": ...}]}` where `<query>` wraps the transcript and `<key>` wraps the knowledge text + tags.
 - `dpo_pairs` copies the `comparison` list emitted during training (winner index first, loser index second).
 
 ### Useful CLI arguments

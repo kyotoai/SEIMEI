@@ -277,7 +277,10 @@ def _build_query_block(
     if knowledge_block:
         sections.append("Selected knowledge cues:\n" + knowledge_block)
 
-    return "\n\n".join(sections).strip()
+    body = "\n\n".join(sections).strip()
+    if not body:
+        body = "[missing query context]"
+    return f"<query>\n{body}\n</query>"
 
 
 def _strip_last_agent(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
@@ -305,10 +308,10 @@ def _format_key_text(entry: Dict[str, Any]) -> str:
 
 def _format_prompt(query_block: str, key_text: str) -> str:
     query = (query_block or "").strip()
-    key = (key_text or "").strip() or "[missing knowledge text]"
     if not query:
-        query = "User query:\n[missing user query]"
-    return f"{query}\n\nCandidate knowledge:\n{key}"
+        query = "<query>\n[missing user query]\n</query>"
+    key = (key_text or "").strip() or "[missing knowledge text]"
+    return f"{query}\n\n\n<key>\n{key}\n</key>\n\n\nQuery-Key Relevance Score:"
 
 
 def _build_batch_entry(prompt: str) -> Dict[str, Any]:

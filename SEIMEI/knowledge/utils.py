@@ -7,6 +7,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, Iterable, Iterator, List, Optional, Sequence, Tuple, Union
 
+from seimei.utils import format_query_for_rmsearch
+
 
 def get_agent_knowledge(
     shared_ctx: Dict[str, Any],
@@ -390,10 +392,10 @@ def _build_knowledge_query(shared_ctx: Dict[str, Any], agent_name: str) -> str:
     if isinstance(override, dict):
         value = override.get(agent_name) or override.get("*")
         if isinstance(value, str) and value.strip():
-            return value.strip()
+            return format_query_for_rmsearch(value.strip())
     elif isinstance(override, str) and override.strip():
-        return override.strip()
-    return f"Relevant knowledge for agent '{agent_name}'"
+        return format_query_for_rmsearch(override.strip())
+    return format_query_for_rmsearch(f"Relevant knowledge for agent '{agent_name}'")
 
 
 __all__ = ["get_agent_knowledge", "load_knowledge"]
