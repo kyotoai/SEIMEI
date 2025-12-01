@@ -39,6 +39,9 @@ rmsearch.egg-info/
 rmsearch/__pycache__/
 rmsearch/train/__pycache__/
 
+# notes
+notes/
+
 # pytest
 .pytest_cache
 
