@@ -3,7 +3,7 @@ import csv
 import json
 import random
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple, Union
 
 from seimei import load_run_messages, seimei
 
@@ -55,6 +55,29 @@ BATCH_SIZE = 10
 
 PROMPT_CACHE: Dict[Path, str] = {}
 RUN_ID_CACHE: Dict[str, str] = {}
+
+
+def compute_entry_id(dataset_entry: Dict[str, Any], index: int) -> str:
+    """Derive a stable identifier for a dataset example."""
+    explicit_keys = ["id", "ID", "question_id", "QuestionID"]
+    for key in explicit_keys:
+        value = dataset_entry.get(key)
+        if value:
+            return str(value)
+    csv_path = str(dataset_entry.get("CSVPath") or "").strip()
+    if csv_path:
+        return csv_path
+    topic = str(dataset_entry.get("Topic") or "").strip()
+    hyper = dataset_entry.get("HyperParamIndex")
+    sample = dataset_entry.get("SampleIndex")
+    parts = [f"idx_{index:05d}"]
+    if topic:
+        parts.append(topic)
+    if hyper not in (None, ""):
+        parts.append(f"hp_{hyper}")
+    if sample not in (None, ""):
+        parts.append(f"sample_{sample}")
+    return "|".join(parts)
 
 
 def pick_base_system_prompt() -> str:
@@ -552,7 +575,9 @@ async def check_knowledge(
         pass
 
 
-async def run_problem(orchestrator, dataset_entry: Dict[str, Any], index: int) -> Dict[str, Any]:
+async def run_problem(
+    orchestrator, dataset_entry: Dict[str, Any], index: int, entry_id: str
+) -> Dict[str, Any]:
     question = dataset_entry.get("Question", "")
     csv_path = dataset_entry.get("CSVPath", "")
     reference_answer = dataset_entry.get("CorrectAnswer", "")
@@ -595,6 +620,7 @@ async def run_problem(orchestrator, dataset_entry: Dict[str, Any], index: int) -
         dpo_messages = [dict(msg) for msg in base_messages]
 
     tracker: Dict[str, Any] = {
+        "id": entry_id,
         "run_ids": [base_run_id],
         "step": step,
         "message": dpo_messages,
@@ -655,6 +681,40 @@ async def run_problem(orchestrator, dataset_entry: Dict[str, Any], index: int) -
     return tracker
 
 
+def load_existing_dpo_entries(
+    dataset: List[Dict[str, Any]]
+) -> Tuple[List[Dict[str, Any]], Set[str], bool]:
+    entries: List[Dict[str, Any]] = []
+    processed_ids: Set[str] = set()
+    needs_resave = False
+    if RESULT_OUTPUT_PATH.exists():
+        try:
+            raw = json.loads(RESULT_OUTPUT_PATH.read_text(encoding="utf-8"))
+            if isinstance(raw, list):
+                entries = raw
+            else:
+                print(f"[train_v3] Ignoring malformed DPO cache at {RESULT_OUTPUT_PATH}")
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"[train_v3] Failed to load cached DPO entries: {exc}")
+        for idx, entry in enumerate(entries):
+            entry_id = str(entry.get("id") or "").strip()
+            if not entry_id and idx < len(dataset):
+                entry_id = compute_entry_id(dataset[idx], idx)
+                entry["id"] = entry_id
+                needs_resave = True
+            if entry_id:
+                processed_ids.add(entry_id)
+    return entries, processed_ids, needs_resave
+
+
+def save_dpo_entries(entries: List[Dict[str, Any]]) -> None:
+    RESULT_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+    payload = json.dumps(entries, ensure_ascii=False, indent=2)
+    tmp_path = RESULT_OUTPUT_PATH.with_suffix(RESULT_OUTPUT_PATH.suffix + ".tmp")
+    tmp_path.write_text(payload, encoding="utf-8")
+    tmp_path.replace(RESULT_OUTPUT_PATH)
+
+
 async def run_training() -> None:
     dataset = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
 
@@ -667,18 +727,43 @@ async def run_training() -> None:
         max_tokens_per_question=40000,
     )
 
-    dpo_entries = []
+    dpo_entries, processed_ids, needs_resave = load_existing_dpo_entries(dataset)
+    if needs_resave:
+        save_dpo_entries(dpo_entries)
+    if processed_ids:
+        print(f"[train_v3] Resuming with {len(processed_ids)} cached entries")
+
     total = len(dataset)
-    for batch_start in range(0, total, BATCH_SIZE):
-        batch_items = dataset[batch_start : batch_start + BATCH_SIZE]
+    pending: List[Tuple[int, Dict[str, Any], str]] = []
+    for idx, entry in enumerate(dataset):
+        entry_id = compute_entry_id(entry, idx)
+        if entry_id in processed_ids:
+            continue
+        pending.append((idx, entry, entry_id))
+
+    if not pending:
+        print(
+            f"[train_v3] All {len(processed_ids)} entries already processed. "
+            f"Results stored at {RESULT_OUTPUT_PATH}"
+        )
+        return
+
+    for batch_start in range(0, len(pending), BATCH_SIZE):
+        batch_slice = pending[batch_start : batch_start + BATCH_SIZE]
         batch_tasks = [
-            run_problem(orchestrator, entry, batch_start + offset)
-            for offset, entry in enumerate(batch_items)
+            run_problem(orchestrator, entry, dataset_idx, entry_id)
+            for dataset_idx, entry, entry_id in batch_slice
         ]
         batch_trackers = await asyncio.gather(*batch_tasks)
         for tracker in batch_trackers:
+            if not tracker:
+                continue
+            entry_id = tracker.get("id")
+            if not entry_id or entry_id in processed_ids:
+                continue
             dpo_entries.append(
                 {
+                    "id": entry_id,
                     "run_ids": tracker["run_ids"],
                     "step": tracker["step"],
                     "message": tracker["message"],
@@ -687,13 +772,14 @@ async def run_training() -> None:
                     "scores": tracker["scores"],
                 }
             )
+            processed_ids.add(entry_id)
+        save_dpo_entries(dpo_entries)
+        batch_idx = batch_start // BATCH_SIZE + 1
+        print(
+            f"[train_v3] Saved batch {batch_idx}: {len(processed_ids)}/{total} problems complete"
+        )
 
-    RESULT_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
-    RESULT_OUTPUT_PATH.write_text(
-        json.dumps(dpo_entries, ensure_ascii=False, indent=2),
-        encoding="utf-8",
-    )
-    print(f"[train_v2] Saved DPO dataset to {RESULT_OUTPUT_PATH}")
+    print(f"[train_v3] Saved DPO dataset to {RESULT_OUTPUT_PATH}")
 
 
 if __name__ == "__main__":
