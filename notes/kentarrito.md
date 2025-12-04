@@ -1082,12 +1082,50 @@ Modify seimei/dataset/dpo_converter.py following
 ```
 python seimei/dataset/dpo_converter.py \
   --input-path exp7/train_v3_dpo.json \
-  --output-path-train exp7/dataset_list_train.json \
-  --output-path-test exp7/dataset_list_test.json \
+  --output-path-train exp7/dataset_list_train_7.json \
+  --output-path-test exp7/dataset_list_test_7.json \
   --test-ratio 0.1 \
   --more-dpo-pairs \
   --n-sample-other-knowledge 3
 ```
+
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train_14.json \
+  --output-path-test exp7/dataset_list_test_14.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 10
+```
+
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train_21.json \
+  --output-path-test exp7/dataset_list_test_21.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 17
+```
+
+- [ ] Fix agent_config -> allow code_act only
+```
+Modify seimei.py to fix the error below
+- I set `agent_config=[{"file_path": "seimei/agents/code_act.py"}],` in seimei init but it keeps using other agents like think and web_search. 
+- Fix this following
+1. track agent_config and find all the related parts of it
+2. figure out what's happening
+3. modify it so that seimei will use only agents designated by agent_config and answer agent. when agent_config is designated, input answer agent and designated agent to llm_routing prompt. when agent_config is not specified, use all the agents.
+```
+
+- [ ] Make exp7/eval.py (to test evaluation result)
+- [ ] Make exp7/train_v3_eval.py (generate knowledge in all step and see how much it improves)
+
+- [ ] Do many experiments on the code above.
+
+- [ ] Improve the train_v3.py -> train_v4.py
+    - add test for generating 
 
 
 

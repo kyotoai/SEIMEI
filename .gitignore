@@ -40,14 +40,19 @@ rmsearch/__pycache__/
 rmsearch/train/__pycache__/
 
 # notes
-notes/
+#notes/
 
 # pytest
 .pytest_cache
 
-# experiment folders
-exp*
-!exp8_csv_small
+# experiment folders to exclude
+exp1/
+exp2/
+exp3/
+exp4_csv_middle/
+exp5/
+exp6_ycdemo/
+exp7/
 
 # files created as seimei runs
 seimei_runs*
