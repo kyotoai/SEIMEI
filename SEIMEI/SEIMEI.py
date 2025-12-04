@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from collections import defaultdict
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple, Type, Union
 
 import requests
 
@@ -105,7 +105,9 @@ class seimei:
         self.agent_config_spec = [
             dict(cfg) for cfg in normalized_agent_config if isinstance(cfg, dict)
         ]
-        self._load_agents(normalized_agent_config)
+        self._designated_agent_files = self._resolve_agent_config_paths(self.agent_config_spec)
+        self._restrict_agents_to_config = bool(self.agent_config_spec)
+        self._load_agents(self.agent_config_spec)
 
         # Attach shared ctx visible to agents (e.g., llm, rmsearch, safety flags)
         self.shared_ctx = {
@@ -123,6 +125,8 @@ class seimei:
 
     def _load_agents(self, configs: Sequence[Dict[str, Any]]) -> None:
         for cfg in configs:
+            if not isinstance(cfg, dict):
+                continue
             dir_path = cfg.get("dir_path")
             file_path = cfg.get("file_path")
             if dir_path:
@@ -132,6 +136,8 @@ class seimei:
 
         # instantiate
         for cls in get_agent_subclasses().values():
+            if not self._should_include_agent_class(cls):
+                continue
             try:
                 inst = cls()
                 self.agents[inst.name] = inst
@@ -140,6 +146,65 @@ class seimei:
                     colorize(f"[seimei] Failed to instantiate agent {cls}: {e}", ERROR_COLOR),
                     file=sys.stderr,
                 )
+
+    def _resolve_agent_config_paths(self, configs: Sequence[Dict[str, Any]]) -> Set[Path]:
+        resolved: Set[Path] = set()
+
+        def _safe_resolve(value: Any) -> Optional[Path]:
+            if value in (None, ""):
+                return None
+            try:
+                return Path(value).expanduser().resolve()
+            except Exception:
+                try:
+                    expanded = os.path.expanduser(str(value))
+                except Exception:
+                    return None
+                return Path(os.path.abspath(expanded))
+
+        for cfg in configs:
+            if not isinstance(cfg, dict):
+                continue
+            file_path = _safe_resolve(cfg.get("file_path"))
+            if file_path and file_path.is_file():
+                resolved.add(file_path)
+
+            dir_path = _safe_resolve(cfg.get("dir_path"))
+            if dir_path and dir_path.is_dir():
+                try:
+                    for entry in dir_path.iterdir():
+                        if not entry.is_file():
+                            continue
+                        name = entry.name
+                        if not name.endswith(".py") or name.startswith("_"):
+                            continue
+                        try:
+                            resolved.add(entry.resolve())
+                        except Exception:
+                            resolved.add(entry)
+                except OSError:
+                    continue
+
+        return resolved
+
+    def _should_include_agent_class(self, cls: Type[Agent]) -> bool:
+        name = getattr(cls, "name", None) or cls.__name__
+        if name == "answer":
+            return True
+        if not getattr(self, "_restrict_agents_to_config", False):
+            return True
+        module = sys.modules.get(cls.__module__)
+        module_path: Optional[Path] = None
+        if module is not None:
+            module_file = getattr(module, "__file__", None)
+            if module_file:
+                try:
+                    module_path = Path(module_file).resolve()
+                except Exception:
+                    module_path = Path(os.path.abspath(module_file))
+        if module_path and module_path in getattr(self, "_designated_agent_files", set()):
+            return True
+        return False
 
     def _load_agents_from_dir(self, path: str) -> None:
         if not os.path.isdir(path):
