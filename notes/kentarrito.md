@@ -1113,17 +1113,39 @@ Modify seimei.py to fix the error below
 3. modify it so that seimei will use only agents designated by agent_config and answer agent. when agent_config is designated, input answer agent and designated agent to llm_routing prompt. when agent_config is not specified, use all the agents.
 ```
 
-- [ ] Make exp7/eval.py (to test evaluation result)
+- [x] Make exp7/eval.py (to test evaluation result)
 ```
+Make exp7/eval.py (to test evaluation result)
+
 After I train a reward model using the dataset_list made by train_v3.py and dpo_converter.py, I wanna evaluate the model comparing
 A. solve problems without knowledge
-B. solve problems with knowledge retrieved from knowledge_csv
+B. solve problems with knowledge retrieved from knowledge pool by the model
 
+Follow
+1. refer to exp7/train_v3.py for how to make inference and get score of each 
+2. refer to exp7/train_v3.py for batch processes and save mechanism
+3. first choose test problems and make knowledge pool from the best knowledge text which gets the highest score in each dict (exclude null). NOTE YOU MUST NOT INCLUDE KNOWLEDGE GENERATED FROM THE TEST PROBLEMS. Don't include those knowledge in the pool.
+
+argument to add
+1. rmsearch url
+2. n_problems: number of problems for testing
+3. n_knowledge: number of knowledge for a step to use
+4. n_sample: number of trial to test problems (take mean value from all the problems)
+add other arguments if you think it's needed.
 ```
 
-- [ ] Make exp7/train_v3_eval.py (generate knowledge in all step and see how much it improves)
+- [ ] Make exp7/train_v3_eval.py (generate knowledge in all steps and see how much it improves)
+```
+Make exp7/train_v3_eval.py (generate knowledge in all steps and see how much it improves)
+
+Deeply understand exp7/train_v3.py and implement the following features in train_v3_eval.py
+1. 
+```
 
 - [ ] Do many experiments on the code above.
+
+- [ ] Debug 1 dpo_converter.py
+    - Exclude rows which have no dpo_pairs (all scores are same)
 
 - [ ] Improve the train_v3.py -> train_v4.py
     - add test for generating 
