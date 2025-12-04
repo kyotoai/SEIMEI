@@ -25,20 +25,25 @@ These runs are written to `exp8_csv_small/train_v3_dpo_3.json`.
 
 ## Converting to `dataset_list`
 
-Use `dpo_converter.py` to transform the tracker log into the format expected by the DPO trainer:
+Use `dpo_converter.py` to transform the tracker log into the format expected by the DPO trainer and emit train/test splits:
 
 ```bash
 python seimei/dataset/dpo_converter.py \
   --input-path exp7/train_v3_dpo.json \
-  --output-path exp7/dataset_list.json
+  --output-path-train exp7/dataset_list_train.json \
+  --output-path-test exp7/dataset_list_test.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 3
 ```
 
 ### Converter behavior
 
 - The converter removes the last agent step from every message history so the query mirrors the state *before* the drifted step.
 - `_format_prompt` reproduces the rmsearch query block from `seimei.py` (user query, recent agent findings, and knowledge cues) and emits it in the new schema:<br>`<query>...</query>\n\n\n<key>...</key>\n\n\nQuery-Key Relevance Score:`
-- Each knowledge entry becomes one `batch` element: `{"msg": [{"role": "user", "content": ...}]}` where `<query>` wraps the transcript and `<key>` wraps the knowledge text + tags.
-- `dpo_pairs` copies the `comparison` list emitted during training (winner index first, loser index second).
+- Each knowledge entry becomes one `batch` element: `{"msg": [{"role": "user", "content": ...}]}` where `<query>` wraps the transcript and `<key>` wraps the knowledge text + tags. If `--n-sample-other-knowledge` is set, the converter augments each entry with randomly drawn knowledge from other ids (always treated as score 0) before generating prompts and comparisons.
+- `dpo_pairs` copies the `comparison` list emitted during training (winner index first, loser index second). When `--more-dpo-pairs` is enabled the converter augments this list with all remaining unique winner/loser combinations implied by the score ordering, ensuring the higher scored knowledge always comes first.
+- After processing, the converter shuffles the dataset and performs a train/test split based on `--test-ratio`, writing JSON payloads to the provided train/test paths.
 
 ### Useful CLI arguments
 
@@ -47,6 +52,7 @@ All constants used by the converter can be overridden:
 - `--max-query-messages`, `--max-query-chars` – control how much of the transcript feeds the rmsearch-style query block.
 - `--max-agent-steps`, `--max-agent-chars` – limit how many recent agent findings are embedded.
 - `--max-knowledge-per-step`, `--max-knowledge-chars` – trim knowledge cues pulled from agent logs.
-- `--indent` – indentation level for the emitted `dataset_list` file.
-
-The default output (`exp8_csv_small/dataset_list.json`) contains a Python-style assignment (`dataset_list = [...]`) so it can be imported or `exec`'d directly.
+- `--indent` – indentation level for the emitted `dataset_list` files.
+- `--more-dpo-pairs` – emit every possible score-derived DPO pair (no duplicates with logged comparisons).
+- `--n-sample-other-knowledge` – number of “negative” knowledge snippets to borrow from other tracker entries, each given score 0 before pair construction.
+- `--test-ratio` – fraction of the converted entries to place in the test split (default 0.1). Outputs default to `exp8_csv_small/dataset_list_train.json` and `exp8_csv_small/dataset_list_test.json`.

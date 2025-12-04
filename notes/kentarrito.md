@@ -1060,7 +1060,7 @@ python -m seimei.eval.generate_dataset_excel \
 
 - [x] Run `python exp7/train_v3.py` -> train_v3_dpo.json
 
-- [ ] Modify 1 dpo_converter.py
+- [x] Modify 1 dpo_converter.py
 ```
 Modify seimei/dataset/dpo_converter.py following
 1. Now dpo_pairs in each row are not completed. In dpo_converter.py, add all the possible pairs judged from "scores" value in each row. when judging, make pairs with 2 elements which have different score. The higher score's id comes first. See some rows in the example output for the example. As you see, there are already some comparisons, so don't make overlapped pairs. Also add argument "more-dpo-pairs"; if True, activate the feature above.
@@ -1075,6 +1075,19 @@ Modify seimei/dataset/dpo_converter.py following
 - [ ] Put past knowledge in knowledge text
 
 
+
+## Dec 4
+
+- [x] Run 
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train.json \
+  --output-path-test exp7/dataset_list_test.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 3
+```
 
 
 
