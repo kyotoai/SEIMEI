@@ -1062,7 +1062,10 @@ python -m seimei.eval.generate_dataset_excel \
 
 - [ ] Modify 1 dpo_converter.py
 ```
-Now it's 
+Modify seimei/dataset/dpo_converter.py following
+1. Now dpo_pairs in each row are not completed. In dpo_converter.py, add all the possible pairs judged from "scores" value in each row. when judging, make pairs with 2 elements which have different score. The higher score's id comes first. See some rows in the example output for the example. As you see, there are already some comparisons, so don't make overlapped pairs. Also add argument "more-dpo-pairs"; if True, activate the feature above.
+2. Add argument "n-sample-other-knowledge". In default it's 0. If it's not 0, randomly take the specified number of knowledge from other knowledge which are included in dictionary with other ids when you are processing a dictionary inside the input file. The sampled other knowledge is always taken as score 0. After you added the other knowledge to it, compose dpo_pairs using both original and the other knowledge with all the scores.
+3. Add "test-ratio" argument and implement train-test split after all of the process above finished. This is float and in default set it to 0.1, which is the ratio of test split. Save train and test in "dataset_list_train.json" and "dataset_list_test.json" respectively. You should change the arguemnt output-path -> output-path-train and output-path-test
 ```
 
 
