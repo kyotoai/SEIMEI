@@ -28,7 +28,7 @@ These runs are written to `exp8_csv_small/train_v3_dpo_3.json`.
 Use `dpo_converter.py` to transform the tracker log into the format expected by the DPO trainer:
 
 ```bash
-python dpo_converter.py \
+python seimei/dataset/dpo_converter.py \
   --input-path exp8_csv_small/train_v3_dpo_3.json \
   --output-path exp8_csv_small/dataset_list.json
 ```
