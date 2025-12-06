@@ -14,6 +14,7 @@ DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 5
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 3
 
 BASE_SYSTEM_PROMPT_LIST = [
     "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
@@ -91,6 +92,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_KNOWLEDGE_PER_STEP,
         help="How many knowledge candidates to generate per step.",
+    )
+    parser.add_argument(
+        "--final-reruns",
+        type=int,
+        default=DEFAULT_FINAL_RERUNS,
+        help="How many reruns to execute for the base and knowledge-injected solutions when comparing final scores.",
     )
     parser.add_argument(
         "--max-problems",
@@ -234,7 +241,7 @@ def _resolve_run_dir_name(run_id: Optional[str], log_dir: Path) -> Optional[str]
 
 
 def normalize_result_run_id(result: Dict[str, Any], log_dir: Path) -> str:
-    resolved = _resolve_run_dir_name(result.get("run_id"), log_dir)
+    resolved = _resolve_run_dir_name(result.get("run_id"), Path(log_dir))
     if resolved:
         result["run_id"] = resolved
     return str(result.get("run_id") or "")
@@ -449,7 +456,7 @@ async def run_candidate_inference(
         run_name=run_name,
         knowledge_config=knowledge_config,
     )
-    new_run_id = normalize_result_run_id(result, orchestrator.log_dir)
+    new_run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
     new_output = result.get("output", "")
     question = dataset_entry.get("Question", "")
     reference = dataset_entry.get("CorrectAnswer", "")
@@ -474,6 +481,52 @@ async def run_candidate_inference(
     return {"info": candidate_info, "result": result}
 
 
+async def run_full_problem_trials(
+    orchestrator,
+    *,
+    dataset_entry: Dict[str, Any],
+    base_prompt_messages: Sequence[Dict[str, Any]],
+    manual_entries: Optional[List[Dict[str, Any]]],
+    trials: int,
+    dataset_index: int,
+    label: str,
+) -> Tuple[List[Dict[str, Any]], float]:
+    if trials <= 0:
+        return [], 0.0
+    question = dataset_entry.get("Question", "")
+    reference = dataset_entry.get("CorrectAnswer", "")
+    trial_records: List[Dict[str, Any]] = []
+    for trial in range(trials):
+        rerun_messages = randomize_system_prompt(base_prompt_messages)
+        knowledge_config = build_knowledge_config(
+            [dict(entry) for entry in manual_entries] if manual_entries else None
+        )
+        result = await orchestrator(
+            messages=rerun_messages,
+            run_name=f"train_v3_eval_{dataset_index:04d}_{label}_r{trial + 1}",
+            knowledge_config=knowledge_config,
+        )
+        run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
+        output = result.get("output", "")
+        score_info = await score_answer(orchestrator.llm, question, reference, output)
+        score = score_info.get("score", 0.0) or 0.0
+        trial_records.append(
+            {
+                "trial": trial + 1,
+                "run_id": run_id,
+                "score": score,
+                "score_feedback": score_info.get("feedback"),
+                "output": output,
+            }
+        )
+    mean_score = (
+        round(sum(item["score"] for item in trial_records) / len(trial_records), 2)
+        if trial_records
+        else 0.0
+    )
+    return trial_records, mean_score
+
+
 async def run_problem(
     orchestrator,
     dataset_entry: Dict[str, Any],
@@ -482,26 +535,26 @@ async def run_problem(
     *,
     n_knowledge_steps: int,
     knowledge_per_step: int,
+    final_reruns: int,
 ) -> Dict[str, Any]:
     question = dataset_entry.get("Question", "")
     csv_path = dataset_entry.get("CSVPath", "")
     reference_answer = dataset_entry.get("CorrectAnswer", "")
 
-    base_messages = randomize_system_prompt(
-        [
-            {
-                "role": "user",
-                "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}",
-            }
-        ]
-    )
+    base_prompt_messages = [
+        {
+            "role": "user",
+            "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}",
+        }
+    ]
+    base_messages = randomize_system_prompt(base_prompt_messages)
 
     base_result = await orchestrator(
         messages=[dict(msg) for msg in base_messages],
         run_name=f"train_v3_eval_{index:04d}_base",
         knowledge_config=build_knowledge_config(),
     )
-    base_run_id = normalize_result_run_id(base_result, orchestrator.log_dir)
+    base_run_id = normalize_result_run_id(base_result, Path(orchestrator.log_dir))
     base_output = base_result.get("output", "")
     score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
     base_score = score_info.get("score", 0.0) or 0.0
@@ -525,20 +578,15 @@ async def run_problem(
         ],
     }
 
+    selected_manual_entries: List[Dict[str, Any]] = []
     best_result = base_result
     best_run_id = base_run_id
     best_score = base_score
 
     print(f"[eval {index}] baseline score={base_score}")
 
-    if n_knowledge_steps <= 0 or knowledge_per_step <= 0:
-        record["final_run_id"] = best_run_id
-        record["final_score"] = best_score
-        record["final_output"] = best_result.get("output", "")
-        return record
-
     for step in range(1, n_knowledge_steps + 1):
-        messages = get_messages_for_run(best_result, orchestrator.log_dir)
+        messages = get_messages_for_run(best_result, Path(orchestrator.log_dir))
         agent_messages = extract_agent_messages(messages)
         if step > len(agent_messages):
             print(f"[eval {index}] step {step}: no agent messages, stopping.")
@@ -601,6 +649,16 @@ async def run_problem(
             step_record["best_run_id"] = best_run_id
             step_record["best_score"] = best_score
             step_record["delta_from_start"] = round(best_score - step_record["starting_score"], 2)
+            chosen_knowledge = step_record["candidate_evaluations"][step_best_idx].get("knowledge") or {}
+            step_record["selected_knowledge"] = chosen_knowledge
+            manual_entry = {
+                "step": step,
+                "agent": chosen_knowledge.get("agent") or "think",
+                "text": chosen_knowledge.get("text", ""),
+                "tags": chosen_knowledge.get("tags") or [],
+            }
+            if manual_entry["text"]:
+                selected_manual_entries.append(manual_entry)
             print(
                 f"[eval {index}] step {step}: best score={best_score} "
                 f"(delta {step_record['delta_from_start']})"
@@ -619,7 +677,49 @@ async def run_problem(
     record["final_run_id"] = best_run_id
     record["final_score"] = best_score
     record["final_output"] = best_result.get("output", "")
+    record["final_single_run"] = {
+        "run_id": best_run_id,
+        "score": best_score,
+        "output": record["final_output"],
+    }
     record["steps_evaluated"] = len(record["steps"])
+    record["selected_knowledge"] = [dict(entry) for entry in selected_manual_entries]
+
+    base_trials, base_mean = await run_full_problem_trials(
+        orchestrator,
+        dataset_entry=dataset_entry,
+        base_prompt_messages=base_prompt_messages,
+        manual_entries=None,
+        trials=final_reruns,
+        dataset_index=index,
+        label="base",
+    )
+    knowledge_trials, knowledge_mean = await run_full_problem_trials(
+        orchestrator,
+        dataset_entry=dataset_entry,
+        base_prompt_messages=base_prompt_messages,
+        manual_entries=selected_manual_entries if selected_manual_entries else None,
+        trials=final_reruns,
+        dataset_index=index,
+        label="knowledge",
+    )
+
+    record["fair_comparison"] = {
+        "trials": final_reruns,
+        "base_trials": base_trials,
+        "knowledge_trials": knowledge_trials,
+        "base_mean_score": base_mean,
+        "knowledge_mean_score": knowledge_mean,
+        "mean_improvement": round(knowledge_mean - base_mean, 2),
+    }
+    record["base_rerun_mean_score"] = base_mean
+    record["final_rerun_mean_score"] = knowledge_mean
+
+    print(
+        f"[eval {index}] reruns avg base={base_mean} knowledge={knowledge_mean} "
+        f"(Δ {round(knowledge_mean - base_mean, 2)})"
+    )
+
     return record
 
 
@@ -633,8 +733,11 @@ def load_existing_eval_entries(
     if output_path.exists():
         try:
             raw = json.loads(output_path.read_text(encoding="utf-8"))
-            if isinstance(raw, list):
+            if isinstance(raw, dict):
+                entries = raw.get("detail") or []
+            elif isinstance(raw, list):
                 entries = raw
+                needs_resave = True
             else:
                 print(f"[train_v3_eval] Ignoring malformed cache at {output_path}")
         except (OSError, json.JSONDecodeError) as exc:
@@ -650,9 +753,57 @@ def load_existing_eval_entries(
     return entries, processed_ids, needs_resave
 
 
+def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    if not entries:
+        return {
+            "total_problems": 0,
+            "mean_score_improvement": 0.0,
+            "base_vs_final": [],
+            "overall_base_mean": 0.0,
+            "overall_final_mean": 0.0,
+            "win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
+        }
+    base_vs_final: List[List[float]] = []
+    improvements: List[float] = []
+    for entry in entries:
+        base_score = entry.get("base_rerun_mean_score")
+        final_score = entry.get("final_rerun_mean_score")
+        if base_score is None:
+            base_score = entry.get("base", {}).get("score", 0.0)
+        if final_score is None:
+            final_score = entry.get("final_score", 0.0)
+        base_val = round(float(base_score), 2)
+        final_val = round(float(final_score), 2)
+        base_vs_final.append([base_val, final_val])
+        improvements.append(final_val - base_val)
+    total = len(base_vs_final)
+    mean_improvement = round(sum(improvements) / total, 4) if total else 0.0
+    wins = sum(1 for diff in improvements if diff > 0)
+    ties = sum(1 for diff in improvements if diff == 0)
+    losses = total - wins - ties
+    overall_base_mean = (
+        round(sum(pair[0] for pair in base_vs_final) / total, 4) if total else 0.0
+    )
+    overall_final_mean = (
+        round(sum(pair[1] for pair in base_vs_final) / total, 4) if total else 0.0
+    )
+    return {
+        "total_problems": total,
+        "mean_score_improvement": mean_improvement,
+        "base_vs_final": base_vs_final,
+        "overall_base_mean": overall_base_mean,
+        "overall_final_mean": overall_final_mean,
+        "win_loss_tie": {"win": wins, "tie": ties, "loss": losses},
+    }
+
+
 def save_eval_entries(entries: List[Dict[str, Any]], output_path: Path) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(entries, ensure_ascii=False, indent=2)
+    payload = json.dumps(
+        {"summary": build_eval_summary(entries), "detail": entries},
+        ensure_ascii=False,
+        indent=2,
+    )
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     tmp_path.write_text(payload, encoding="utf-8")
     tmp_path.replace(output_path)
@@ -701,6 +852,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                 entry_id,
                 n_knowledge_steps=args.n_knowledge_steps,
                 knowledge_per_step=args.knowledge_per_step,
+                final_reruns=args.final_reruns,
             )
             for dataset_idx, entry, entry_id in batch_slice
         ]
