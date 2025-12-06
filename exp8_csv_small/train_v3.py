@@ -294,7 +294,7 @@ def append_best_knowledge(entry: Dict[str, Any]) -> None:
                 "tags": json.dumps(entry.get("tags") or []),
                 "step": entry.get("step"),
                 "score": entry.get("score"),
-                "source": "train_v2_best",
+                "source": "train_v3_best",
             }
         )
 
@@ -535,7 +535,7 @@ async def check_knowledge(
         }
     ]
     knowledge_config = build_knowledge_config(manual_entries)
-    run_name = f"train_v2_{dataset_entry.get('SampleIndex', 0)}_k{iteration + 1}"
+    run_name = f"train_v3_{dataset_entry.get('SampleIndex', 0)}_k{iteration + 1}"
     result = await orchestrator(
         messages=rerun_messages,
         run_name=run_name,
@@ -596,7 +596,7 @@ async def run_problem(
 
     base_result = await orchestrator(
         messages=[dict(msg) for msg in base_messages],
-        run_name=f"train_v2_{index:04d}_base",
+        run_name=f"train_v3_{index:04d}_base",
         knowledge_config=build_knowledge_config(),
     )
     base_run_id = normalize_result_run_id(base_result, orchestrator.log_dir)

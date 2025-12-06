@@ -1060,21 +1060,123 @@ python -m seimei.eval.generate_dataset_excel \
 
 - [x] Run `python exp7/train_v3.py` -> train_v3_dpo.json
 
-- [ ] Modify 1 dpo_converter.py
+- [x] Modify 1 dpo_converter.py
 ```
-Now it's 
+Modify seimei/dataset/dpo_converter.py following
+1. Now dpo_pairs in each row are not completed. In dpo_converter.py, add all the possible pairs judged from "scores" value in each row. when judging, make pairs with 2 elements which have different score. The higher score's id comes first. See some rows in the example output for the example. As you see, there are already some comparisons, so don't make overlapped pairs. Also add argument "more-dpo-pairs"; if True, activate the feature above.
+2. Add argument "n-sample-other-knowledge". In default it's 0. If it's not 0, randomly take the specified number of knowledge from other knowledge which are included in dictionary with other ids when you are processing a dictionary inside the input file. The sampled other knowledge is always taken as score 0. After you added the other knowledge to it, compose dpo_pairs using both original and the other knowledge with all the scores.
+3. Add "test-ratio" argument and implement train-test split after all of the process above finished. This is float and in default set it to 0.1, which is the ratio of test split. Save train and test in "dataset_list_train.json" and "dataset_list_test.json" respectively. You should change the arguemnt output-path -> output-path-train and output-path-test
 ```
 
+
+
+## Dec 4
+
+- [x] Run 
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train_7.json \
+  --output-path-test exp7/dataset_list_test_7.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 3
+```
+
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train_14.json \
+  --output-path-test exp7/dataset_list_test_14.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 10
+```
+
+```
+python seimei/dataset/dpo_converter.py \
+  --input-path exp7/train_v3_dpo.json \
+  --output-path-train exp7/dataset_list_train_21.json \
+  --output-path-test exp7/dataset_list_test_21.json \
+  --test-ratio 0.1 \
+  --more-dpo-pairs \
+  --n-sample-other-knowledge 17
+```
+
+- [x] Fix agent_config -> allow code_act only
+```
+Modify seimei.py to fix the error below
+- I set `agent_config=[{"file_path": "seimei/agents/code_act.py"}],` in seimei init but it keeps using other agents like think and web_search. 
+- Fix this following
+1. track agent_config and find all the related parts of it
+2. figure out what's happening
+3. modify it so that seimei will use only agents designated by agent_config and answer agent. when agent_config is designated, input answer agent and designated agent to llm_routing prompt. when agent_config is not specified, use all the agents.
+```
+
+- [x] Make exp7/eval.py (to test evaluation result)
+```
+Make exp7/eval.py (to test evaluation result)
+
+After I train a reward model using the dataset_list made by train_v3.py and dpo_converter.py, I wanna evaluate the model comparing
+A. solve problems without knowledge
+B. solve problems with knowledge retrieved from knowledge pool by the model
+
+Follow
+1. refer to exp7/train_v3.py for how to make inference and get score of each 
+2. refer to exp7/train_v3.py for batch processes and save mechanism
+3. first choose test problems and make knowledge pool from the best knowledge text which gets the highest score in each dict (exclude null). NOTE YOU MUST NOT INCLUDE KNOWLEDGE GENERATED FROM THE TEST PROBLEMS. Don't include those knowledge in the pool.
+
+argument to add
+1. rmsearch url
+2. n_problems: number of problems for testing
+3. n_knowledge: number of knowledge for a step to use
+4. n_sample: number of trial to test problems (take mean value from all the problems)
+add other arguments if you think it's needed.
+```
+
+- [x] Make exp7/train_v3_eval.py (generate knowledge in all steps and see how much it improves)
+```
+Make exp7/train_v3_eval.py (generate knowledge in all steps and see how much it improves)
+
+Deeply understand exp7/train_v3.py and implement the following features in train_v3_eval.py
+1. in this file, instead of running select_drifted_step to generate step, generate knowledge for first n_knowledge_steps steps and see how much score is improvevd by the knowledge compared to the base result.
+2. when generating knowledge in each step, generate specified number of knowledge texts and get the best one to continue next step.
+3. In the next step, use the agent outputs already generated in check_knowledge inference in the step before.
+4. save the score results of all the inference made.
+```
+
+## Nov 5
+
+- [ ] Debug exp7/train_v3_eval.py
+```
+Modify exp7/train_v3_eval.py, and exp8_small_csv/train_v3_eval.py following
+1. I want you to add a final process after ending `for step in range(1, n_knowledge_steps + 1):` in run_problem function. Since it's taking the best result from some samples for each step, comparing it with base result which is from 1 sample is not fair. So after you get knowledge to use in each step in the for loop, rerun the base result and knowledge result again for 3 times (this should be in the parameters on top) respectively and compare the result.
+2. In the result json file, I wanna add summarized info over all the result. Convert it to dict like 
+{
+    "summary": {
+        "mean_score_improvement": (final_score - base_score)/total_num,
+        "base_vs_final": [(base_score, final_score), ...],
+        (other info if there is any important one),
+        ....
+    }
+    "detail": [], # the list of the result now
+}
+```
+
+- [ ] Do many experiments on the code above.
+
+- [ ] Generate Deep Research base
+
+- [ ] Debug 1 dpo_converter.py
+    - Exclude rows which have no dpo_pairs (all scores are same)
+
+- [ ] Improve the train_v3.py -> train_v4.py
+    - add test for generating 
 
 - [ ] Debug 3 exp8_csv_small/train_v3.py
     - Observed step number = 14 which was clearly wrong. If step generated by select_drifted_step function is out of range in message, set step = 1.
 
 - [ ] Put past knowledge in knowledge text
-
-
-
-
-
 
 
 - [ ] Future features
