@@ -1145,7 +1145,27 @@ Deeply understand exp7/train_v3.py and implement the following features in train
 4. save the score results of all the inference made.
 ```
 
+## Nov 5
+
+- [ ] Debug exp7/train_v3_eval.py
+```
+Modify exp7/train_v3_eval.py, and exp8_small_csv/train_v3_eval.py following
+1. I want you to add a final process after ending `for step in range(1, n_knowledge_steps + 1):` in run_problem function. Since it's taking the best result from some samples for each step, comparing it with base result which is from 1 sample is not fair. So after you get knowledge to use in each step in the for loop, rerun the base result and knowledge result again for 3 times (this should be in the parameters on top) respectively and compare the result.
+2. In the result json file, I wanna add summarized info over all the result. Convert it to dict like 
+{
+    "summary": {
+        "mean_score_improvement": (final_score - base_score)/total_num,
+        "base_vs_final": [(base_score, final_score), ...],
+        (other info if there is any important one),
+        ....
+    }
+    "detail": [], # the list of the result now
+}
+```
+
 - [ ] Do many experiments on the code above.
+
+- [ ] Generate Deep Research base
 
 - [ ] Debug 1 dpo_converter.py
     - Exclude rows which have no dpo_pairs (all scores are same)
