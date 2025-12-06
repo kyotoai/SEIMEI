@@ -10,7 +10,7 @@ with io.open(os.path.join(here, 'requirements.txt'), encoding='utf-8') as f:
     requirements = f.read().splitlines()
 
 setup(
-    name='SEIMEI',
+    name='seimei',
     version='0.1.0',
     description='Search-Enhanced Interface for Multi-Expertise Integration',
     #long_description=io.open(os.path.join(here, 'README.md'), encoding='utf-8').read(),
