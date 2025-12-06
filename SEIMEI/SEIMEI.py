@@ -255,7 +255,9 @@ class seimei:
 
     def _normalize_knowledge_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         cfg = dict(config or {})
-        manual_entries, manual_stores, manual_store_sources = self._normalize_manual_knowledge(cfg.get("knowledge"))
+        manual_entries, manual_stores, manual_store_sources, manual_agent_routes = self._normalize_manual_knowledge(
+            cfg.get("knowledge")
+        )
 
         load_path_provided = "load_knowledge_path" in cfg
         load_value = cfg.get("load_knowledge_path")
@@ -276,6 +278,7 @@ class seimei:
             "manual_entries": manual_entries,
             "manual_stores": manual_stores,
             "manual_store_sources": manual_store_sources,
+            "manual_agent_routes": manual_agent_routes,
         }
 
     def _normalize_manual_knowledge(
@@ -284,32 +287,39 @@ class seimei:
         Dict[Optional[int], List[Dict[str, Any]]],
         Dict[Optional[int], List[Dict[str, Any]]],
         Dict[Optional[int], List[Dict[str, Any]]],
+        Dict[int, List[str]],
     ]:
         entry_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         store_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         store_source_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
+        agent_route_map: Dict[int, List[str]] = defaultdict(list)
         entries = self._coerce_manual_knowledge_list(value)
         if not entries:
-            return {}, {}, {}
+            return {}, {}, {}, {}
 
         for raw in entries:
             steps = self._coerce_step_targets(raw.get("step"))
             targets = steps or [None]
             tags = self._coerce_tags(raw.get("tags"))
-            agent_name = str(raw.get("agent") or "*").strip() or "*"
+            agent_values = self._coerce_agent_values(raw.get("agent"))
+            agent_field_present = "agent" in raw
+            knowledge_agents = agent_values if agent_values else ["*"]
+            routing_candidates = [name for name in agent_values if name and name != "*"]
             text_value = raw.get("text") or raw.get("knowledge") or raw.get("content") or raw.get("value")
             text = str(text_value).strip() if text_value is not None else ""
             entry_id = self._coerce_optional_int(raw.get("id"))
             load_path_value = raw.get("load_knowledge_path")
             load_path = self._coerce_path_string(load_path_value)
 
-            entry_payload: Optional[Dict[str, Any]] = None
+            entry_payloads: List[Dict[str, Any]] = []
             if text:
-                entry_payload = {"agent": agent_name, "knowledge": text}
-                if tags:
-                    entry_payload["tags"] = tags
-                if entry_id is not None:
-                    entry_payload["id"] = entry_id
+                for agent_name in knowledge_agents:
+                    payload: Dict[str, Any] = {"agent": agent_name, "knowledge": text}
+                    if tags:
+                        payload["tags"] = list(tags)
+                    if entry_id is not None:
+                        payload["id"] = entry_id
+                    entry_payloads.append(payload)
 
             store_payload: Optional[Dict[str, List[Dict[str, Any]]]] = None
             store_meta: Optional[Dict[str, Any]] = None
@@ -330,16 +340,25 @@ class seimei:
                     store_payload = None
 
             for step in targets:
-                if entry_payload:
-                    entry_map[step].append(dict(entry_payload))
+                for payload in entry_payloads:
+                    entry_map[step].append(dict(payload))
                 if store_payload:
                     store_map[step].append(store_payload)
                 if store_meta:
                     store_source_map[step].append(dict(store_meta))
                 elif load_path:
                     store_source_map[step].append({"path": load_path, "loaded": False})
+                if (
+                    agent_field_present
+                    and routing_candidates
+                    and step is not None
+                ):
+                    route = agent_route_map.setdefault(step, [])
+                    for candidate in routing_candidates:
+                        if candidate not in route:
+                            route.append(candidate)
 
-        return dict(entry_map), dict(store_map), dict(store_source_map)
+        return dict(entry_map), dict(store_map), dict(store_source_map), dict(agent_route_map)
 
     def _coerce_manual_knowledge_list(self, raw: Any) -> List[Dict[str, Any]]:
         if raw is None:
@@ -406,6 +425,27 @@ class seimei:
                     tags.append(text)
             return tags
         return []
+
+    @staticmethod
+    def _coerce_agent_values(value: Any) -> List[str]:
+        if value is None:
+            return []
+        if isinstance(value, str):
+            text = value.strip()
+            return [text] if text else []
+        if isinstance(value, Iterable):
+            names: List[str] = []
+            seen: Set[str] = set()
+            for item in value:
+                if item in (None, ""):
+                    continue
+                text = str(item).strip()
+                if text and text not in seen:
+                    names.append(text)
+                    seen.add(text)
+            return names
+        text = str(value).strip()
+        return [text] if text else []
 
     def _compose_step_knowledge(
         self,
@@ -896,20 +936,48 @@ class seimei:
         messages: List[Dict[str, Any]],
         search_fn: Callable[..., Any],
         step: Optional[int] = None,
+        allowed_agent_names: Optional[Sequence[str]] = None,
     ) -> Optional[Agent]:
         if not self.agents:
             return None
 
+        candidate_agent_names: List[str] = []
+        if allowed_agent_names:
+            allowed_iterable: Sequence[Any]
+            if isinstance(allowed_agent_names, str):
+                allowed_iterable = [allowed_agent_names]
+            else:
+                allowed_iterable = allowed_agent_names
+            seen: Set[str] = set()
+            for raw_name in allowed_iterable:
+                if raw_name in (None, ""):
+                    continue
+                name = str(raw_name).strip()
+                if not name or name in seen:
+                    continue
+                if name in self.agents:
+                    candidate_agent_names.append(name)
+                    seen.add(name)
+            if candidate_agent_names:
+                if len(candidate_agent_names) == 1:
+                    return self.agents[candidate_agent_names[0]]
+
+        if not candidate_agent_names:
+            candidate_agent_names = list(self.agents.keys())
+        candidate_agents = [self.agents[name] for name in candidate_agent_names]
+        if not candidate_agents:
+            return None
+        candidate_name_set = set(candidate_agent_names)
         keys = [
             {"key": f"{agent.name}: {agent.description}", "agent_name": agent.name}
-            for agent in self.agents.values()
+            for agent in candidate_agents
         ]
         try:
             query = json.dumps(messages, ensure_ascii=False)
         except Exception:
             query = str(messages)
 
-        if search_fn:
+        if search_fn and keys:
             try:
                 context = {"purpose": "agent_routing"}
                 if step is not None:
@@ -923,11 +991,11 @@ class seimei:
                 )
                 if ranked:
                     agent_name = ranked[0].get("payload", {}).get("agent_name")
-                    if agent_name and agent_name in self.agents:
+                    if agent_name and agent_name in candidate_name_set:
                         return self.agents[agent_name]
                     key = ranked[0].get("key", "")
                     agent_name = key.split(":", 1)[0].strip()
-                    if agent_name in self.agents:
+                    if agent_name in candidate_name_set:
                         return self.agents[agent_name]
             except Exception as exc:
                 print(colorize(f"[seimei] search-based routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
@@ -943,17 +1011,17 @@ class seimei:
 
         lower = last_user.get("content", "").lower()
         if "search" in lower or "web" in lower:
-            for a in self.agents.values():
+            for a in candidate_agents:
                 if a.name.endswith("web_search") or a.name == "web_search":
                     return a
         if any(tok in lower for tok in ["bash", "shell", "terminal", "run ", "execute ", "pip ", "python "]):
-            for a in self.agents.values():
+            for a in candidate_agents:
                 if a.name.endswith("code_act") or a.name == "code_act":
                     return a
         for pref in ("think", "default"):
-            if pref in self.agents:
+            if pref in candidate_name_set:
                 return self.agents[pref]
-        return next(iter(self.agents.values()), None)
+        return self.agents[candidate_agent_names[0]] if candidate_agent_names else None
 
     # -------------------------- Logging --------------------------
 
@@ -1111,6 +1179,7 @@ class seimei:
 
         manual_entry_map = normalized_knowledge_config.get("manual_entries", {}) or {}
         manual_store_sources = normalized_knowledge_config.get("manual_store_sources", {}) or {}
+        manual_agent_routes = normalized_knowledge_config.get("manual_agent_routes", {}) or {}
         manual_entry_counts: Dict[str, int] = {}
         for step_key, values in manual_entry_map.items():
             label = "*" if step_key is None else str(step_key)
@@ -1150,6 +1219,7 @@ class seimei:
             "manual_store_counts": manual_store_counts,
             "manual_entries": self._prepare_metadata_value(manual_entry_map),
             "manual_store_sources": self._prepare_metadata_value(manual_store_sources),
+            "manual_agent_routes": self._prepare_metadata_value(manual_agent_routes),
             "raw_config": self._prepare_metadata_value(raw_knowledge_config or {}),
             "knowledge_store": {
                 "path": self.load_knowledge_path,
@@ -1257,6 +1327,7 @@ class seimei:
         normalized_config = self._normalize_knowledge_config(knowledge_config)
         manual_entry_map = normalized_config["manual_entries"]
         manual_store_map = normalized_config["manual_stores"]
+        manual_agent_routes = normalized_config["manual_agent_routes"]
         config_load_path = normalized_config["load_knowledge_path"]
         if normalized_config["load_path_provided"]:
             self.load_knowledge_path = config_load_path
@@ -1354,7 +1425,13 @@ class seimei:
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
             # Decide which agent to run
-            agent_obj = await self._select_next_agent(msg_history, search_fn, step_idx)
+            allowed_agents = manual_agent_routes.get(step_idx)
+            agent_obj = await self._select_next_agent(
+                msg_history,
+                search_fn,
+                step_idx,
+                allowed_agent_names=allowed_agents,
+            )
             if agent_obj is None:
                 if stop_reason is None:
                     stop_reason = "no_agent_available"
