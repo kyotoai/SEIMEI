@@ -50,7 +50,7 @@ The generated file can be loaded at runtime and injected into `shared_ctx["knowl
   )
   ```
 - The referenced files can be CSV, JSON, or JSONL. Entries are grouped by the `agent` field, with `*` acting as a wildcard shared by all agents.
-- Inline knowledge entries accept optional `step`, `id`, `load_knowledge_path`, `text`, and `tags` fields. When `step` is omitted, the knowledge applies to every agent step; otherwise it is injected only when the specified step runs.
+- Inline knowledge entries accept optional `step`, `id`, `load_knowledge_path`, `text`, `agent`, and `tags` fields. When `step` is omitted, the knowledge applies to every agent step; otherwise it is injected only when the specified step runs. Supplying both `step` and `agent` forces the router to run the designated agent (or, if `agent` is a list, limits routing to that shortlist) for the matching step.
 - At runtime the knowledge is available through `shared_ctx["knowledge"]`, and helper utilities (e.g., `get_agent_knowledge`) deliver normalized snippets to each agent.
 - Automatic retrospectives run whenever `knowledge_config["generate_knowledge"]` is true. The helper appends fresh insights to `save_knowledge_path` (defaulting to the last load path) and the orchestrator transparently reloads the store.
 - Successful retrospectives now surface their payloads directly in the call result: `result["knowledge_result"]` contains metadata (save path, usage, run IDs) and `result["generated_knowledge"]` lists the exact entries that were written, which is handy for quick manual review.
