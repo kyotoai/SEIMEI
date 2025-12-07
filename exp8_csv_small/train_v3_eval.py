@@ -9,7 +9,7 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp8_csv_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results2.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 5
 DEFAULT_N_KNOWLEDGE_STEPS = 3

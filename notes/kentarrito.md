@@ -1169,6 +1169,7 @@ Modify exp7/train_v3_eval.py, and exp8_small_csv/train_v3_eval.py following
     - Improve prompt of generate_step_knowledge. Now output of the prompt always have think agent but it should be more varient. Add more information about each agent into the prompt refering to the prompt in seimei.py llm_routing function's prompt. Also add more explanation of what the agent field is about. Ex. "The agent designates what agent is run in the step". 
 
 - [x] Manual knowledge (feature/klg_force_agent)
+```
     - In exp8_csv_small/train_v3_eval.py, manual_entries should also designates what agent should be selected in llm_routing for each step. Now seimei accepts knowledge_config like the following:
 '''
 knowledge_config: {
@@ -1192,6 +1193,11 @@ Here "knowledge" is
 '''
 
 Add agent field too in the knowledge dict and if agent is specified, choose the agent in the routing in the step. Btw, agent field should be str or List[str]. If it's a list, make llm_routing pick agent from the list.
+```
+
+- [ ] Debug 3 exp8_csv_small/train_v3_eval.py
+    - saving hasn't been well
+    
 
 - [ ] Do many experiments on the code above.
 
