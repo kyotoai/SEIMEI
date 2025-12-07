@@ -1193,10 +1193,6 @@ Here "knowledge" is
 '''
 
 Add agent field too in the knowledge dict and if agent is specified, choose the agent in the routing in the step. Btw, agent field should be str or List[str]. If it's a list, make llm_routing
-```
-
-- [x] Log out knowledge_used in code_act
-
 
 - [ ] Do many experiments on the code above.
 
