@@ -93,6 +93,12 @@ KNOWLEDGE_SYSTEM_PROMPT = (
     "reasoning path without giving away the final answer."
 )
 
+KNOWLEDGE_SELECTION_SYSTEM_PROMPT = (
+    "You are a reviewer who selects the most helpful reusable knowledge snippet to inject before the "
+    "next agent action. Score each candidate 0-10 based on how well it realigns the reasoning without "
+    "revealing the final answer, and respond with a JSON array sorted best-to-worst."
+)
+
 RUN_ID_CACHE: Dict[str, str] = {}
 
 
@@ -500,7 +506,7 @@ def _normalize_step_filter(value: Any) -> Optional[Set[int]]:
     return normalized or None
 
 
-def _normalize_pool_entry(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _normalize_pool_entry(entry: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
     text = str(entry.get("text") or entry.get("knowledge") or "").strip()
     if not text:
         return None
@@ -510,37 +516,129 @@ def _normalize_pool_entry(entry: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         "agent": str(entry.get("agent") or "think").strip() or "think",
         "tags": entry.get("tags") or [],
     }
-    if "id" in entry:
-        normalized["id"] = entry["id"]
+    normalized["id"] = str(entry.get("id") or f"default_pool_{index+1}")
     normalized["_step_filter"] = _normalize_step_filter(entry.get("step"))
     return normalized
 
 
-def select_pool_knowledge(step: int, limit: int) -> List[Dict[str, Any]]:
+def _format_pool_candidates(candidates: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted: List[Dict[str, Any]] = []
+    for entry in candidates:
+        formatted.append(
+            {
+                "id": entry["id"],
+                "agent": entry.get("agent"),
+                "text": entry.get("text"),
+                "tags": entry.get("tags") or [],
+            }
+        )
+    return formatted
+
+
+async def _rank_pool_candidates(
+    llm_client,
+    *,
+    dataset_entry: Dict[str, Any],
+    messages: Sequence[Dict[str, Any]],
+    truncated_history: Sequence[Dict[str, Any]],
+    step: int,
+    candidates: Sequence[Dict[str, Any]],
+    limit: int,
+) -> List[str]:
+    if not candidates:
+        return []
+    question = dataset_entry.get("Question", "")
+    reference = dataset_entry.get("CorrectAnswer", "")
+    transcript_json = json.dumps(truncated_history, ensure_ascii=False, indent=2)
+    step_text = get_agent_step_text(messages, step)
+    candidate_json = json.dumps(_format_pool_candidates(candidates), ensure_ascii=False, indent=2)
+    prompt = (
+        f"You are judging reusable knowledge for insertion before agent step {step}.\n\n"
+        f"Full message history before rerun (JSON transcript):\n{transcript_json}\n\n"
+        f"Original agent step {step} transcript:\n{step_text}\n\n"
+        f"Question:\n{question}\n\n"
+        f"Reference answer:\n{reference}\n\n"
+        "Candidate knowledge entries (JSON array):\n"
+        f"{candidate_json}\n\n"
+        "Return a JSON array sorted best to worst. Each item must contain:\n"
+        "- id: the candidate id\n"
+        "- score: integer 0-10 reflecting usefulness\n"
+        "- justification: 1 short sentence\n"
+        f"Select up to {limit} entries. Do not invent new ids."
+    )
+    try:
+        response, _ = await llm_client.chat(
+            messages=[{"role": "user", "content": prompt}],
+            system=KNOWLEDGE_SELECTION_SYSTEM_PROMPT,
+        )
+    except Exception as exc:  # pragma: no cover
+        print(f"[knowledge selection] ranking failed: {exc}")
+        return []
+
+    parsed = _parse_json_array(response)
+    ranked_ids: List[str] = []
+    seen: Set[str] = set()
+    for item in parsed:
+        if not isinstance(item, dict):
+            continue
+        candidate_id = str(item.get("id") or "").strip()
+        if not candidate_id or candidate_id in seen:
+            continue
+        seen.add(candidate_id)
+        ranked_ids.append(candidate_id)
+        if len(ranked_ids) >= limit:
+            break
+    return ranked_ids
+
+
+async def select_pool_knowledge(
+    llm_client,
+    *,
+    dataset_entry: Dict[str, Any],
+    messages: Sequence[Dict[str, Any]],
+    truncated_history: Sequence[Dict[str, Any]],
+    step: int,
+    limit: int,
+) -> List[Dict[str, Any]]:
     limit = max(int(limit), 0)
     if limit <= 0:
         return []
-    targeted: List[Dict[str, Any]] = []
-    general: List[Dict[str, Any]] = []
-    for raw_entry in DEFAULT_KNOWLEDGE_POOL:
-        normalized = _normalize_pool_entry(raw_entry)
+    applicable: List[Dict[str, Any]] = []
+    for idx, raw_entry in enumerate(DEFAULT_KNOWLEDGE_POOL):
+        normalized = _normalize_pool_entry(raw_entry, idx)
         if not normalized:
             continue
         step_filter = normalized.pop("_step_filter", None)
-        if step_filter is None:
-            general.append(normalized)
-        elif step in step_filter:
-            targeted.append(normalized)
-    pool = targeted if targeted else general
-    if not pool:
+        if step_filter is None or step in step_filter:
+            applicable.append(normalized)
+    if not applicable:
         return []
-    shuffled = pool[:]
-    random.shuffle(shuffled)
-    selected = shuffled[: min(limit, len(shuffled))]
-    if len(selected) < limit:
-        selected.extend(random.choices(shuffled, k=limit - len(selected)))
+    ranked_ids = await _rank_pool_candidates(
+        llm_client,
+        dataset_entry=dataset_entry,
+        messages=messages,
+        truncated_history=truncated_history,
+        step=step,
+        candidates=applicable,
+        limit=limit,
+    )
+    id_map = {entry["id"]: entry for entry in applicable}
+    ordered: List[Dict[str, Any]] = []
+    for candidate_id in ranked_ids:
+        entry = id_map.get(candidate_id)
+        if entry:
+            ordered.append(entry)
+    if not ordered:
+        random.shuffle(applicable)
+        ordered = applicable[: min(limit, len(applicable))]
+    elif len(ordered) < min(limit, len(applicable)):
+        remaining = [entry for entry in applicable if entry["id"] not in {item["id"] for item in ordered}]
+        for entry in remaining:
+            ordered.append(entry)
+            if len(ordered) >= min(limit, len(applicable)):
+                break
     prepared: List[Dict[str, Any]] = []
-    for idx, entry in enumerate(selected):
+    for idx, entry in enumerate(ordered[:limit]):
         candidate = dict(entry)
         candidate.setdefault("iteration", idx + 1)
         candidate["step"] = step
@@ -727,7 +825,14 @@ async def run_problem(
         step_best_result: Optional[Dict[str, Any]] = None
         step_best_score: Optional[float] = None
 
-        pool_candidates = select_pool_knowledge(step, knowledge_per_step)
+        pool_candidates = await select_pool_knowledge(
+            orchestrator.llm,
+            dataset_entry=dataset_entry,
+            messages=messages,
+            truncated_history=truncated_history,
+            step=step,
+            limit=knowledge_per_step,
+        )
         if not pool_candidates:
             print(f"[eval {index}] step {step}: no knowledge available in pool, skipping.")
             continue
