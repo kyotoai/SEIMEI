@@ -1,3 +1,4 @@
+import argparse
 import asyncio
 import csv
 import json
@@ -13,7 +14,7 @@ LOAD_KLG_PATH = None #Path("seimei_knowledge/exp5_train_v2_1.csv")
 SAVE_KLG_PATH = Path("seimei_knowledge/exp8_train_v3_3.csv")
 # RESULT_OUTPUT_PATH = EXP_DIR / "train_v3_dpo_3.json"
 RESULT_OUTPUT_PATH = EXP_DIR / "train_v3_dpo_3_TEST.json"
-GEN_STEP_PROMPT_PATH = Path("seimei/knowledge/prompts/gen_step.md")
+GEN_STEP_PROMPT_PATH = Path(__file__).resolve().parent.parent / "seimei/knowledge/prompts/gen_step.md"
 MAX_KNOWLEDGE_ITERATIONS = 3
 BASE_SYSTEM_PROMPT_LIST = [
     "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
@@ -57,6 +58,34 @@ BATCH_SIZE = 1
 
 PROMPT_CACHE: Dict[Path, str] = {}
 RUN_ID_CACHE: Dict[str, str] = {}
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Adaptive knowledge training loop (TEST).")
+    parser.add_argument("--runs-dir", default="seimei_runs", help="Directory to store seimei run logs.")
+    parser.add_argument("--exp-dir", default=str(EXP_DIR), help="Experiment directory (dataset + outputs).")
+    parser.add_argument(
+        "--dataset-path",
+        default=None,
+        help="Path to dataset.json (defaults to <exp-dir>/dataset.json).",
+    )
+    parser.add_argument(
+        "--result-output-path",
+        default=None,
+        help="Path to write DPO tracker JSON (defaults to <exp-dir>/train_v3_dpo_3_TEST.json).",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=BATCH_SIZE,
+        help="How many problems to process concurrently.",
+    )
+    parser.add_argument(
+        "--max-knowledge-iterations",
+        type=int,
+        default=MAX_KNOWLEDGE_ITERATIONS,
+        help="Number of knowledge proposals to try per problem.",
+    )
+    return parser.parse_args()
 
 
 def compute_entry_id(dataset_entry: Dict[str, Any], index: int) -> str:
@@ -403,6 +432,45 @@ async def select_drifted_step(
     return candidate
 
 
+def _build_adaptive_notes(
+    *,
+    iteration: int,
+    no_improve_streak: int,
+    best_score: float,
+    last_score: float,
+    best_feedback: str,
+    last_feedback: str,
+    drift_summary: str,
+    missing: str,
+    goal: str,
+) -> str:
+    """Create short adaptive hints to steer the prompt when scores stall/regress."""
+    notes = [
+        f"Iteration {iteration + 1}: best score so far {best_score}; last score {last_score}.",
+    ]
+    if last_score < best_score:
+        notes.append("Last attempt regressed; propose a different, more constrained move.")
+    # Pivot after a single non-improvement
+    if no_improve_streak >= 1:
+        notes.append(
+            "Scores stalled/regressed; change strategy (run a targeted data/verification step, avoid rephrasing)."
+        )
+    if goal:
+        notes.append(f"Revision goal: {goal}")
+    if drift_summary:
+        notes.append(f"Earlier drift summary: {drift_summary}")
+    if missing:
+        notes.append(f"Missing clues to surface: {missing}")
+    if last_feedback:
+        notes.append(f"Most recent judge feedback: {last_feedback}")
+    elif best_feedback:
+        notes.append(f"Best-score judge feedback: {best_feedback}")
+    notes.append(
+        "Preserve any computations/interpretations already correct; do not overwrite accurate aggregates, formulas, or parameter mappings—only add the minimal check to fix the drift."
+    )
+    return "\n".join(f"- {line}" for line in notes)
+
+
 async def generate_knowledge_candidate(
     llm_client,
     *,
@@ -412,6 +480,11 @@ async def generate_knowledge_candidate(
     iteration: int,
     step: int,
     log_dir: str,
+    no_improve_streak: int, # New parameters to build adaptive notes
+    best_score: float,
+    last_score: float,
+    best_feedback: str,
+    last_feedback: str,
 ) -> Optional[Dict[str, Any]]:
     question = dataset_entry.get("Question", "")
     reference = dataset_entry.get("CorrectAnswer", "")
@@ -422,8 +495,18 @@ async def generate_knowledge_candidate(
     drift_summary = drift_info.get("drift_summary") or drift_info.get("reason") or ""
     missing = drift_info.get("missing_clues") or ""
     goal = drift_info.get("revision_goal") or ""
-    best_output = best_result.get("output", "")
-# MODIFY TO IMPROVE SCORES
+    # NEW: Adaptive notes to improve score enhancement
+    adaptive_notes = _build_adaptive_notes(
+        iteration=iteration,
+        no_improve_streak=no_improve_streak,
+        best_score=best_score,
+        last_score=last_score,
+        best_feedback=best_feedback,
+        last_feedback=last_feedback,
+        drift_summary=drift_summary,
+        missing=missing,
+        goal=goal,
+    )
     prompt = (
         f"You are writing reusable knowledge that will replace agent step {step} "
         "in a CSV reasoning workflow.\n\n"
@@ -452,6 +535,10 @@ async def generate_knowledge_candidate(
         "    * Use only general terms like \"target column\", \"relevant rows\", \"input table\", etc.\n"
         "    * Example style: \"Filter the relevant subset of rows based on the task condition,\n"
         "      then recompute the key aggregate for the target column.\"\n\n"
+        "Stability constraint:\n"
+        "- Preserve any already-correct computations or mappings (aggregates, formulas, parameter references). Only add the smallest verification or correction needed to fix the drift.\n\n"
+        "Adaptive constraints based on scoring feedback and drift analysis:\n" #NEW: constraints from score feedback
+        f"{adaptive_notes}\n\n"
         "Output format (JSON only):\n"
         "[\n"
         "  {\n"
@@ -576,10 +663,17 @@ async def check_knowledge(
         tracker["comparison"].append([best_idx, len(tracker["knowledge"]) - 1])
     else:
         pass
+    # NEW-->
+    return knowledge_record
 
 
 async def run_problem(
-    orchestrator, dataset_entry: Dict[str, Any], index: int, entry_id: str
+    orchestrator,
+    dataset_entry: Dict[str, Any],
+    index: int,
+    entry_id: str,
+    *,
+    max_knowledge_iterations: int,
 ) -> Dict[str, Any]:
     question = dataset_entry.get("Question", "")
     csv_path = dataset_entry.get("CSVPath", "")
@@ -636,7 +730,7 @@ async def run_problem(
                 "iteration": 0,
                 "run_id": base_run_id,
                 "rationale": "baseline inference",
-                "score_feedback": score_info.get("feedback"),
+                "score_feedback": score_info.get("feedback"), 
                 "score": base_score,
             }
         ],
@@ -646,10 +740,17 @@ async def run_problem(
         "best_result": base_result,
         "outputs": [base_output],
     }
+    # NEW: parameters for adaptive constraints
+    best_feedback = score_info.get("feedback", "") or ""
+    last_feedback = best_feedback
+    no_improve_streak = 0
 
     print(f"[problem {index}] step={step} baseline score={base_score}")
 
-    for iteration in range(MAX_KNOWLEDGE_ITERATIONS):
+    for iteration in range(max_knowledge_iterations):
+        # NEW: -->
+        current_best_score = tracker["scores"][tracker.get("best_index", 0)]
+        last_score = tracker["scores"][-1]
         candidate = await generate_knowledge_candidate(
             orchestrator.llm,
             dataset_entry=dataset_entry,
@@ -657,12 +758,19 @@ async def run_problem(
             drift_info=drift_info,
             iteration=iteration,
             step=step,
-            log_dir=orchestrator.log_dir,
+            log_dir=orchestrator.log_dir, 
+            no_improve_streak=no_improve_streak, #NEW
+            best_score=current_best_score,
+            last_score=last_score,
+            best_feedback=best_feedback,
+            last_feedback=last_feedback,
         )
         if not candidate:
             print(f"[problem {index}] iteration {iteration + 1}: no candidate knowledge")
             break
-        await check_knowledge(
+        # NEW: -->
+        previous_best = tracker["scores"][tracker.get("best_index", 0)]
+        record = await check_knowledge(
             orchestrator,
             dataset_entry=dataset_entry,
             tracker=tracker,
@@ -671,8 +779,16 @@ async def run_problem(
         )
         best_idx = tracker.get("best_index", 0)
         best_score = tracker["scores"][best_idx]
+        #NEW: counter to keep track of improvement streaks 
+        last_feedback = record.get("score_feedback", last_feedback)
+        best_feedback = tracker["knowledge"][best_idx].get("score_feedback", best_feedback)
+        if best_score > previous_best:
+            no_improve_streak = 0
+        else:
+            no_improve_streak += 1
+            # NEW: show no-improve streak current state
         print(
-            f"[problem {index}] iteration {iteration + 1}: score={tracker['scores'][-1]} best={best_score}"
+            f"[problem {index}] iteration {iteration + 1}: score={tracker['scores'][-1]} best={best_score} (no-improve streak={no_improve_streak})"
         )
 
     best_idx = tracker.get("best_index", 0)
@@ -685,18 +801,18 @@ async def run_problem(
 
 
 def load_existing_dpo_entries(
-    dataset: List[Dict[str, Any]]
+    dataset: List[Dict[str, Any]], result_output_path: Path
 ) -> Tuple[List[Dict[str, Any]], Set[str], bool]:
     entries: List[Dict[str, Any]] = []
     processed_ids: Set[str] = set()
     needs_resave = False
-    if RESULT_OUTPUT_PATH.exists():
+    if result_output_path.exists():
         try:
-            raw = json.loads(RESULT_OUTPUT_PATH.read_text(encoding="utf-8"))
+            raw = json.loads(result_output_path.read_text(encoding="utf-8"))
             if isinstance(raw, list):
                 entries = raw
             else:
-                print(f"[train_v3] Ignoring malformed DPO cache at {RESULT_OUTPUT_PATH}")
+                print(f"[train_v3] Ignoring malformed DPO cache at {result_output_path}")
         except (OSError, json.JSONDecodeError) as exc:
             print(f"[train_v3] Failed to load cached DPO entries: {exc}")
         for idx, entry in enumerate(entries):
@@ -710,16 +826,23 @@ def load_existing_dpo_entries(
     return entries, processed_ids, needs_resave
 
 
-def save_dpo_entries(entries: List[Dict[str, Any]]) -> None:
-    RESULT_OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
+def save_dpo_entries(entries: List[Dict[str, Any]], result_output_path: Path) -> None:
+    result_output_path.parent.mkdir(parents=True, exist_ok=True)
     payload = json.dumps(entries, ensure_ascii=False, indent=2)
-    tmp_path = RESULT_OUTPUT_PATH.with_suffix(RESULT_OUTPUT_PATH.suffix + ".tmp")
+    tmp_path = result_output_path.with_suffix(result_output_path.suffix + ".tmp")
     tmp_path.write_text(payload, encoding="utf-8")
-    tmp_path.replace(RESULT_OUTPUT_PATH)
+    tmp_path.replace(result_output_path)
 
 
-async def run_training() -> None:
-    dataset = json.loads(DATASET_PATH.read_text(encoding="utf-8"))
+async def run_training(
+    *,
+    dataset_path: Path,
+    result_output_path: Path,
+    runs_dir: Path,
+    batch_size: int,
+    max_knowledge_iterations: int,
+) -> None:
+    dataset = json.loads(dataset_path.read_text(encoding="utf-8"))
 
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
@@ -728,11 +851,12 @@ async def run_training() -> None:
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=40000,
+        log_dir=str(runs_dir),
     )
 
-    dpo_entries, processed_ids, needs_resave = load_existing_dpo_entries(dataset)
+    dpo_entries, processed_ids, needs_resave = load_existing_dpo_entries(dataset, result_output_path)
     if needs_resave:
-        save_dpo_entries(dpo_entries)
+        save_dpo_entries(dpo_entries, result_output_path)
     if processed_ids:
         print(f"[train_v3] Resuming with {len(processed_ids)} cached entries")
 
@@ -747,14 +871,20 @@ async def run_training() -> None:
     if not pending:
         print(
             f"[train_v3] All {len(processed_ids)} entries already processed. "
-            f"Results stored at {RESULT_OUTPUT_PATH}"
+            f"Results stored at {result_output_path}"
         )
         return
 
-    for batch_start in range(0, len(pending), BATCH_SIZE):
-        batch_slice = pending[batch_start : batch_start + BATCH_SIZE]
+    for batch_start in range(0, len(pending), batch_size):
+        batch_slice = pending[batch_start : batch_start + batch_size]
         batch_tasks = [
-            run_problem(orchestrator, entry, dataset_idx, entry_id)
+            run_problem(
+                orchestrator,
+                entry,
+                dataset_idx,
+                entry_id,
+                max_knowledge_iterations=max_knowledge_iterations,
+            )
             for dataset_idx, entry, entry_id in batch_slice
         ]
         batch_trackers = await asyncio.gather(*batch_tasks)
@@ -776,14 +906,30 @@ async def run_training() -> None:
                 }
             )
             processed_ids.add(entry_id)
-        save_dpo_entries(dpo_entries)
-        batch_idx = batch_start // BATCH_SIZE + 1
+        save_dpo_entries(dpo_entries, result_output_path)
+        batch_idx = batch_start // batch_size + 1
         print(
             f"[train_v3] Saved batch {batch_idx}: {len(processed_ids)}/{total} problems complete"
         )
 
-    print(f"[train_v3] Saved DPO dataset to {RESULT_OUTPUT_PATH}")
+    print(f"[train_v3] Saved DPO dataset to {result_output_path}")
 
 
 if __name__ == "__main__":
-    asyncio.run(run_training())
+    args = parse_args()
+    exp_dir = Path(args.exp_dir)
+    dataset_path = Path(args.dataset_path) if args.dataset_path else exp_dir / "dataset.json"
+    result_output_path = (
+        Path(args.result_output_path)
+        if args.result_output_path
+        else exp_dir / "train_v3_dpo_3_TEST.json"
+    )
+    asyncio.run(
+        run_training(
+            dataset_path=dataset_path,
+            result_output_path=result_output_path,
+            runs_dir=Path(args.runs_dir),
+            batch_size=args.batch_size,
+            max_knowledge_iterations=args.max_knowledge_iterations,
+        )
+    )
