@@ -21,11 +21,13 @@ async def demo_knowledge_config() -> None:
             {
                 "step": [1, 2],
                 "text": "Break automation plans into numbered steps before executing shell commands.",
+                "agent": "code_act",
                 "tags": ["code_act", "planning"],
             },
             {
                 "step": 3,
                 "text": "Verify every command's output before crafting the final summary.",
+                "agent": "code_act",
                 "tags": ["code_act", "planning"]
             },
         ],
