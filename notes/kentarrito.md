@@ -1209,7 +1209,11 @@ Make exp8_csv_small/train_v4_eval.py following
 3. run_problem is the function relevant to the modification here. Look at that function carefully
 ```
 
-- [ ] Debug 1 train_v4_eval.py
+- [x] Debug 1 train_v4_eval.py
+```
+Modify train_v4_eval.py following
+1. Judge knowledge to be selected by LLM. The input info should be made refering to prompt in generate_step_knowledge in train_v3_eval.py
+2. If None is specified in step field, put the knowledge in any step's candidate knowledge
 ```
 
 
