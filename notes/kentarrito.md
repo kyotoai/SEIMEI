@@ -1216,6 +1216,22 @@ Modify train_v4_eval.py following
 2. If None is specified in step field, put the knowledge in any step's candidate knowledge
 ```
 
+- [x] Make concrete agents in exp8_csv_small/train_v4_eval.py
+```
+Add agents in DEFAULT_KNOWLEDGE_POOL in exp8_csv_small/train_v4_eval.py following
+
+1. code_act agent
+    * Make knowledge to use each command. For example, "Use `ls` command to check what files are in the current directory", "Run `rg` command to search keywords in some files", "Make python code to see the head of the file", etc. Make around 10 ~ 20 of them.
+    * Add other useful techniques to find some non trivial facts or parameters behind csv files. Ex. "Try to make python code, replicate a csv file, and compare it with the original one to see how the file is generated.". Make around 10 ~ 20 of them.
+
+2. think agent
+    * Add knowledge of thinking ways to make a good answer. Ex. "Rethink about user's question again, what should be included in answer, and determine what to do next.", "Ensure you didn't make any mistake on the calculation you did in last step.", "Verify that ...", "Think another way of solving ...", etc. Make around 10 ~ 20 of them.
+
+When generating knowledge set step None.
+```
+
+
+
 
 - [ ] Generate Deep Research base
 
