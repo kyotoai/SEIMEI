@@ -107,10 +107,10 @@ class code_act(Agent):
         is_python_command = bool(python_heredoc) or _is_python_command_text(code)
         command_for_content = _summarize_python_command(code) if is_python_command else code
         summary = f"$ {command_for_content}\n[exit {rc}]\nstdout:\n{stdout}\n\nstderr:\n{stderr}"
-        log_data: Dict[str, Any] = {"command": code, "output": stdout, "error": stderr}
+        log_data: Dict[str, Any] = {"command": code, "output": stdout, "error": stderr, "knowledge_used":knowledge_used}
         if knowledge_log_texts:
             log_data["knowledge"] = knowledge_log_texts
-        result: Dict[str, Any] = {"content": summary, "code": code, "log": log_data}
+        result: Dict[str, Any] = {"content": summary, "code": code, "log": log_data, "knowledge_used":knowledge_used}
         if knowledge_payload:
             result["knowledge"] = knowledge_payload
         if knowledge_ids:

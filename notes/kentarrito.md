@@ -1145,9 +1145,9 @@ Deeply understand exp7/train_v3.py and implement the following features in train
 4. save the score results of all the inference made.
 ```
 
-## Nov 5
+## Nov 6
 
-- [ ] Debug exp7/train_v3_eval.py
+- [x] Debug exp7/train_v3_eval.py
 ```
 Modify exp7/train_v3_eval.py, and exp8_small_csv/train_v3_eval.py following
 1. I want you to add a final process after ending `for step in range(1, n_knowledge_steps + 1):` in run_problem function. Since it's taking the best result from some samples for each step, comparing it with base result which is from 1 sample is not fair. So after you get knowledge to use in each step in the for loop, rerun the base result and knowledge result again for 3 times (this should be in the parameters on top) respectively and compare the result.
@@ -1162,6 +1162,37 @@ Modify exp7/train_v3_eval.py, and exp8_small_csv/train_v3_eval.py following
     "detail": [], # the list of the result now
 }
 ```
+
+- [x] Run exp8_csv_small/train_v3_eval.py -> exp8_csv_small/train_v3_eval_results.json
+
+- [x] Debug 2 exp8_csv_small/train_v3_eval.py 
+    - Improve prompt of generate_step_knowledge. Now output of the prompt always have think agent but it should be more varient. Add more information about each agent into the prompt refering to the prompt in seimei.py llm_routing function's prompt. Also add more explanation of what the agent field is about. Ex. "The agent designates what agent is run in the step". 
+
+- [x] Manual knowledge (feature/klg_force_agent)
+```
+    - In exp8_csv_small/train_v3_eval.py, manual_entries should also designates what agent should be selected in llm_routing for each step. Now seimei accepts knowledge_config like the following:
+'''
+knowledge_config: {
+    "knowledge": Optional[Union[str, List[str], Dict, List[Dict]]] = None,
+    "load_knowledge_path": Optional[Union[str, Path]] = None,
+    "generate_knowledge": Optional[bool] = False,
+    "save_knowledge_path": Optional[Union[str, Path]] = None,
+    "knowledge_prompt_path": Optional[Union[str, Path]] = None,
+}
+
+Here "knowledge" is
+[
+    {
+        "step": Optional[Union[int, List[int]]],  # this designates in which step, the knoweledge is used.
+        "id": Optional[int],
+        "load_knowledge_path": Optional[str],
+        "text": str,
+        "tags": List[str],
+    }
+]
+'''
+
+Add agent field too in the knowledge dict and if agent is specified, choose the agent in the routing in the step. Btw, agent field should be str or List[str]. If it's a list, make llm_routing
 
 - [ ] Do many experiments on the code above.
 

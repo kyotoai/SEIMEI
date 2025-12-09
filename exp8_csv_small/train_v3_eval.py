@@ -9,7 +9,7 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp8_csv_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results_TEST.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results_TEST4.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 5
 DEFAULT_N_KNOWLEDGE_STEPS = 7 # can reduce randomness
@@ -393,7 +393,14 @@ async def generate_step_knowledge(
         "- Write 1–3 short lines that describe the thinking path or small experiment, not the final answer.\n"
         "- Focus on what to calculate, compare, inspect, or log so the reasoning stays aligned.\n"
         "- original_text may reference concrete column names or entities from this transcript.\n"
-        "- text must be abstract and reusable (use generic terms like 'target column' or 'input table').\n\n"
+        "- text must be abstract and reusable (use generic terms like 'target column' or 'input table').\n"
+        "- Choose the agent whose skills progress this specific step; vary the choice beyond think when warranted.\n\n"
+        "Agents and agent field:\n"
+        "- The agent designates which SEIMEI agent executes this inserted step.\n"
+        "- think — Plans the next actions by synthesizing prior findings and knowledge cues.\n"
+        "- code_act — Runs small Python or shell commands (e.g., pandas snippets) to inspect or compute from the CSV.\n"
+        "- web_search — Performs a quick web lookup to gather missing outside facts or clarifications.\n"
+        "- answer — Summarizes gathered evidence into a final response when the solution is ready.\n\n"
         "Output format (JSON only):\n"
         "[\n"
         "  {\n"

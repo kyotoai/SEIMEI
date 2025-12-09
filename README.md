@@ -356,6 +356,7 @@ Pass a `knowledge_config` dictionary to `seimei.__call__` to control every knowl
   - `id`: Optional numeric identifier.
   - `load_knowledge_path`: Merge an additional knowledge file only for the selected steps.
   - `text`: Free-form knowledge snippet (stored under the `*` wildcard agent).
+  - `agent`: String or list of agent names. Scope the knowledge to those agents and, when paired with `step`, constrain routing to that agent (a list keeps LLM routing but only among the provided names).
   - `tags`: Optional list of short labels.
 
 Example:
@@ -370,6 +371,7 @@ knowledge_config = {
         {
             "text": "Prefer concise shell commands when drafting automation plans.",
             "tags": ["code_act", "heuristic"],
+            "agent": "think",
         },
         {
             "step": [1, 2],
@@ -379,11 +381,14 @@ knowledge_config = {
             "step": 3,
             "text": "Before final answers double-check every cited number against the workspace files.",
             "id": 9001,
+            "agent": ["think", "answer"],
         },
     ],
 }
 result = await orchestrator(messages=dialogue, knowledge_config=knowledge_config)
 ```
+
+When a manual entry defines both `step` and `agent`, SEIMEI positions that agent (or short list of agents) directly in the router for the matching step so the rerun follows the prescribed path.
 
 Step-scoped knowledge is merged into `shared_ctx["knowledge"]` right before the corresponding agent runs, so agents automatically pick it up through helpers such as `seimei.knowledge.utils.get_agent_knowledge`.
 
