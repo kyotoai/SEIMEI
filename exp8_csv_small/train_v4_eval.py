@@ -19,7 +19,7 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "plan_columns",
         "agent": "think",
-        "step": 1,
+        "step": [0, 1, 2],
         "text": (
             "Restate the task, list the CSV columns that look relevant, and sketch a two-step plan "
             "before writing any tools."
@@ -29,7 +29,7 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "inspect_csv",
         "agent": "think",
-        "step": [1, 2],
+        "step": None,
         "text": (
             "Load the CSV into pandas, call head() and describe() on the metrics of interest, and "
             "note any missing or surprising values."
@@ -39,7 +39,7 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "compare_groups",
         "agent": "think",
-        "step": 2,
+        "step": None,
         "text": (
             "Group by the key dimension mentioned in the question, compute aggregates that answer "
             "the prompt, and log the intermediate results."
@@ -49,12 +49,257 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "validate_answer",
         "agent": "think",
-        "step": 3,
+        "step": None,
         "text": (
             "Double-check the computed answer against the reference columns, ensure units match, "
             "and explain any assumptions before concluding."
         ),
         "tags": ["validation", "explanation"],
+    },
+    {
+        "id": "code_ls_inventory",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `ls -a` to inventory the working directory before touching files so you know which CSVs, notes, or scripts exist.",
+        "tags": ["shell", "ls", "context"],
+    },
+    {
+        "id": "code_pwd_confirm",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `pwd` and ensure it matches the dataset's location; misaligned paths often explain missing-file errors.",
+        "tags": ["shell", "pwd", "sanity-check"],
+    },
+    {
+        "id": "code_rg_search",
+        "agent": "code_act",
+        "step": None,
+        "text": "Fire `rg -n \"keyword\"` across the repo to find where a metric or parameter is defined before assuming its meaning.",
+        "tags": ["shell", "rg", "search"],
+    },
+    {
+        "id": "code_head_preview",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `head -n 20 some.csv` to glance at headers and value formatting without opening heavy tooling.",
+        "tags": ["shell", "head", "preview"],
+    },
+    {
+        "id": "code_tail_logs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `tail -n 20` on generated artifacts to inspect the most recent rows that often contain anomalies.",
+        "tags": ["shell", "tail", "sanity-check"],
+    },
+    {
+        "id": "code_wc_rowcount",
+        "agent": "code_act",
+        "step": None,
+        "text": "`wc -l file.csv` quickly reveals row counts so you can compare dataset sizes without loading pandas.",
+        "tags": ["shell", "wc", "metrics"],
+    },
+    {
+        "id": "code_cut_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pipe through `cut -d',' -f1-5 file.csv | head` when you only need a few early columns for orientation.",
+        "tags": ["shell", "cut", "preview"],
+    },
+    {
+        "id": "code_python_head",
+        "agent": "code_act",
+        "step": None,
+        "text": "Spin up a short Python snippet `import pandas as pd; print(pd.read_csv(...).head())` to inspect with types and NaNs annotated.",
+        "tags": ["python", "pandas", "preview"],
+    },
+    {
+        "id": "code_python_schema",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write a helper that loads the CSV and prints `df.dtypes` so you know which columns are numeric or categorical.",
+        "tags": ["python", "schema", "pandas"],
+    },
+    {
+        "id": "code_diff_versions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `diff` between two CSV snapshots (or `git diff`) to highlight columns that changed when experiments were rerun.",
+        "tags": ["shell", "diff", "comparison"],
+    },
+    {
+        "id": "code_sort_values",
+        "agent": "code_act",
+        "step": None,
+        "text": "Make a quick pandas script to `sort_values` by the target metric and print the top/bottom rows to see effect extremes.",
+        "tags": ["python", "ranking", "analysis"],
+    },
+    {
+        "id": "code_value_counts",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `df['column'].value_counts()` to uncover category prevalence or confirm that a flag toggled as expected.",
+        "tags": ["python", "pandas", "diagnostics"],
+    },
+    {
+        "id": "code_extract_params",
+        "agent": "code_act",
+        "step": None,
+        "text": "Parse filenames with Python (Path.stem.split or regex) to extract hyper-parameters encoded outside the CSV body.",
+        "tags": ["python", "parsing", "metadata"],
+    },
+    {
+        "id": "code_clone_compare",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write Python to duplicate a CSV row-by-row, regenerate a derived column, and diff the result to deduce the transformation.",
+        "tags": ["python", "replication", "csv"],
+    },
+    {
+        "id": "code_group_inspection",
+        "agent": "code_act",
+        "step": None,
+        "text": "Automate `df.groupby(key).agg({...})` and print the summary so you can spot hidden parameter regimes.",
+        "tags": ["python", "groupby", "analysis"],
+    },
+    {
+        "id": "code_hist_distributions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Plot quick histograms or `df[column].describe()` to detect skewed distributions that hint at tuning knobs.",
+        "tags": ["python", "statistics", "exploration"],
+    },
+    {
+        "id": "code_delta_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute differences between sequential rows (`df[column].diff()`) to catch incremental schedules or warmups.",
+        "tags": ["python", "timeseries", "analysis"],
+    },
+    {
+        "id": "code_join_metadata",
+        "agent": "code_act",
+        "step": None,
+        "text": "Join the CSV with auxiliary metadata tables to see which hidden flags align with performance spikes.",
+        "tags": ["python", "merge", "metadata"],
+    },
+    {
+        "id": "code_checksum_validate",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute a hash (`md5sum file.csv`) before and after transformations to ensure you are analyzing the intended version.",
+        "tags": ["shell", "md5sum", "integrity"],
+    },
+    {
+        "id": "code_sampling_probe",
+        "agent": "code_act",
+        "step": None,
+        "text": "Sample a handful of random rows (`df.sample(5, random_state=0)`) to manually verify pattern assumptions.",
+        "tags": ["python", "sampling", "validation"],
+    },
+    {
+        "id": "code_param_grid",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pivot parameters versus metrics (`df.pivot_table`) to reverse-engineer which hyper-parameters matter most.",
+        "tags": ["python", "pivot", "analysis"],
+    },
+    {
+        "id": "code_correlate_metrics",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `df.corr(numeric_only=True)` to uncover non-trivial relationships between metrics and latent knobs.",
+        "tags": ["python", "correlation", "insight"],
+    },
+    {
+        "id": "code_flag_anomalies",
+        "agent": "code_act",
+        "step": None,
+        "text": "Add a quick check that flags rows with z-score > 3 to spot outliers that often encode special-case settings.",
+        "tags": ["python", "anomaly", "quality"],
+    },
+    {
+        "id": "code_compare_runs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
+        "tags": ["python", "concat", "comparison"],
+    },
+    {
+        "id": "think_restate_goal",
+        "agent": "think",
+        "step": None,
+        "text": "Pause to restate the user's exact question and outline the must-have elements before diving deeper.",
+        "tags": ["reflection", "planning"],
+    },
+    {
+        "id": "think_list_outputs",
+        "agent": "think",
+        "step": None,
+        "text": "List which outputs, metrics, or comparisons the answer must cover so you do not wander off-task.",
+        "tags": ["requirements", "focus"],
+    },
+    {
+        "id": "think_trace_evidence",
+        "agent": "think",
+        "step": None,
+        "text": "Map each claim to specific columns or calculations you intend to cite, ensuring the final answer is traceable.",
+        "tags": ["evidence", "planning"],
+    },
+    {
+        "id": "think_unit_check",
+        "agent": "think",
+        "step": None,
+        "text": "Verify that all numbers share the same units/time windows; mismatched scales often explain contradictory results.",
+        "tags": ["validation", "consistency"],
+    },
+    {
+        "id": "think_verify_math",
+        "agent": "think",
+        "step": None,
+        "text": "Recompute any manual math from the prior step to make sure rounding or indexing errors did not creep in.",
+        "tags": ["double-check", "math"],
+    },
+    {
+        "id": "think_alt_strategy",
+        "agent": "think",
+        "step": None,
+        "text": "If the current line of attack stalls, brainstorm an alternate decomposition (grouping, filtering, new metric) before proceeding.",
+        "tags": ["problem-solving", "flexibility"],
+    },
+    {
+        "id": "think_dependency_scan",
+        "agent": "think",
+        "step": None,
+        "text": "Ensure you are referencing the correct dataset path/run ID so that subsequent evidence actually answers the question.",
+        "tags": ["context", "validation"],
+    },
+    {
+        "id": "think_surface_assumptions",
+        "agent": "think",
+        "step": None,
+        "text": "List hidden assumptions (e.g., monotonicity, data completeness) and plan to confirm or caveat them.",
+        "tags": ["assumptions", "rigor"],
+    },
+    {
+        "id": "think_contradiction_scan",
+        "agent": "think",
+        "step": None,
+        "text": "Look for any rows or metrics that contradict your emerging story and address them explicitly.",
+        "tags": ["validation", "covering-cases"],
+    },
+    {
+        "id": "think_audience_check",
+        "agent": "think",
+        "step": None,
+        "text": "Imagine how the user will consume the answer—decide if they need a comparison, a recommendation, or a single figure.",
+        "tags": ["communication", "audience"],
+    },
+    {
+        "id": "think_gap_review",
+        "agent": "think",
+        "step": None,
+        "text": "Before finalizing, scan for unanswered sub-questions or missing context that the user implicitly expects.",
+        "tags": ["coverage", "quality"],
     },
 ]
 
