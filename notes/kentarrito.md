@@ -1193,8 +1193,25 @@ Here "knowledge" is
 '''
 
 Add agent field too in the knowledge dict and if agent is specified, choose the agent in the routing in the step. Btw, agent field should be str or List[str]. If it's a list, make llm_routing
+```
 
-- [ ] Do many experiments on the code above.
+- [x] Do many experiments on the code above
+    train_v3_eval_results1.json -> it got well, no routing force
+    train_v3_eval_results2.json -> didn't go well, routing force
+    train_v3_eval_results3.json -> didn't go well, no routing force
+    train_v3_eval_results4.json or train_v3_eval_results5.json -> without python code omit. didn't go well.
+
+- [x] Make manual agents (feature/manual_klg), train_v4_eval.py
+```
+Make exp8_csv_small/train_v4_eval.py following
+1. knowledge in each step is all retrieved from DEFAULT_KNOWLEDGE_POOL set at the top of the file. 
+2. refer to train_v3_eval.py for most of the functions to be used. Also input and output file format should be same. 
+3. run_problem is the function relevant to the modification here. Look at that function carefully
+```
+
+- [ ] Debug 1 train_v4_eval.py
+```
+
 
 - [ ] Generate Deep Research base
 
