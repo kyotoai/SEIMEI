@@ -1246,6 +1246,11 @@ Make exp8_csv_small/train_v4_eval2.py following
 
 - [ ] Run exp8_csv_small/train_v4_eval2.py -> "train_v4_eval2_results1.json"
 
+- [x] Make exp8_csv_small/train_v4_eval3.py
+```
+I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
+```
+
 
 
 - [ ] Generate Deep Research base
