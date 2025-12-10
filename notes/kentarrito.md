@@ -1193,8 +1193,65 @@ Here "knowledge" is
 '''
 
 Add agent field too in the knowledge dict and if agent is specified, choose the agent in the routing in the step. Btw, agent field should be str or List[str]. If it's a list, make llm_routing
+```
 
-- [ ] Do many experiments on the code above.
+- [x] Do many experiments on the code above
+    train_v3_eval_results1.json -> it got well, no routing force
+    train_v3_eval_results2.json -> didn't go well, routing force
+    train_v3_eval_results3.json -> didn't go well, no routing force
+    train_v3_eval_results4.json or train_v3_eval_results5.json -> without python code omit. didn't go well.
+
+- [x] Make manual agents (feature/manual_klg), train_v4_eval.py
+```
+Make exp8_csv_small/train_v4_eval.py following
+1. knowledge in each step is all retrieved from DEFAULT_KNOWLEDGE_POOL set at the top of the file. 
+2. refer to train_v3_eval.py for most of the functions to be used. Also input and output file format should be same. 
+3. run_problem is the function relevant to the modification here. Look at that function carefully
+```
+
+- [x] Debug 1 train_v4_eval.py
+```
+Modify train_v4_eval.py following
+1. Judge knowledge to be selected by LLM. The input info should be made refering to prompt in generate_step_knowledge in train_v3_eval.py
+2. If None is specified in step field, put the knowledge in any step's candidate knowledge
+```
+
+- [x] Make concrete agents in exp8_csv_small/train_v4_eval.py
+```
+Add agents in DEFAULT_KNOWLEDGE_POOL in exp8_csv_small/train_v4_eval.py following
+
+1. code_act agent
+    * Make knowledge to use each command. For example, "Use `ls` command to check what files are in the current directory", "Run `rg` command to search keywords in some files", "Make python code to see the head of the file", etc. Make around 10 ~ 20 of them.
+    * Add other useful techniques to find some non trivial facts or parameters behind csv files. Ex. "Try to make python code, replicate a csv file, and compare it with the original one to see how the file is generated.". Make around 10 ~ 20 of them.
+
+2. think agent
+    * Add knowledge of thinking ways to make a good answer. Ex. "Rethink about user's question again, what should be included in answer, and determine what to do next.", "Ensure you didn't make any mistake on the calculation you did in last step.", "Verify that ...", "Think another way of solving ...", etc. Make around 10 ~ 20 of them.
+
+When generating knowledge set step None.
+```
+
+- [x] Run exp8_csv_small/train_v4_eval.py -> "train_v4_eval_results1.json"
+-> mostly it used think agent.
+
+- [x] Run exp8_csv_small/train_v4_eval.py with only code_act agent knowledge -> "train_v4_eval_results2.json"
+-> didn't improve much
+
+- [x] Make exp8_csv_small/train_v4_eval2.py
+```
+Make exp8_csv_small/train_v4_eval2.py following
+1. use exp8_csv_small/train_v4_eval.py as a base code
+2. after finishing fair comparison at the end, in all problems where base answer wins, compare the highest scored base message and the lowest scored message with knowledge, and figure out why base answer defeated one with knowledge and why the knowledge used was useless.
+3. Output the reason to summary field in the output file and write more detailed parameters like (run_id whic compared, ...) in the detail field.
+```
+
+- [ ] Run exp8_csv_small/train_v4_eval2.py -> "train_v4_eval2_results1.json"
+
+- [x] Make exp8_csv_small/train_v4_eval3.py
+```
+I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
+```
+
+
 
 - [ ] Generate Deep Research base
 
