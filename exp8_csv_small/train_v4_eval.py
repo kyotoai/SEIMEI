@@ -9,53 +9,13 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp8_csv_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_results.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_results2.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_FINAL_RERUNS = 3
 DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
-    {
-        "id": "plan_columns",
-        "agent": "think",
-        "step": [0, 1, 2],
-        "text": (
-            "Restate the task, list the CSV columns that look relevant, and sketch a two-step plan "
-            "before writing any tools."
-        ),
-        "tags": ["planning", "orientation"],
-    },
-    {
-        "id": "inspect_csv",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Load the CSV into pandas, call head() and describe() on the metrics of interest, and "
-            "note any missing or surprising values."
-        ),
-        "tags": ["inspection", "pandas"],
-    },
-    {
-        "id": "compare_groups",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Group by the key dimension mentioned in the question, compute aggregates that answer "
-            "the prompt, and log the intermediate results."
-        ),
-        "tags": ["groupby", "analysis"],
-    },
-    {
-        "id": "validate_answer",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Double-check the computed answer against the reference columns, ensure units match, "
-            "and explain any assumptions before concluding."
-        ),
-        "tags": ["validation", "explanation"],
-    },
     {
         "id": "code_ls_inventory",
         "agent": "code_act",
@@ -224,6 +184,48 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
         "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
         "tags": ["python", "concat", "comparison"],
     },
+]
+'''
+    {
+        "id": "plan_columns",
+        "agent": "think",
+        "step": [0, 1, 2],
+        "text": (
+            "Restate the task, list the CSV columns that look relevant, and sketch a two-step plan "
+            "before writing any tools."
+        ),
+        "tags": ["planning", "orientation"],
+    },
+    {
+        "id": "inspect_csv",
+        "agent": "think",
+        "step": None,
+        "text": (
+            "Load the CSV into pandas, call head() and describe() on the metrics of interest, and "
+            "note any missing or surprising values."
+        ),
+        "tags": ["inspection", "pandas"],
+    },
+    {
+        "id": "compare_groups",
+        "agent": "think",
+        "step": None,
+        "text": (
+            "Group by the key dimension mentioned in the question, compute aggregates that answer "
+            "the prompt, and log the intermediate results."
+        ),
+        "tags": ["groupby", "analysis"],
+    },
+    {
+        "id": "validate_answer",
+        "agent": "think",
+        "step": None,
+        "text": (
+            "Double-check the computed answer against the reference columns, ensure units match, "
+            "and explain any assumptions before concluding."
+        ),
+        "tags": ["validation", "explanation"],
+    },
     {
         "id": "think_restate_goal",
         "agent": "think",
@@ -302,6 +304,7 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
         "tags": ["coverage", "quality"],
     },
 ]
+'''
 
 BASE_SYSTEM_PROMPT_LIST = [
     "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
