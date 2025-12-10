@@ -1230,6 +1230,21 @@ Add agents in DEFAULT_KNOWLEDGE_POOL in exp8_csv_small/train_v4_eval.py followin
 When generating knowledge set step None.
 ```
 
+- [x] Run exp8_csv_small/train_v4_eval.py -> "train_v4_eval_results1.json"
+-> mostly it used think agent.
+
+- [x] Run exp8_csv_small/train_v4_eval.py with only code_act agent knowledge -> "train_v4_eval_results2.json"
+-> didn't improve much
+
+- [x] Make exp8_csv_small/train_v4_eval2.py
+```
+Make exp8_csv_small/train_v4_eval2.py following
+1. use exp8_csv_small/train_v4_eval.py as a base code
+2. after finishing fair comparison at the end, in all problems where base answer wins, compare the highest scored base message and the lowest scored message with knowledge, and figure out why base answer defeated one with knowledge and why the knowledge used was useless.
+3. Output the reason to summary field in the output file and write more detailed parameters like (run_id whic compared, ...) in the detail field.
+```
+
+- [ ] Run exp8_csv_small/train_v4_eval2.py -> "train_v4_eval2_results1.json"
 
 
 
