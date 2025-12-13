@@ -1251,6 +1251,40 @@ Make exp8_csv_small/train_v4_eval2.py following
 I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
 ```
 
+- [x] Add google search api in (main branch)
+
+
+```
+import os
+import requests
+
+API_KEY = os.environ["GOOGLE_CSE_API_KEY"]   # set this in your env
+CX = os.environ["GOOGLE_CSE_CX"]             # your Search engine ID (cx)
+
+def google_search(query: str, num: int = 5):
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        "key": API_KEY,
+        "cx": CX,
+        "q": query,
+        "num": num,          # max 10 per request
+    }
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+if __name__ == "__main__":
+    data = google_search("KyotoAI RMSearch", num=5)
+    items = data.get("items", [])
+    for i, it in enumerate(items, 1):
+        print(f"{i}. {it.get('title')}")
+        print(f"   {it.get('link')}")
+        print(f"   {it.get('snippet')}\n")
+```
+
+<script async src="https://cse.google.com/cse.js?cx=a7c048dc2761a4601">
+</script>
+<div class="gcse-search"></div>
 
 
 - [ ] Generate Deep Research base

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 import re
 from html import unescape
 from typing import Any, Dict, List, Optional, Sequence, Tuple
@@ -16,6 +17,9 @@ _MAX_CONTENT_CHARS = 4000
 _FETCH_TIMEOUT = 12
 _HTML_TAG_RE = re.compile(r"<[^>]+>")
 _WHITESPACE_RE = re.compile(r"\s+")
+_GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
+_GOOGLE_API_KEY_ENV = "GOOGLE_CSE_API_KEY"
+_GOOGLE_CX_ENV = "GOOGLE_CSE_CX"
 
 
 @register
@@ -36,22 +40,28 @@ class web_search(Agent):
         if knowledge_entries and llm:
             refined_query, refinement_note = await _refine_query(llm, query, knowledge_entries)
 
-        try:
-            from duckduckgo_search import DDGS  # type: ignore
-        except Exception:
+        results, search_meta = await _perform_search(refined_query, _MAX_SEARCH_RESULTS)
+        if search_meta.get("unavailable"):
             return {
                 "content": (
-                    "Web search backend not installed. Please `pip install duckduckgo_search`, "
-                    "or provide a custom search backend."
+                    "Web search backend unavailable. Set GOOGLE_CSE_API_KEY and GOOGLE_CSE_CX for Google Custom "
+                    "Search (see README) or install the `duckduckgo_search` package."
                 ),
-                "log": {"query": query},
+                "log": {
+                    "query": query,
+                    "refined_query": refined_query,
+                    "search_backend": search_meta.get("backend"),
+                    "search_attempts": search_meta.get("attempts", []),
+                },
             }
-
-        results = await _perform_search(refined_query, _MAX_SEARCH_RESULTS)
         pages = await _fetch_top_pages(results, _MAX_FETCHED_PAGES)
         synthesis = await _summarize_pages(llm, refined_query, pages, knowledge_entries)
 
-        lines = [f"Query attempted: {refined_query}", "Results:"]
+        backend_label = search_meta.get("backend")
+        lines = [f"Query attempted: {refined_query}"]
+        if backend_label:
+            lines.append(f"Search backend: {backend_label}")
+        lines.append("Results:")
         for i, r in enumerate(results[: _MAX_SEARCH_RESULTS], 1):
             title = r.get("title", "").strip()
             href = r.get("href", "").strip()
@@ -79,6 +89,15 @@ class web_search(Agent):
         if refinement_note:
             lines.append("")
             lines.append(refinement_note)
+        attempt_errors = [
+            f"{attempt['backend']}: {attempt['error']}"
+            for attempt in search_meta.get("attempts", [])
+            if attempt.get("error")
+        ]
+        if attempt_errors:
+            lines.append("")
+            lines.append("Backend notes:")
+            lines.extend(f"- {msg}" for msg in attempt_errors)
 
         if not results:
             lines.append("No results returned; consider adjusting the keywords or broadening the query.")
@@ -91,6 +110,8 @@ class web_search(Agent):
                 "pages": [{**page, "content": page["content"][:1000]} for page in pages],
                 "refinement_note": refinement_note,
                 "synthesis": synthesis,
+                "search_backend": backend_label,
+                "search_attempts": search_meta.get("attempts"),
             },
         }
         if knowledge_texts:
@@ -134,19 +155,108 @@ async def _refine_query(llm: Any, query: str, knowledge_entries: Sequence[Dict[s
     return query, None
 
 
-async def _perform_search(query: str, max_results: int) -> List[Dict[str, Any]]:
+async def _perform_search(query: str, max_results: int) -> Tuple[List[Dict[str, Any]], Dict[str, Any]]:
+    google_key = os.environ.get(_GOOGLE_API_KEY_ENV)
+    google_cx = os.environ.get(_GOOGLE_CX_ENV)
+    attempts: List[Dict[str, Any]] = []
+    google_error: Optional[str] = None
+    google_success = False
+    if google_key and google_cx:
+        google_results, google_error = await _perform_google_search(query, max_results, google_key, google_cx)
+        attempts.append(
+            {
+                "backend": "google_custom_search",
+                "error": google_error,
+                "result_count": len(google_results),
+            }
+        )
+        google_success = google_error is None
+        if google_results:
+            return google_results, {"backend": "google_custom_search", "attempts": attempts, "google_success": google_success}
+    elif not google_key or not google_cx:
+        missing = []
+        if not google_key:
+            missing.append(_GOOGLE_API_KEY_ENV)
+        if not google_cx:
+            missing.append(_GOOGLE_CX_ENV)
+        google_error = f"Missing Google Custom Search environment variables: {', '.join(missing)}."
+
+    ddg_results, ddg_error, ddg_available = await _perform_duckduckgo_search(query, max_results)
+    attempts.append(
+        {
+            "backend": "duckduckgo_search",
+            "error": ddg_error,
+            "result_count": len(ddg_results),
+        }
+    )
+    meta: Dict[str, Any] = {
+        "backend": "duckduckgo_search",
+        "attempts": attempts,
+        "google_success": google_success,
+        "duckduckgo_available": ddg_available,
+        "error": ddg_error or google_error,
+        "unavailable": not google_success and not ddg_available,
+    }
+    return ddg_results, meta
+
+
+async def _perform_google_search(
+    query: str, max_results: int, api_key: str, cx: str
+) -> Tuple[List[Dict[str, Any]], Optional[str]]:
+    loop = asyncio.get_event_loop()
+
+    def _run() -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        try:
+            resp = requests.get(
+                _GOOGLE_SEARCH_URL,
+                params={"key": api_key, "cx": cx, "q": query, "num": min(max_results, 10)},
+                timeout=_FETCH_TIMEOUT,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+        except requests.RequestException as exc:
+            return [], f"Google Custom Search API request failed: {exc}"
+        except ValueError as exc:
+            return [], f"Google Custom Search returned invalid JSON: {exc}"
+
+        if isinstance(data, dict) and data.get("error"):
+            message = data["error"].get("message") if isinstance(data["error"], dict) else data["error"]
+            return [], f"Google Custom Search API error: {message}"
+
+        items = data.get("items", []) if isinstance(data, dict) else []
+        results: List[Dict[str, Any]] = []
+        for item in items[:max_results]:
+            if not isinstance(item, dict):
+                continue
+            results.append(
+                {
+                    "title": (item.get("title") or item.get("htmlTitle") or "").strip(),
+                    "href": (item.get("link") or "").strip(),
+                    "body": (item.get("snippet") or item.get("htmlSnippet") or "").strip(),
+                }
+            )
+        return results, None
+
+    return await loop.run_in_executor(None, _run)
+
+
+async def _perform_duckduckgo_search(query: str, max_results: int) -> Tuple[List[Dict[str, Any]], Optional[str], bool]:
     try:
         from duckduckgo_search import DDGS  # type: ignore
-    except Exception:
-        return []
+    except Exception as exc:
+        return [], f"duckduckgo_search package unavailable: {exc}", False
 
     loop = asyncio.get_event_loop()
 
-    def _run() -> List[Dict[str, Any]]:
-        with DDGS() as ddgs:
-            return list(ddgs.text(query, max_results=max_results))
+    def _run() -> Tuple[List[Dict[str, Any]], Optional[str]]:
+        try:
+            with DDGS() as ddgs:
+                return list(ddgs.text(query, max_results=max_results)), None
+        except Exception as exc:
+            return [], str(exc)
 
-    return await loop.run_in_executor(None, _run)
+    results, error = await loop.run_in_executor(None, _run)
+    return results, (f"DuckDuckGo search failed: {error}" if error else None), True
 
 
 async def _fetch_top_pages(results: List[Dict[str, Any]], max_pages: int) -> List[Dict[str, str]]:
