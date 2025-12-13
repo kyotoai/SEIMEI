@@ -992,6 +992,7 @@ async def run_full_problem_trials(
         if trial_records
         else 0.0
     )
+    # NOTE PABLO : What about the variance ??
     return trial_records, mean_score
 
 
@@ -1285,7 +1286,8 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
         allow_code_exec=True,
         agent_log_head_lines=1,
-        max_tokens_per_question=40000,
+        # max_tokens_per_question=40000,
+        max_tokens_per_question=80000,
     )
 
     eval_entries, processed_ids, needs_resave = load_existing_eval_entries(dataset, args.output_path)

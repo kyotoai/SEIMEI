@@ -1203,6 +1203,7 @@ Add agent field too in the knowledge dict and if agent is specified, choose the 
 
 - [x] Make manual agents (feature/manual_klg), train_v4_eval.py
 ```
+# READ!!!
 Make exp8_csv_small/train_v4_eval.py following
 1. knowledge in each step is all retrieved from DEFAULT_KNOWLEDGE_POOL set at the top of the file. 
 2. refer to train_v3_eval.py for most of the functions to be used. Also input and output file format should be same. 
