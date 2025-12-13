@@ -1251,7 +1251,7 @@ Make exp8_csv_small/train_v4_eval2.py following
 I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
 ```
 
-- [x] Add google search api in (main branch)
+- [x] Add google search api in main branch
 
 
 ```
@@ -1282,10 +1282,12 @@ if __name__ == "__main__":
         print(f"   {it.get('snippet')}\n")
 ```
 
-<script async src="https://cse.google.com/cse.js?cx=a7c048dc2761a4601">
-</script>
-<div class="gcse-search"></div>
+- [ ] Generate exp9_mobile_data10
+```
+Generate 10 python files to generate csv files about mobile telecommunication data. Follow
+1. In the csv files, you should at least have columns, lattitude, longtitude, mobile_connection_data and provider. I wanna check if 
 
+```
 
 - [ ] Generate Deep Research base
 
