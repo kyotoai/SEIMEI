@@ -1145,7 +1145,7 @@ Deeply understand exp7/train_v3.py and implement the following features in train
 4. save the score results of all the inference made.
 ```
 
-## Nov 6
+## Dec 6
 
 - [x] Debug exp7/train_v3_eval.py
 ```
@@ -1251,6 +1251,302 @@ Make exp8_csv_small/train_v4_eval2.py following
 I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
 ```
 
+
+## Dec 10
+
+- feature/edit_file
+    - see how codex, gemini, openhands edit code.
+    - include code edit feature
+
+
+- [x] Make edit_file agent refering to codex
+```
+Analyze resources/codex/codex-rs/core/prompt.md and apply_patch features in resources/codex/ library and make edit_file agent in SEIMEI. Follow
+1. codex is written in a different language so try to rewrite it in python
+2. You have to investigate codex library deeply and analyze all the related files to apply_patch
+3. You should refer to other agent files in seimei/agents and check how to write agent files
+4. Check seimei/seimei.py for how agent files are orchestrated
+```
+
+- [ ] Google Search API
+
+- [x] Combine all agents into 1 (feature/delete_agent_routing)
+```
+Refer to resources/OpenHands library and combine all agents in seimei into 1 llm request. Follow
+1. Since there is no need to select agent in each step, llm_routing function shouldn't be used any more. Try to understand seimei.py deeply, delete unnecessary functions in it, and try to integrate all the agents into 1 prompt. In that prompt, you should specify how to call tool function for each agent. But you should still keep the agent files for outout processing. Also, include only agent function calls which are designated by agent_config in the prompt. So you shouldn't delete agents folder entirely. 
+2. In openhands, all agents are combined into 1 prompt and llm call is done for once in every step. Refer to openahnds/agent_hub, openahnds/core, and other relevant folders for more important information.
+3. In seimei folder, agent files are in seimei/agents/ and they are integrated by seimei/seimei.py
+4. You should copy prompt of agent from openhands and try to make the exactly same prompt as openhands.
+```
+
+
+
+## Edit file
+
+content:  <function=edit_file>
+*** Begin Patch
+*** Update File: README.md
+-SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
++SEIMEI enables thousands of agents to interact with one another. With a highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves state-of-the-art results on tasks that require deep reasoning.
+
+-Here's the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
++Here's an example of how SEIMEI works. Each agent interacts with an LLM and a document and makes inferences. These inferences are automatically integrated by the search engine and provide an answer to the question.
+
+-By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
++By training the search engine, we can optimize the thinking steps such as o1 or deepseek-r1.
+
+-We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
++We achieved an improvement in bigcodebench/deepseek-r1 with our search engine.
+
+-SEIMEI can be applied to make these useful functions!!
++SEIMEI can be applied to provide these useful functions.
+
+-This is an example of how you build SEIMEI on local gpu or rental server gpu.
++This is an example of how to build SEIMEI on a local GPU or a rental GPU server.
+
+-You can install SEIMEI using git clone the library
++You can install SEIMEI by cloning the repository with git clone
+
+-```sh
+-git clone https://github.com/kyotoai/SEIMEI.git
+-pip install -e SEIMEI/
+-```
++```sh
++git clone https://github.com/kyotoai/SEIMEI.git
++pip install -e ./SEIMEI/
++```
+
+-export OPENAI_API_KEY = "(your_openai_api_key)"
+-export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
++```bash
++export OPENAI_API_KEY="(your_openai_api_key)"
++export KYOTOAI_API_KEY="(your_kyotoai_api_key)"
++```
+
+-Here's an usage example using /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
++Here's a usage example using the /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
+
+-#### `[CONTENT OMITTED]`
++#### [CONTENT OMTTED]
+*** End Patch
+</function>
+[seimei] Step 4: Executing edit_file tool
+    <output>
+        [no content]
+
+
+## Dec 11
+
+- [x] Figure out bugs on feature/delete_agent_routing
+    - [x] investigate tool role -> input tokens shouldn't be overlapped -> https://platform.openai.com/docs/guides/prompt-caching#what-can-be-cached -> probably it's not related. -> give up for now
+    - [ ] I got `content:  I will apply targeted grammatical corrections to the root README.md. Here is the patch I will apply to fix the issues you asked for.`. Something is wrong with processing the output.
+    - [ ] delete <content>
+    - [ ] put row number of file when editting
+
+## Dec 12
+
+- [x] Fix 1 bug on feature/delete_agent_routing
+```
+When I ran examples/edit_file.py, it got following errors:
+1. apply patch couldn't process the llm output. This is the llm output example;
+'''
+<function=edit_file>
+*** Begin Patch
+*** Update File: README.md
+-SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
++SEIMEI enables thousands of agents to interact with one another. With a highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves state-of-the-art results on tasks that require deep reasoning.
+
+-Here's the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
++Here's an example of how SEIMEI works. Each agent interacts with an LLM and a document and makes inferences. These inferences are automatically integrated by the search engine and provide an answer to the question.
+
+-By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
++By training the search engine, we can optimize the thinking steps such as o1 or deepseek-r1.
+
+-We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
++We achieved an improvement in bigcodebench/deepseek-r1 with our search engine.
+
+-SEIMEI can be applied to make these useful functions!!
++SEIMEI can be applied to provide these useful functions.
+
+-This is an example of how you build SEIMEI on local gpu or rental server gpu.
++This is an example of how to build SEIMEI on a local GPU or a rental GPU server.
+
+-You can install SEIMEI using git clone the library
++You can install SEIMEI by cloning the repository with git clone
+
+-```sh
+-git clone https://github.com/kyotoai/SEIMEI.git
+-pip install -e SEIMEI/
+-```
++```sh
++git clone https://github.com/kyotoai/SEIMEI.git
++pip install -e ./SEIMEI/
++```
+
+-export OPENAI_API_KEY = "(your_openai_api_key)"
+-export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
++```bash
++export OPENAI_API_KEY="(your_openai_api_key)"
++export KYOTOAI_API_KEY="(your_kyotoai_api_key)"
++```
+
+-Here's an usage example using /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
++Here's a usage example using the /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
+
+-#### `[CONTENT OMITTED]`
++#### [CONTENT OMTTED]
+*** End Patch
+</function>
+'''
+
+To make it processable by apply_patch, you need to pass llm line numbers of file and output exact format that apply_patch can process. Refer to resources/codex deeply and figure out the exact format and modify the error.
+
+2. I got output like `content:  I will apply targeted grammatical corrections to the root README.md. Here is the patch I will apply to fix the issues you asked for.`. I think output process deleted some text following the text. Please make the log output whole text llm output.
+
+3. Now all the llm output have `<content>` as a prefix, which is probably added in some output process. Delete this.
+
+```
+
+- [x] Fix 2 bug on feature/delete_agent_routing
+```
+Nice work! But I need a bit more modifications
+1. apply patch is not going well and still makes some error. It's probably because number of lines are not specified. Modify seimei/prompt_templates.py and use `cat -n` so that LLM knows number of lines of a file for editing it.
+2. print out error cause in apply_patch.py so that I can know what's the error cause if it happens again
+```
+
+- [x] Fix 3 bug on feature/delete_agent_routing
+```
+I realized you didn't specify the apply_patch format in the prompt_templates. Refering to APPLY_PATCH_FORMAT_HINT, add it in WORKING_STYLE
+```
+
+```
+When I got 
+
+'''
+<function=code_act>\n<parameter=command>nl -ba README.md | sed -n '1,400p'</parameter>
+'''
+
+code_act or edit_file agent didn't output anything. Try to modify the prompt emphasizing the format and avoid that error. Also when it gets unexpected format, try to output the error message and pass it to the next agent. Try to not end the agent process when llm output is unexpected.
+```
+
+
+- [x] Fix 4 bug on feature/delete_agent_routing
+    - agent output should be included in user input. it got broken in 0ff9e80f1173ca935df6cc7691ddb640c4da33f0 commit.
+    - 
+```
+Fix the issue.
+1. At the end of every step, agent output should be added to user input in as [AGENT OUTPUT]. It used to work properly but your modification earlier collapsed the feature. Try to restore the feature. Also you shouldn't really add functions more and make code more complicated. Try to use existing functions to restore the feature.
+2. When llm outputs something like `I will inspect README.md to identify grammar issues before applying a patch.`, function call doesn't occur and the llm step loop in seimei.py finishes. But I want you to continue it even function is not provided. Just pass it as agent output to the next step and continue the inference in that case.
+```
+
+```
+No you didn't do it properly so I undid your modification. You should use format_agent_history function in llm.py. Also read the original code related to format_agent_history deeply and figure out how it works first. And using those functions, try to implement the same things again.
+```
+
+- [x] Fix 1 edit_file agent
+```
+Now llm is not outputing proper function call text for edit_file agent. 
+Ex:
+'''
+<function=edit_file>
+*** Begin Patch
+*** Update File: README.md
+-SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
++SEIMEI enables thousands of agents to interact with one another. With a highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves state-of-the-art results on tasks that require deep reasoning.
+
+-Here's the
+...
+-#### `[CONTENT OMITTED]`
++#### [CONTENT OMTTED]
+*** End Patch
+</function>
+'''
+
+Here it should output line numbers as well after @@, but it's not doing it now.
+
+Refer to resources/codex/codex-rs/core/prompt.md and improve seimei/prompt_templates.py. Adding example patch text in prompt_templates.py is also good. 
+```
+
+- [x] Fix 2 edit_file agent (GPT thinking)
+```
+But with this prompt, LLM doesn't generate correct patch output. It often has problem in @@ -<old_line>,<old_len> +<new_line>,<new_len> @@ part. Please search how patch format works in detail on the internet and improve the prompt. Especially try to state how to get <old_line>,<old_len> +<new_line>,<new_len> systematically from the output of cat -n so that LLM can correctly output those numbers.
+```
+
+
+
+- [ ] Frequent Errors
+```
+edit_file requires the entire apply_patch payload inside `<parameter=patch>...</parameter>`. Include *** Begin/End Patch markers, file headers, and @@ hunks.
+```
+
+- [x] Make apply_patch test
+```
+I wanna make a test python file in tests for testing seimei/editing/apply_patch.py. Make a several patch texts for README.md manually and test it using apply_patch.py (you can actually mmodify the readme).
+```
+
+- [x] from apply_patch.py, figure out the true code.
+```
+Investigate seimei/editing/apply_patch.py very deeply and carefully and check if instruction in seimei/prompt_templates.py to make patch text is correct or not. Also I think patch in tests/test_apply_patch.py looks having different format from one in the instruction. Why?
+```
+
+- [x] revise seimei/prompt_templates.py for patch without "@@ -a,b +c,d @@"
+```
+I want you to revise the prompt instructions to describe the actual supported format like ones in tests/test_apply_patch.py. It's because I tested seimei/prompt_templates.py a lot with generating "@@ -a,b +c,d @@" type of patch, but apply_patch could never process it correctly.
+```
+
+- output examples
+
+```llm_output1
+<function=edit_file>\n*** Begin Patch\n*** Update File: README.md\n@@ SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!!\n-SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!\n+SEIMEI enables thousands of agents to interact with each other. With a highly intelligent search engine, SEIMEI optimizes reasoning steps among agents and achieves state-of-the-art results on tasks requiring deep reasoning.\n*** End Patch\n</parameter>\n</function>
+```
+
+```llm_output2
+<function=edit_file>\n*** Begin Patch\n*** Update File: README.md\n@@ 41\n-\t  SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!\n+\t  SEIMEI enables thousands of agents to interact with each other. With a highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves state-of-the-art results on tasks requiring deep reasoning.\n@@ 98\n-\tHere\'s the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.\n+\tHere\'s an example of how SEIMEI works. Each agent interacts with an LLM and a document to make inferences. These inferences are automatically integrated by the search engine and provide an answer to the question.\n@@ 106\n-\tBy training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!\n+\tBy training the search engine, we can optimize thinking steps such as o1 or deepseek-r1.\n@@ 115\n-\tOur proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrieve the best ones!!\n+\tOur proprietary search model performs better than a semantic embedding model (so-called vector search). The graph above shows the result of training our model (3b) and the e5-mistral-7b model to search for the best agents. While the vector search model cannot really retrieve the best agents (because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrieve the best ones.\n@@ 127\n-We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!\n+\tWe achieved an improvement in bigcodebench/deepseek-r1 with our search engine.\n@@ 147\n-SEIMEI can be applied to make these useful functions!!\n+\tSEIMEI can be applied to make these useful functions.\n@@ 178\n-This is an example of how you build SEIMEI on local gpu or rental server gpu.\n+\tThis is an example of how to build SEIMEI on a local GPU or rental server GPU.\n@@ 178\n-You can use it by installing seimei using `pip install` or downloading this directory into your local folder.\n+\tYou can use it by installing SEIMEI with pip or by downloading this directory to your local folder.\n@@ 182\n-You can install SEIMEI using git clone the library\n+\tYou can install SEIMEI by cloning the repository with git clone.\n@@ 195\n-export OPENAI_API_KEY = "(your_openai_api_key)"\n-export KYOTOAI_API_KEY = "(your_k[CONTENT OMITTED]\n+export OPENAI_API_KEY="(your_openai_api_key)"\n+export KYOTOAI_API_KEY="(your_kyotoai_api_key)"\n*** End Patch\n</function>
+```
+
+```error_for_llm_output1_and_llm_output2
+output:
+    edit_file requires the entire apply_patch payload inside `<parameter=patch>...</parameter>`. Include *** Begin/End Patch markers, file headers, and @@ hunks.
+```
+
+```other_error_case
+[apply_patch] Patch application failed:
+Traceback (most recent call last):
+  File "/Users/multivac/Documents/github_project/SEIMEI/SEIMEI/seimei/editing/apply_patch.py", line 97, in apply_patch_to_workspace
+    return _apply_patch_impl(
+           ^^^^^^^^^^^^^^^^^^
+  File "/Users/multivac/Documents/github_project/SEIMEI/SEIMEI/seimei/editing/apply_patch.py", line 113, in _apply_patch_impl
+    operations = _parse_patch(patch_text)
+                 ^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/multivac/Documents/github_project/SEIMEI/SEIMEI/seimei/editing/apply_patch.py", line 175, in _parse_patch
+    raise PatchParseError("The last line of the patch must be '*** End Patch'")
+seimei.editing.apply_patch.PatchParseError: The last line of the patch must be '*** End Patch'
+    error:
+        patch_parse_error
+    exception:
+        The last line of the patch must be '*** End Patch'
+    patch_preview:
+        *** Begin Patch
+        *** Update File: README.md
+        @@ SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!!
+        -SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
+        +SEIMEI enables thousands of agents to interact with each other. With a highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning.
+        @@ Here's the example of how SEIMEI works.
+        -Here's the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
+        +Here's an example of how SEIMEI works. Each agent interacts with an LLM and a document and makes inferences. These inferences are automatically integrated by the search engine and provide an answer to the question.
+        @@ By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
+        -By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
+        +By training the search engine, we can optimize the thinking steps, such as o1 or deepseek-r1.
+        @@ Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrieve the best ones!!
+        -Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problem...
+```
+
+- [x] Improve the prompt more from the errors above
+
+* !!! -> Finally edit_file worked for the first time!!!!
+
+
+
 - [x] Add google search api in main branch
 
 
@@ -1292,7 +1588,129 @@ Generate 10 python files to generate csv files about mobile telecommunication da
 3. You should make a dataset.json. In there you should prepare question which asks about the hidden facts you prepared at 2. (Ex. "there are certain noise behind in some location. find it out", "Find some correlation between 2 points")
 4. Refer to exp8_csv_small for output format. Save csv folder, python folder and dataset.json under exp9_mobile_data_small folder. You can also refer to seimei/eval/generate_dataset_excel.py, seimei/eval/data_generators/excel.md. Those are the scripts which made exp8_csv_small. But this time, I want you to generate the python files one by one.
 5. csv file should have at least 1000 rows.
+
+
+## Dec 14
+
+### For plasma
+
+- [ ] Improve prompt to not `cat -n` and `cat` same part again and again.
+- [ ] Summarize the first prompt up and implement it into second one. Also cahnge variable name to SEIMEI_SYSTEM_PROMPT
+- [x] Generate better problems for gkv (exp11)
+```original
+1. your task is to make 10 patch files to modify gkv code (intentinally drop some features from the code), and make dataset.json.
+2. gkvp is a gyro-kinetic vlasov simulation code made with fortran
+3. your patch should intentionally drop a feature which is important in this library. The modification become a problem for code learner to practice implementing a new feature into the code. Also when I run the code by running `./shoot 1 1`, the output should be distinct from the one from normal code. 
+4. in dataset.json, you should include "problem", "answer", "expected_simulation_result_difference" field. In the problem field, you should make a task or question to implement the feature dropped by the patch application. In the answer field, make a detailed text to describe what to implement to restore the feature.
 ```
+
+```draft 1: modified by gpt5.2-standard-thinking
+You are the “GKV+ Coding Agent”: a careful senior engineer who can read, debug, and modify real codebases. You investigate first, make minimal safe edits, and keep the repo buildable/runnable.
+
+CONFIG (EDIT ONLY HERE):
+EXP_DIR = "./exp11_plasma_gkv/"
+PATCH_COUNT = 10
+PATCH_DIR = "patch_files/"
+DATASET_NAME = "dataset.json"
+# IMPORTANT: You MUST follow PATCH_COUNT strictly. Do not generate more or fewer patches.
+
+Goal
+- Create a small training dataset for code learners by intentionally *dropping important features* from the GKV-plus (gkvp) Fortran gyrokinetic Vlasov simulation code.
+
+What you must produce (obey CONFIG)
+- **PATCH_COUNT** patch files that intentionally remove/disable a meaningful feature in GKV+ (each patch is one “broken variant”).
+- One **DATASET_NAME** describing how to restore the dropped feature(s).
+
+Hard constraints
+- Modify **ONLY** files under: `gkvp/src/`
+  - Do NOT change `gkvp/run/`, `gkvp/lib/`, `benchmarks/`, scripts, Makefiles, namelist templates, or batch scripts.
+- After applying each patch, the code should still compile and run, but when running:
+  - `cd gkvp/run && ./shoot 1 1`
+  - the output/result must be **distinct** from the normal (unpatched) code in a way consistent with the dropped feature.
+- Avoid log spam across MPI ranks (gate logs with `if (rankg == 0)` if you add any output).
+- No new dependencies.
+
+How to work
+1) Identify a feature that is “important” in this library (e.g., physics model branch, geometry selection behavior, time-stepping component, diagnostic/output behavior, collision/field update, etc.).
+2) Implement a minimal change that disables/breaks that feature while keeping the program runnable.
+3) Ensure the “broken” behavior is observable in the simulation outputs for `./shoot 1 1`.
+4) Repeat for **PATCH_COUNT** distinct patches (different features or different failure modes).
+5) Write dataset.json entries that ask the learner to restore the feature and explain exactly how.
+
+Patch file format (must follow)
+- Each patch file is a plain-text payload in “apply_patch” style:
+
+  *** Begin Patch
+  *** Update File: gkvp/src/<relative_path>.f90
+  @@
+  -<old line(s)>
+  +<new line(s)>
+  *** End Patch
+
+Rules for patches
+- Use only `*** Update File:` (no renames, no deletes).
+- Paths must be repo-relative, and must be inside `gkvp/src/`.
+- Include enough context with `@@` hunks so the patch applies deterministically.
+- Keep changes small and localized (prefer toggling logic, bypassing a call, changing a conditional, returning early, substituting a simplified computation).
+
+dataset.json format (must follow)
+- JSON array with **PATCH_COUNT** objects (one per patch file), each containing:
+  - "problem": a clear task/question telling the learner what feature is missing and what to implement to restore it.
+  - "answer": detailed, step-by-step guidance on what to change (files/functions, variables, control flow) to restore the feature, including how to validate.
+  - "expected_simulation_result_difference": what will differ between broken vs restored runs (e.g., which diagnostics/fields change, qualitative direction, which file/output becomes wrong/right).
+
+Output directory layout (obey CONFIG exactly)
+- Produce artifacts as if writing into:
+
+  EXP_DIR
+  |- PATCH_DIR
+  |  |- patch0.txt
+  |  |- patch1.txt
+  |  ...
+  |  |- patch{PATCH_COUNT-1}.txt
+  |- DATASET_NAME
+
+Response requirements
+- Provide:
+  1) A short “Plan” (3–7 bullets).
+  2) “Files I will touch” (paths under gkvp/src only).
+  3) The full contents of patch0.txt … patch{PATCH_COUNT-1}.txt (clearly separated).
+  4) The full contents of DATASET_NAME.
+  5) Exact commands to build/run/validate (`cd gkvp/run && make && ./shoot 1 1`) and how to observe the difference.
+- If unsure about where a feature is implemented, state what you would search (symbols/files) and choose the safest minimal break that still compiles/runs.
+
+STRICTNESS NOTE (read carefully)
+- You MUST output EXACTLY **PATCH_COUNT** patch files.
+- You MUST name them exactly `patch0.txt` through `patch{PATCH_COUNT-1}.txt`.
+- You MUST create EXACTLY **PATCH_COUNT** dataset entries (one per patch).
+- Do not “approximately” follow counts—follow them exactly.
+```
+
+used: codex 0.72.0 + GPT5.1-codex-high-reasoning
+
+- [ ] Run 
+
+
+
+
+- [ ] Make autogen_klg_eval.py, autogen_klg_dataset.py
+- [ ] Make manual_klg_eval.py, manual_klg_dataset.
+- [ ] Write some base of thesis
+
+### For collaborators
+
+- [ ] Make develop branch to let ung and nick work on
+- [ ] Make better README for everybody
+- [ ] Let nick to work on other code benchmark like swe-bench (exp12)
+
+### For ntt
+
+- [ ] combine google place api
+- [ ] 
+
+
+
+## Past ToDo
 
 - [ ] Generate Deep Research base
 
@@ -1339,4 +1757,55 @@ messages=[
 Follow
 1. be sure not to include routing content in the agent llm. You should exclude it in prepare_messages in llm.py
 2. add knowledge retrieval in llm_routing mechanism too (Also in default, it should be off. Set an argument in seimei init)
+```
+
+
+
+```
+<CODEX_CLI_GUIDELINES>
+## Personality
+- Default to a concise, direct, and friendly tone. Explain only what the user needs to know to proceed.
+- State assumptions, call out prerequisites, and keep suggestions actionable.
+
+## AGENTS.md scope
+- Repos may contain `AGENTS.md`; each file governs the directory tree it sits in.
+- Obey the most specific instructions covering any file you read or edit.
+- System/developer/user instructions override `AGENTS.md` when conflicts arise.
+
+## Responsiveness
+- Before each tool call, send a one-to-two sentence preamble describing the immediate action (e.g., "Checking API routes next").
+- For long tasks, share occasional 8–10 word progress updates linking past work to the next step.
+- Alert the user before doing latency-heavy edits or multi-command sequences.
+
+## Planning
+- Use the `update_plan` tool for multi-step or ambiguous work; skip it only for the simplest 25% of tasks.
+- Plans should have multiple steps (no single-step plans), each 5–7 words, with exactly one `in_progress` at a time.
+- Update the plan after completing a step or when the approach changes.
+
+## Task execution
+- Investigate before acting; understand goals, deliverables, and constraints.
+- Treat the repo surgically: avoid format churn, speculative edits, or renames.
+- Keep edits minimal but complete, leaving temporary files or scratch notes out of the repo.
+- Use deterministic commands (`ls`, `rg`, `nl -ba`, etc.) and limit file reads to ≤250 lines per chunk.
+
+## Final response formatting
+- Use plain text; section headers only when they improve scanability (`**Title Case**`).
+- Bullets start with "- ", stay concise, and group related info (4–6 bullets max per section).
+- Reference files as `path:line` (single line only, no ranges) using repo-relative or absolute paths.
+- Wrap commands, paths, env vars, and identifiers in backticks.
+- Lead with the change explanation, follow with context and verification, and offer logical next steps when they exist.
+
+## Tool guidelines
+- Prefer `rg`/`rg --files` for search; fall back to other tools only if unavailable.
+- Keep shell commands on one line using `&&` when chaining steps (heredocs are the exception).
+- Before editing, capture context with `cat -n`/`nl -ba` so you have exact line numbers.
+- Default to ASCII characters unless the existing file already requires non-ASCII.
+
+## update_plan usage
+- Plans are required when you or the user outline TODOs or when work spans multiple dependent steps.
+- Mark steps `completed` once done and advance the next step to `in_progress`.
+- When all work is finished, update the plan to mark every item `completed` before delivering the final answer.
+</CODEX_CLI_GUIDELINES>
+
+
 ```
