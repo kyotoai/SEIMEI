@@ -33,6 +33,7 @@ DEFAULT_SYSTEM_PROMPT = (
 DEFAULT_AGENT_CONFIG: List[Dict[str, Any]] = [
     {"file_path": "seimei/agents/code_act.py"},
 ]
+# ASSESS: do other models improve the get_knowledge stage?? 
 DEFAULT_LLM_KWARGS: Dict[str, Any] = {
     "model": "gpt-5-mini",
 }
@@ -298,7 +299,7 @@ async def run_cli(args: CLIArgs) -> None:
             continue
 
         if user_input in {"/exit", "/quit", "/q"}:
-            print("Bye!")
+            print("Bye, SAYONARA!")
             break
 
         if user_input == "/help":

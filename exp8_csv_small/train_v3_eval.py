@@ -9,12 +9,12 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp8_csv_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results4.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results_TEST4.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
-DEFAULT_BATCH_SIZE = 10
-DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_BATCH_SIZE = 2
+DEFAULT_N_KNOWLEDGE_STEPS = 7 # can reduce randomness
 DEFAULT_KNOWLEDGE_PER_STEP = 3
-DEFAULT_FINAL_RERUNS = 3
+DEFAULT_FINAL_RERUNS = 8
 
 BASE_SYSTEM_PROMPT_LIST = [
     "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
@@ -554,6 +554,7 @@ async def run_problem(
             "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}",
         }
     ]
+    # Issue with randomness??
     base_messages = randomize_system_prompt(base_prompt_messages)
 
     base_result = await orchestrator(
@@ -572,6 +573,7 @@ async def run_problem(
         "base": {
             "run_id": base_run_id,
             "score": base_score,
+            #  COMMENT: Based on this we should give feedback to generate knowledge such thate score improves for every iteration
             "score_feedback": score_info.get("feedback"),
             "output": base_output,
         },
@@ -592,6 +594,7 @@ async def run_problem(
 
     print(f"[eval {index}] baseline score={base_score}")
 
+
     for step in range(1, n_knowledge_steps + 1):
         messages = get_messages_for_run(best_result, Path(orchestrator.log_dir))
         agent_messages = extract_agent_messages(messages)
@@ -606,16 +609,18 @@ async def run_problem(
             "candidate_evaluations": [],
             "best_index": None,
             "best_run_id": best_run_id,
+            #  COMMENT: we need to modify the prompt such that "starting_score" <= "best_score"
             "best_score": best_score,
             "delta_from_start": 0.0,
         }
-        record["steps"].append(step_record)
 
+        record["steps"].append(step_record)
         step_best_idx: Optional[int] = None
         step_best_result: Optional[Dict[str, Any]] = None
         step_best_score: Optional[float] = None
 
         for candidate_idx in range(knowledge_per_step):
+            # This should take into account "best_run_id"
             knowledge_entry = await generate_step_knowledge(
                 orchestrator.llm,
                 dataset_entry=dataset_entry,
@@ -656,6 +661,7 @@ async def run_problem(
             step_record["best_run_id"] = best_run_id
             step_record["best_score"] = best_score
             step_record["delta_from_start"] = round(best_score - step_record["starting_score"], 2)
+            # COMMENT: Important for score improvements
             chosen_knowledge = step_record["candidate_evaluations"][step_best_idx].get("knowledge") or {}
             step_record["selected_knowledge"] = chosen_knowledge
             manual_entry = {
@@ -669,6 +675,7 @@ async def run_problem(
             print(
                 f"[eval {index}] step {step}: best score={best_score} "
                 f"(delta {step_record['delta_from_start']})"
+                # COMMENT a message indicating whether the score improves with iterations should be added say cond_score= best_score> start_score f"Is your score improving? {condscore}"
             )
         else:
             print(f"[eval {index}] step {step}: no successful candidates")
@@ -691,7 +698,7 @@ async def run_problem(
     }
     record["steps_evaluated"] = len(record["steps"])
     record["selected_knowledge"] = [dict(entry) for entry in selected_manual_entries]
-
+# COMMENT: Important to check for improvements
     base_trials, base_mean = await run_full_problem_trials(
         orchestrator,
         dataset_entry=dataset_entry,
@@ -701,6 +708,7 @@ async def run_problem(
         dataset_index=index,
         label="base",
     )
+    # COMMENT: this should give a larger mean than base mean (IMPORTANT for prompt engineering)
     knowledge_trials, knowledge_mean = await run_full_problem_trials(
         orchestrator,
         dataset_entry=dataset_entry,
@@ -824,7 +832,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
         allow_code_exec=True,
         agent_log_head_lines=1,
-        max_tokens_per_question=40000,
+        max_tokens_per_question=80000,# Increase 
     )
 
     eval_entries, processed_ids, needs_resave = load_existing_eval_entries(dataset, args.output_path)
