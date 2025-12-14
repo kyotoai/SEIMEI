@@ -1252,7 +1252,48 @@ Make exp8_csv_small/train_v4_eval2.py following
 I have some files created by exp8_csv_small/train_v4_eval.py. I wanna analyze them with the same analysis I implemented in exp8_csv_small/train_v4_eval2.py. Make exp8_csv_small/train_v4_eval3.py to make analysis from already generated files by exp8_csv_small/train_v4_eval.py
 ```
 
+- [x] Add google search api in main branch
 
+
+```
+import os
+import requests
+
+API_KEY = os.environ["GOOGLE_CSE_API_KEY"]   # set this in your env
+CX = os.environ["GOOGLE_CSE_CX"]             # your Search engine ID (cx)
+
+def google_search(query: str, num: int = 5):
+    url = "https://www.googleapis.com/customsearch/v1"
+    params = {
+        "key": API_KEY,
+        "cx": CX,
+        "q": query,
+        "num": num,          # max 10 per request
+    }
+    r = requests.get(url, params=params, timeout=20)
+    r.raise_for_status()
+    return r.json()
+
+if __name__ == "__main__":
+    data = google_search("KyotoAI RMSearch", num=5)
+    items = data.get("items", [])
+    for i, it in enumerate(items, 1):
+        print(f"{i}. {it.get('title')}")
+        print(f"   {it.get('link')}")
+        print(f"   {it.get('snippet')}\n")
+```
+
+## Dec 13
+
+- [x] Generate exp9_mobile_data_small
+```
+Generate 10 python files to generate csv files about mobile telecommunication data. Follow
+1. In the csv files, you should at least have columns named time, lattitude, longtitude, connection_strength_data and provider (like UQ mobile). Also for each csv file, you should prepare some different columns for extra feature.
+2. EACH FILE SHOULD HAVE SOME SURPRISING OR INTERESTING FACTS WITH HIDDEN PARAMETER BEHIND THE DATA (Ex. "actually there is a constant sin wave noise in some location", "there was a correlation between location A and B in terms of ...!", etc). It's preferable if you prepare from something easy to something very difficult. In each python file, you should implement some features to generate data where the fact is behind.
+3. You should make a dataset.json. In there you should prepare question which asks about the hidden facts you prepared at 2. (Ex. "there are certain noise behind in some location. find it out", "Find some correlation between 2 points")
+4. Refer to exp8_csv_small for output format. Save csv folder, python folder and dataset.json under exp9_mobile_data_small folder. You can also refer to seimei/eval/generate_dataset_excel.py, seimei/eval/data_generators/excel.md. Those are the scripts which made exp8_csv_small. But this time, I want you to generate the python files one by one.
+5. csv file should have at least 1000 rows.
+```
 
 - [ ] Generate Deep Research base
 
