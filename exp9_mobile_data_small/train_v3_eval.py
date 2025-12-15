@@ -9,11 +9,11 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp9_mobile_data_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results3.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results4.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
-DEFAULT_N_KNOWLEDGE_STEPS = 1
-DEFAULT_KNOWLEDGE_PER_STEP = 1
+DEFAULT_N_KNOWLEDGE_STEPS = 6
+DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_FINAL_RERUNS = 7
 
 BASE_SYSTEM_PROMPT_LIST = [
