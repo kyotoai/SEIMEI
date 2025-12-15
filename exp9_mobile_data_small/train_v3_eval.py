@@ -9,10 +9,10 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp9_mobile_data_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results4.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results5.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
-DEFAULT_N_KNOWLEDGE_STEPS = 6
+DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_FINAL_RERUNS = 7
 
@@ -396,14 +396,26 @@ async def generate_step_knowledge(
     messages: Sequence[Dict[str, Any]],
     step: int,
     iteration: int,
+    prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
+    transcript_score: Optional[float] = None,
+    transcript_feedback: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     question = dataset_entry.get("Question", "")
     reference = dataset_entry.get("CorrectAnswer", "")
     transcript_json = json.dumps(messages, ensure_ascii=False, indent=2)
     step_text = get_agent_step_text(messages, step)
+    knowledge_snapshot = [dict(entry) for entry in prior_knowledge or []]
+    knowledge_json = json.dumps(knowledge_snapshot, ensure_ascii=False, indent=2)
+    score_str = "unknown" if transcript_score is None else f"{float(transcript_score):.2f}"
+    feedback_text = (transcript_feedback or "").strip() or "No judge feedback recorded."
     prompt = (
         f"You are writing reusable knowledge that will be inserted before agent step {step} "
         "in a CSV reasoning workflow.\n\n"
+        "Evaluation summary for the run that produced this transcript:\n"
+        f"- Score: {score_str}\n"
+        f"- Judge feedback: {feedback_text}\n"
+        "- Knowledge snippets already injected (JSON array, matches this transcript exactly):\n"
+        f"{knowledge_json}\n\n"
         f"Full message history before rerun (JSON transcript):\n{transcript_json}\n\n"
         f"Original agent step {step} transcript:\n{step_text}\n\n"
         f"Question:\n{question}\n\n"
@@ -592,6 +604,7 @@ async def run_problem(
     base_output = base_result.get("output", "")
     score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
     base_score = score_info.get("score", 0.0) or 0.0
+    base_feedback = score_info.get("feedback")
 
     record: Dict[str, Any] = {
         "id": entry_id,
@@ -599,7 +612,7 @@ async def run_problem(
         "base": {
             "run_id": base_run_id,
             "score": base_score,
-            "score_feedback": score_info.get("feedback"),
+            "score_feedback": base_feedback,
             "output": base_output,
         },
         "steps": [],
@@ -616,6 +629,7 @@ async def run_problem(
     best_result = base_result
     best_run_id = base_run_id
     best_score = base_score
+    best_feedback = base_feedback
 
     print(f"[eval {index}] baseline score={base_score}")
 
@@ -649,6 +663,9 @@ async def run_problem(
                 messages=messages,
                 step=step,
                 iteration=candidate_idx,
+                prior_knowledge=[dict(entry) for entry in selected_manual_entries],
+                transcript_score=best_score,
+                transcript_feedback=best_feedback,
             )
             if not knowledge_entry:
                 print(f"[eval {index}] step {step} cand {candidate_idx + 1}: no knowledge generated")
@@ -685,6 +702,9 @@ async def run_problem(
             step_record["delta_from_start"] = round(best_score - step_record["starting_score"], 2)
             chosen_knowledge = step_record["candidate_evaluations"][step_best_idx].get("knowledge") or {}
             step_record["selected_knowledge"] = chosen_knowledge
+            best_feedback = (
+                step_record["candidate_evaluations"][step_best_idx].get("score_feedback") or best_feedback
+            )
             manual_entry = {
                 "step": step,
                 "agent": chosen_knowledge.get("agent") or "think",
@@ -714,6 +734,7 @@ async def run_problem(
     record["final_single_run"] = {
         "run_id": best_run_id,
         "score": best_score,
+        "score_feedback": best_feedback,
         "output": record["final_output"],
     }
     record["steps_evaluated"] = len(record["steps"])

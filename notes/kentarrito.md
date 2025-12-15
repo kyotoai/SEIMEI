@@ -1719,31 +1719,43 @@ used: codex 0.72.0 + GPT5.1-codex-high-reasoning
 Now BASE_SYSTEM_PROMPT_LIST in exp9_mobile_data_small/train_v3_eval.py makes LLM not listen to what knowledge text says. I added KLG_SYSTEM_PROMPT_LIST just below BASE_SYSTEM_PROMPT_LIST, so make 10 prompts for knowledge augmented inference to listen to what knowledge text says more carefully and make more knowledge specific output. You need to also change system prompt depending on whether base inference or knowledge augmented inference
 ```
 
+train_v3_eval_results1.json
+-> -0.035 mean point improvement for fair comparison
+
 -> make train_v3_eval_results2.json
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_FINAL_RERUNS = 7
 -> 0.1 mean point improvement for fair comparison
 
-
 -> make train_v3_eval_results3.json
 DEFAULT_N_KNOWLEDGE_STEPS = 1
 DEFAULT_KNOWLEDGE_PER_STEP = 1
 DEFAULT_FINAL_RERUNS = 7
--> mean point improvement for fair comparison
-
-
+-> -0.47 mean point improvement for fair comparison
 
 -> make train_v3_eval_results4.json
 DEFAULT_N_KNOWLEDGE_STEPS = 6
 DEFAULT_KNOWLEDGE_PER_STEP = 3
-DEFAULT_FINAL_RERUNS = 8
+DEFAULT_FINAL_RERUNS = 7
+-> -0.272 mean point improvement for fair comparison
+
+
+
+- [x] Improve train_v3_eval.py (Add previous knowledge in prompt in generate_step_knowledge)
+```
+Modify exp9_mobile_data_small/train_v3_eval.py following
+1. See all the file and understand it deeply
+2. I wanna pass knowledge, its score and feedback to generate_step_knowledge. the knowledge, its score and feedback should be same as the one which transcript_json comes from.
+3. In the prompt in generate_step_knowledge, add explanation about the knowledge, its score and feedback.
+```
+
+
+-> make train_v3_eval_results5.json
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 7
 -> mean point improvement for fair comparison
-
-
-
-
-
 
 
 
