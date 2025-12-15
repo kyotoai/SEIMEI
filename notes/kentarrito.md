@@ -1589,6 +1589,7 @@ Generate 10 python files to generate csv files about mobile telecommunication da
 3. You should make a dataset.json. In there you should prepare question which asks about the hidden facts you prepared at 2. (Ex. "there are certain noise behind in some location. find it out", "Find some correlation between 2 points")
 4. Refer to exp8_csv_small for output format. Save csv folder, python folder and dataset.json under exp9_mobile_data_small folder. You can also refer to seimei/eval/generate_dataset_excel.py, seimei/eval/data_generators/excel.md. Those are the scripts which made exp8_csv_small. But this time, I want you to generate the python files one by one.
 5. csv file should have at least 1000 rows.
+```
 
 
 ## Dec 14
@@ -1708,6 +1709,35 @@ used: codex 0.72.0 + GPT5.1-codex-high-reasoning
 
 - [ ] combine google place api
 - [ ] 
+
+
+## Dec 15
+
+- [x] Add KLG_SYSTEM_PROMPT_LIST
+```
+# READ!!!
+Now BASE_SYSTEM_PROMPT_LIST in exp9_mobile_data_small/train_v3_eval.py makes LLM not listen to what knowledge text says. I added KLG_SYSTEM_PROMPT_LIST just below BASE_SYSTEM_PROMPT_LIST, so make 10 prompts for knowledge augmented inference to listen to what knowledge text says more carefully and make more knowledge specific output. You need to also change system prompt depending on whether base inference or knowledge augmented inference
+```
+
+-> make train_v3_eval_results2.json
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 7
+-> 0.1 mean point improvement for fair comparison
+
+
+-> make train_v3_eval_results3.json
+DEFAULT_N_KNOWLEDGE_STEPS = 1
+DEFAULT_KNOWLEDGE_PER_STEP = 1
+DEFAULT_FINAL_RERUNS = 7
+-> mean point improvement for fair comparison
+
+
+
+
+
+
+
 
 
 
