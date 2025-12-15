@@ -1734,6 +1734,12 @@ DEFAULT_FINAL_RERUNS = 7
 
 
 
+-> make train_v3_eval_results4.json
+DEFAULT_N_KNOWLEDGE_STEPS = 6
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 8
+-> mean point improvement for fair comparison
+
 
 
 
