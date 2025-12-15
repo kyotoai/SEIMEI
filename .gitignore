@@ -54,7 +54,7 @@ exp5/
 exp6_ycdemo/
 exp7/
 exp8_csv_small/*.json
-exp9_mobile_data_small/
+exp9_mobile_data_small/train*.json
 exp9_mobile_data_small.zip
 
 # files created as seimei runs

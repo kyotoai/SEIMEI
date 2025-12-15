@@ -1,0 +1,772 @@
+[
+  {
+    "Topic": "coastal_tide_wave_interference",
+    "SampleIndex": 1,
+    "Question": "In the coastal_tide_wave_interference dataset, what repeating geomarine behavior ties the swings in connection_strength_data to tide_height_m, wave_noise_component, and distance_to_coast_km, and how could an analyst confirm the hidden interference from those columns?",
+    "CorrectAnswer": "The generator encodes a semi-diurnal tide: tide_height_m follows a 12-hour sine wave while wave_noise_component is a faster harmonic tied to the same phase. connection_strength_data = base_signal - distance_to_coast_km * drift_per_km + 2.3 * tide_height_m + wave_noise_component, so peaks align with high tide plus constructive harmonic cycles, and weaker coverage occurs when the tower is farther from the water or when the harmonic goes negative. By plotting signal versus tide_height_m and the harmonic, the analyst would see the repeating dual-sine interference with minima every ~6 hours, revealing the hidden coastal oscillation.",
+    "PythonPath": "exp9_mobile_data_small/python/coastal_tide_wave_interference_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/coastal_tide_wave_interference_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "tower_id",
+        "tide_height_m",
+        "wave_noise_component",
+        "distance_to_coast_km"
+      ],
+      [
+        "2024-06-01T00:00:00",
+        "33.802637",
+        "135.159031",
+        "65.575",
+        "UQ Mobile",
+        "CST-100",
+        "0.0",
+        "0.0",
+        "0.2"
+      ],
+      [
+        "2024-06-01T00:05:00",
+        "33.80232",
+        "135.141182",
+        "66.458",
+        "Pacific Wave LTE",
+        "CST-101",
+        "0.014",
+        "0.118",
+        "0.225"
+      ],
+      [
+        "2024-06-01T00:10:00",
+        "33.807315",
+        "135.158273",
+        "64.557",
+        "UQ Mobile",
+        "CST-102",
+        "0.028",
+        "0.236",
+        "0.25"
+      ],
+      [
+        "2024-06-01T00:15:00",
+        "33.795393",
+        "135.155221",
+        "65.981",
+        "UQ Mobile",
+        "CST-103",
+        "0.042",
+        "0.353",
+        "0.275"
+      ],
+      [
+        "2024-06-01T00:20:00",
+        "33.799438",
+        "135.150021",
+        "65.698",
+        "UQ Mobile",
+        "CST-104",
+        "0.056",
+        "0.47",
+        "0.3"
+      ]
+    ]
+  },
+  {
+    "Topic": "mountain_shadow_window",
+    "SampleIndex": 1,
+    "Question": "How do sun_altitude_deg and shadow_blockage_ratio explain the abrupt losses in connection_strength_data within mountain_shadow_window_1_1.csv, and what hidden threshold separates normal daylight readings from shadowed ones?",
+    "CorrectAnswer": "Each row computes sun_altitude_deg from the time of day and sets shadow_blockage_ratio to zero unless the altitude drops below the config\u2019s threshold (about 10\u201312 degrees). When the sun dips under that limit, blockage rises linearly, terrain_elevation_m amplifies the loss, and the signal subtracts roughly (18 + terrain/400) * blockage. Thus nighttime or low solar angles create the large drops. The hidden fact is that there is a sun altitude threshold where the mountain ridge occludes the path; identifying where shadow_blockage_ratio switches from 0 confirms it.",
+    "PythonPath": "exp9_mobile_data_small/python/mountain_shadow_window_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/mountain_shadow_window_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "panel_orientation_deg",
+        "sun_altitude_deg",
+        "shadow_blockage_ratio",
+        "terrain_elevation_m"
+      ],
+      [
+        "2024-09-21T05:00:00",
+        "36.402728",
+        "138.283464",
+        "88.915",
+        "Alpine Mobile",
+        "36",
+        "53.807",
+        "0.0",
+        "2564.29"
+      ],
+      [
+        "2024-09-21T05:03:00",
+        "36.396224",
+        "138.284476",
+        "87.476",
+        "UQ Mobile",
+        "72",
+        "53.923",
+        "0.0",
+        "2603.81"
+      ],
+      [
+        "2024-09-21T05:06:00",
+        "36.398685",
+        "138.27667",
+        "89.879",
+        "Alpine Mobile",
+        "90",
+        "54.033",
+        "0.0",
+        "1132.67"
+      ],
+      [
+        "2024-09-21T05:09:00",
+        "36.402934",
+        "138.27897",
+        "88.978",
+        "Alpine Mobile",
+        "90",
+        "54.137",
+        "0.0",
+        "1841.5"
+      ],
+      [
+        "2024-09-21T05:12:00",
+        "36.400192",
+        "138.275928",
+        "86.358",
+        "UQ Mobile",
+        "18",
+        "54.235",
+        "0.0",
+        "1217.92"
+      ]
+    ]
+  },
+  {
+    "Topic": "urban_commuter_corridor",
+    "SampleIndex": 1,
+    "Question": "In urban_commuter_corridor_1_1.csv, what correlation between commuter_density_per_km, vehicle_flow_per_min, and mass_transit_load_index drives the wave-like attenuation in connection_strength_data along segments A01\u2013E31?",
+    "CorrectAnswer": "The commuter_wave term injects a 12-hour sine into commuter_density_per_km, while a phase-shifted reverse-flow term oscillates vehicle_flow_per_min. connection_strength_data = base_signal - 8*((commuter_density/200)+(vehicle_flow/200)) + (mass_transit_load_index-0.7)*4, so higher density and traffic jointly reduce the signal but a high mass_transit_load_index rescues it slightly. Because segments repeat sequentially, the pattern looks like a moving congestion wave. Plotting signal versus commuter_density exposes the hidden commuting cycle.",
+    "PythonPath": "exp9_mobile_data_small/python/urban_commuter_corridor_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/urban_commuter_corridor_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "segment_id",
+        "commuter_density_per_km",
+        "vehicle_flow_per_min",
+        "mass_transit_load_index"
+      ],
+      [
+        "2024-03-04T04:30:00",
+        "35.681984",
+        "139.801759",
+        "59.745",
+        "LoopNet Wireless",
+        "A01",
+        "139.954",
+        "57.176",
+        "0.608"
+      ],
+      [
+        "2024-03-04T04:32:00",
+        "35.678483",
+        "139.801732",
+        "59.386",
+        "UQ Mobile",
+        "B07",
+        "140.277",
+        "60.974",
+        "0.559"
+      ],
+      [
+        "2024-03-04T04:34:00",
+        "35.680734",
+        "139.800738",
+        "59.687",
+        "UQ Mobile",
+        "C13",
+        "143.413",
+        "58.904",
+        "0.645"
+      ],
+      [
+        "2024-03-04T04:36:00",
+        "35.682398",
+        "139.801617",
+        "59.517",
+        "LoopNet Wireless",
+        "D22",
+        "142.319",
+        "62.489",
+        "0.627"
+      ],
+      [
+        "2024-03-04T04:38:00",
+        "35.682157",
+        "139.79911",
+        "59.883",
+        "MetroLink Mobile",
+        "E31",
+        "141.702",
+        "57.457",
+        "0.662"
+      ]
+    ]
+  },
+  {
+    "Topic": "storm_cell_humidity_lock",
+    "SampleIndex": 1,
+    "Question": "Why do rows tied to certain storm_cell_id values in storm_cell_humidity_lock_1_1.csv experience extreme drops, and how do humidity_percent, rain_rate_mm_per_hr, and microburst_flag reveal the locked microburst behavior?",
+    "CorrectAnswer": "A hidden lock cell (SC-11 here) gets +10 humidity boost and an extra \u221210 dB penalty, and when humidity_percent exceeds ~80 the generator may flip microburst_flag true, subtracting another 18\u201324 dB. Since connection_strength_data subtracts humidity * humidity_penalty and 0.8 * rain_rate_mm_per_hr, the locked cell rows combine high humidity, heavy rain, and microbursts, producing the sharp troughs. Filtering on the repeated lock cell immediately exposes this engineered weakness.",
+    "PythonPath": "exp9_mobile_data_small/python/storm_cell_humidity_lock_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/storm_cell_humidity_lock_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "storm_cell_id",
+        "humidity_percent",
+        "rain_rate_mm_per_hr",
+        "microburst_flag"
+      ],
+      [
+        "2024-07-17T12:00:00",
+        "25.05595",
+        "123.91909",
+        "38.812",
+        "Typhoon Mobile",
+        "SC-11",
+        "105.67",
+        "13.637",
+        "false"
+      ],
+      [
+        "2024-07-17T12:01:00",
+        "24.79481",
+        "123.74358",
+        "51.567",
+        "Stratus Wireless",
+        "SC-12",
+        "78.92",
+        "12.398",
+        "false"
+      ],
+      [
+        "2024-07-17T12:02:00",
+        "24.89406",
+        "123.89712",
+        "61.113",
+        "UQ Mobile",
+        "SC-21",
+        "56.74",
+        "2.511",
+        "false"
+      ],
+      [
+        "2024-07-17T12:03:00",
+        "24.74855",
+        "123.87616",
+        "41.617",
+        "Typhoon Mobile",
+        "SC-34",
+        "85.02",
+        "23.789",
+        "false"
+      ],
+      [
+        "2024-07-17T12:04:00",
+        "25.01241",
+        "123.79796",
+        "57.095",
+        "UQ Mobile",
+        "SC-40",
+        "65.72",
+        "7.674",
+        "false"
+      ]
+    ]
+  },
+  {
+    "Topic": "satellite_backhaul_alignment",
+    "SampleIndex": 1,
+    "Question": "satellite_backhaul_alignment_1_1.csv shows regular troughs whenever alignment_angle_deg hovers near zero. What hidden constraint links alignment_angle_deg, phase_error_deg, and backhaul_bandwidth_mbps to connection_strength_data?",
+    "CorrectAnswer": "The generator penalizes paths whose alignment_angle_deg magnitude drops below ~4 degrees: penalty = 18 \u2212 3*|angle|, which overwhelms the otherwise high base_signal. Those same rows also show low phase_error_deg variance and reduced backhaul_bandwidth_mbps because cos(angle/10) flattens. Therefore, the hidden fact is that the backhaul dish performs worst when perfectly aimed\u2014slight misalignment actually improves bandwidth and signal. Analysts can verify by plotting signal versus alignment_angle_deg to see minima at zero and improvements at \u00b16\u201310 degrees.",
+    "PythonPath": "exp9_mobile_data_small/python/satellite_backhaul_alignment_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/satellite_backhaul_alignment_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "satellite_slot",
+        "alignment_angle_deg",
+        "backhaul_bandwidth_mbps",
+        "phase_error_deg"
+      ],
+      [
+        "2024-08-13T00:00:00",
+        "13.698006",
+        "144.847569",
+        "60.757",
+        "Orbital Mobile",
+        "167E",
+        "-2.067",
+        "290.109",
+        "8.336"
+      ],
+      [
+        "2024-08-13T00:01:30",
+        "13.701277",
+        "144.847234",
+        "56.75",
+        "UQ Mobile",
+        "170E",
+        "-0.644",
+        "295.347",
+        "8.287"
+      ],
+      [
+        "2024-08-13T00:03:00",
+        "13.700758",
+        "144.851083",
+        "57.999",
+        "SkyReach",
+        "174E",
+        "-1.099",
+        "293.026",
+        "7.73"
+      ],
+      [
+        "2024-08-13T00:04:30",
+        "13.70439",
+        "144.850419",
+        "61.215",
+        "SkyReach",
+        "178E",
+        "-2.12",
+        "296.109",
+        "7.502"
+      ],
+      [
+        "2024-08-13T00:06:00",
+        "13.705611",
+        "144.850782",
+        "56.674",
+        "UQ Mobile",
+        "167E",
+        "-0.655",
+        "293.17",
+        "7.978"
+      ]
+    ]
+  },
+  {
+    "Topic": "festival_roaming_congestion",
+    "SampleIndex": 1,
+    "Question": "During which event_phase do roaming_users_ratio and crowd_noise_index jointly collapse connection_strength_data in festival_roaming_congestion_1_1.csv, and what relationship should analysts describe?",
+    "CorrectAnswer": "The headliner and afterparty phases push roaming_users_ratio close to 1.0, and the penalty term is (roaming_ratio^2)*40 + crowd_noise_index/noise_gain, so signal drops hardest there. Setup rows with ~0.2 ratios stay healthy. The hidden behavior is that roaming pressure grows superlinearly with the ratio squared while crowd noise adds an extra drag, so only the densest phases experience near-outage conditions. This is visible by grouping by event_phase and comparing the ratio/ noise pair.",
+    "PythonPath": "exp9_mobile_data_small/python/festival_roaming_congestion_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/festival_roaming_congestion_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "event_phase",
+        "roaming_users_ratio",
+        "temporary_cell_id",
+        "crowd_noise_index"
+      ],
+      [
+        "2024-10-05T08:00:00",
+        "34.690735",
+        "135.514064",
+        "52.678",
+        "UQ Mobile",
+        "setup",
+        "0.2009",
+        "TMP-11",
+        "47.248"
+      ],
+      [
+        "2024-10-05T08:00:45",
+        "34.692533",
+        "135.513443",
+        "41.952",
+        "WavePop",
+        "doors_open",
+        "0.5059",
+        "TMP-11",
+        "53.356"
+      ],
+      [
+        "2024-10-05T08:01:30",
+        "34.685095",
+        "135.505758",
+        "9.583",
+        "WavePop",
+        "headliner",
+        "1.0013",
+        "TMP-03",
+        "64.227"
+      ],
+      [
+        "2024-10-05T08:02:15",
+        "34.685828",
+        "135.509843",
+        "32.793",
+        "WavePop",
+        "afterparty",
+        "0.6778",
+        "TMP-17",
+        "59.856"
+      ],
+      [
+        "2024-10-05T08:03:00",
+        "34.689004",
+        "135.509068",
+        "52.469",
+        "UQ Mobile",
+        "setup",
+        "0.201",
+        "TMP-04",
+        "47.277"
+      ]
+    ]
+  },
+  {
+    "Topic": "factory_machine_interference",
+    "SampleIndex": 1,
+    "Question": "factory_machine_interference_1_1.csv encodes a repeating waveform in machine_cycle_phase. How does that phase, together with harmonic_spike_db and power_draw_kw, govern the downlink fades?",
+    "CorrectAnswer": "machine_cycle_phase advances every 30 seconds; interference = (sin(phase - \u03c0/2)+1)/2 so it peaks when the phase is near \u03c0/2. connection_strength_data subtracts interference * em_gain and also 0.2 * harmonic_spike_db (derived from sin(3*phase)). Since power_draw_kw tracks sin(phase), the trio reveals the hidden cycle: whenever the machinery hits the high-power quadrant, harmonic spikes and interference align to drop the signal roughly 10\u201315 dB. Inspecting those columns against time uncovers the periodic EM pulses.",
+    "PythonPath": "exp9_mobile_data_small/python/factory_machine_interference_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/factory_machine_interference_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "line_id",
+        "machine_cycle_phase",
+        "power_draw_kw",
+        "harmonic_spike_db"
+      ],
+      [
+        "2024-04-01T06:00:00",
+        "34.709494",
+        "135.291158",
+        "68.208",
+        "UQ Mobile",
+        "L-02",
+        "0.0",
+        "419.58",
+        "5.0"
+      ],
+      [
+        "2024-04-01T06:00:30",
+        "34.709263",
+        "135.288564",
+        "67.441",
+        "UQ Mobile",
+        "L-05",
+        "0.10472",
+        "427.884",
+        "11.18"
+      ],
+      [
+        "2024-04-01T06:01:00",
+        "34.711563",
+        "135.291137",
+        "65.343",
+        "FactoryGrid",
+        "L-02",
+        "0.20944",
+        "437.965",
+        "16.756"
+      ],
+      [
+        "2024-04-01T06:01:30",
+        "34.709224",
+        "135.289103",
+        "66.561",
+        "SmartPlant Mobile",
+        "L-02",
+        "0.31416",
+        "443.037",
+        "21.18"
+      ],
+      [
+        "2024-04-01T06:02:00",
+        "34.708942",
+        "135.289551",
+        "63.266",
+        "UQ Mobile",
+        "L-06",
+        "0.41888",
+        "448.562",
+        "24.021"
+      ]
+    ]
+  },
+  {
+    "Topic": "metro_tunnel_resonance",
+    "SampleIndex": 1,
+    "Question": "What hidden resonance between train_velocity_kmh and tunnel_depth_m causes repeater_gain_db (and therefore connection_strength_data) to spike in metro_tunnel_resonance_1_1.csv?",
+    "CorrectAnswer": "Each row computes ratio = velocity/depth. When the ratio nears the configured sweet_ratio (~0.9\u20131.0), the gain term adds 6 * exp(-|ratio - sweet_ratio|), so repeater_gain_db jumps and connection_strength_data rises despite the \u22120.6*depth loss. If the ratio drifts far from that band (deep tunnels or slow trains), gain reverts to the baseline 14 dB and the signal drops. Plotting signal against velocity/depth uncovers the resonance window.",
+    "PythonPath": "exp9_mobile_data_small/python/metro_tunnel_resonance_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/metro_tunnel_resonance_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "station_name",
+        "train_velocity_kmh",
+        "repeater_gain_db",
+        "tunnel_depth_m"
+      ],
+      [
+        "2024-02-14T05:00:00",
+        "35.689893",
+        "139.763303",
+        "61.789",
+        "SubwayNet",
+        "Sora",
+        "29.272",
+        "18.5",
+        "24.646"
+      ],
+      [
+        "2024-02-14T05:00:20",
+        "35.690966",
+        "139.75942",
+        "61.031",
+        "SubwayNet",
+        "Hinode",
+        "30.723",
+        "18.397",
+        "25.376"
+      ],
+      [
+        "2024-02-14T05:00:40",
+        "35.691099",
+        "139.762266",
+        "60.109",
+        "UQ Mobile",
+        "Kiba",
+        "31.988",
+        "18.313",
+        "26.004"
+      ],
+      [
+        "2024-02-14T05:01:00",
+        "35.687032",
+        "139.762188",
+        "61.045",
+        "SubwayNet",
+        "Asahi",
+        "34.4",
+        "17.686",
+        "24.8"
+      ],
+      [
+        "2024-02-14T05:01:20",
+        "35.69054",
+        "139.762019",
+        "61.016",
+        "UQ Mobile",
+        "Mori",
+        "33.559",
+        "17.831",
+        "24.882"
+      ]
+    ]
+  },
+  {
+    "Topic": "desert_thermal_inversion",
+    "SampleIndex": 1,
+    "Question": "desert_thermal_inversion_1_1.csv mixes surface_temp_c, inversion_layer_strength, dust_index, and thermal_updraft_mps. What midday phenomenon secretly boosts connection_strength_data, and which columns expose it?",
+    "CorrectAnswer": "Around local afternoon (hour_fraction \u2248 0.6) the inversion_layer_strength term spikes via exp(-((h-0.6)^2)/0.02) and contributes up to 50\u00d7strength to the signal, while thermal_updraft_mps is also largest. Dust_index simultaneously drops, lowering the subtraction. As a result, midday rows show a distinct signal ridge. Recognizing that inversion strength and updraft both peak together reveals the hidden thermal mirror that temporarily improves coverage.",
+    "PythonPath": "exp9_mobile_data_small/python/desert_thermal_inversion_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/desert_thermal_inversion_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "surface_temp_c",
+        "inversion_layer_strength",
+        "dust_index",
+        "thermal_updraft_mps"
+      ],
+      [
+        "2024-05-10T05:00:00",
+        "24.269058",
+        "54.753795",
+        "57.148",
+        "Oasis Wireless",
+        "36.035",
+        "0.00023",
+        "1.282",
+        "2.72"
+      ],
+      [
+        "2024-05-10T05:01:00",
+        "24.282455",
+        "54.743476",
+        "56.181",
+        "UQ Mobile",
+        "34.884",
+        "0.00024",
+        "1.47",
+        "2.54"
+      ],
+      [
+        "2024-05-10T05:02:00",
+        "24.285822",
+        "54.741476",
+        "57.482",
+        "UQ Mobile",
+        "36.485",
+        "0.00025",
+        "1.156",
+        "2.579"
+      ],
+      [
+        "2024-05-10T05:03:00",
+        "24.281163",
+        "54.77444",
+        "57.95",
+        "UQ Mobile",
+        "36.297",
+        "0.00025",
+        "1.079",
+        "2.712"
+      ],
+      [
+        "2024-05-10T05:04:00",
+        "24.260746",
+        "54.747761",
+        "58.586",
+        "Oasis Wireless",
+        "36.252",
+        "0.00026",
+        "0.924",
+        "2.726"
+      ]
+    ]
+  },
+  {
+    "Topic": "drone_relay_chain",
+    "SampleIndex": 1,
+    "Question": "In drone_relay_chain_1_1.csv, how do drone_altitude_m, relay_delay_ms, and wind_shear_mps synchronize to create the repeating constructive/destructive interference seen in connection_strength_data?",
+    "CorrectAnswer": "The script sums three sines\u2014sin(altitude/25) + sin(relay_delay_ms) + sin(0.3*wind_shear). relay_delay_ms itself depends on altitude and a delay_phase, so when altitude crests and delay align, the harmonics term nears +3 and adds ~18 dB. If wind_shear flips sign or the relay delay drifts, the harmonics term turns negative and subtracts that much, and wind shear also subtracts 0.8\u00d7wind_shear directly. Thus the hidden fact is that only specific altitude-delay combinations keep the relay chain coherent; otherwise the phases cancel and the signal plunges.",
+    "PythonPath": "exp9_mobile_data_small/python/drone_relay_chain_1.py",
+    "HyperParamIndex": 1,
+    "CSVPath": "exp9_mobile_data_small/csv/drone_relay_chain_1_1.csv",
+    "CSVPreview": [
+      [
+        "time",
+        "lattitude",
+        "longtitude",
+        "connection_strength_data",
+        "provider",
+        "relay_chain_id",
+        "drone_altitude_m",
+        "relay_delay_ms",
+        "wind_shear_mps"
+      ],
+      [
+        "2024-11-02T09:00:00",
+        "33.577086",
+        "130.411554",
+        "64.829",
+        "SkyMesh",
+        "RC-01",
+        "117.252",
+        "8.9771",
+        "2.807"
+      ],
+      [
+        "2024-11-02T09:00:15",
+        "33.5887",
+        "130.418375",
+        "64.294",
+        "RelayWorks",
+        "RC-02",
+        "118.827",
+        "9.0902",
+        "3.061"
+      ],
+      [
+        "2024-11-02T09:00:30",
+        "33.579216",
+        "130.413519",
+        "63.614",
+        "SkyMesh",
+        "RC-03",
+        "121.229",
+        "9.2099",
+        "2.937"
+      ],
+      [
+        "2024-11-02T09:00:45",
+        "33.588165",
+        "130.416271",
+        "62.989",
+        "SkyMesh",
+        "RC-01",
+        "123.791",
+        "9.3305",
+        "2.865"
+      ],
+      [
+        "2024-11-02T09:01:00",
+        "33.581138",
+        "130.421149",
+        "62.388",
+        "UQ Mobile",
+        "RC-02",
+        "121.436",
+        "9.4093",
+        "2.81"
+      ]
+    ]
+  }
+]
