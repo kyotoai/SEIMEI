@@ -12,9 +12,10 @@ DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
 DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval2_results1.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
-DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_N_KNOWLEDGE_STEPS = 7
+# DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
-DEFAULT_FINAL_RERUNS = 3
+DEFAULT_FINAL_RERUNS = 8
 DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "code_ls_inventory",
@@ -1500,7 +1501,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
         allow_code_exec=True,
         agent_log_head_lines=1,
-        max_tokens_per_question=40000,
+        max_tokens_per_question=80000,
     )
 
     eval_entries, processed_ids, needs_resave = load_existing_eval_entries(dataset, args.output_path)
