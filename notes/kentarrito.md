@@ -1814,6 +1814,29 @@ first understand train_v3_eval.py deeply start making train_v3_eval_sample.py.
 * I ran train_v3_eval_results4.json (and probably some others) main but switched branch to develop after putting run command. I realized develop branch didn'y have csv files so most likely the json result was crap... But running it in develop branch now is not good because function_calling is not completed yet. I merged exp9 from main to develop and started train_v3_eval_sample.py in main. I think it's okay to switch the branch now.
 
 
+- [ ] Run train_v3_eval_sample.py
+
+```
+train_v3_eval_sample_results.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_N_CHECK_KNOWLEDGE = 3
+DEFAULT_FINAL_RERUNS = 7
+-> 0.4
+
+train_v3_eval_sample_results2.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 6
+DEFAULT_N_CHECK_KNOWLEDGE = 4
+DEFAULT_FINAL_RERUNS = 7
+-> 
+```
+
+
+
+
 ## Past ToDo
 
 - [ ] Generate Deep Research base
