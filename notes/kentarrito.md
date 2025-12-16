@@ -1810,6 +1810,9 @@ When you will finally save the output, you can redesign the detail field flexibl
 first understand train_v3_eval.py deeply start making train_v3_eval_sample.py.
 ```
 
+- [x] Realized mistake
+* I ran train_v3_eval_results4.json (and probably some others) main but switched branch to develop after putting run command. I realized develop branch didn'y have csv files so most likely the json result was crap... But running it in develop branch now is not good because function_calling is not completed yet. I merged exp9 from main to develop and started train_v3_eval_sample.py in main. I think it's okay to switch the branch now.
+
 
 ## Past ToDo
 
