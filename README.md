@@ -254,7 +254,7 @@ from seimei import seimei
 
 async def demo_code_act():
     orchestrator = seimei(
-        agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+        agent_config=[{"name": "code_act"}],
         llm_kwargs={"model": "gpt-4o-mini"},
         allow_code_exec=True,
         allowed_commands=["ls", "echo"],
@@ -287,7 +287,7 @@ from seimei import seimei
 
 async def demo_web_search():
     orchestrator = seimei(
-        agent_config=[{"file_path": "seimei/agents/web_search.py"}],
+        agent_config=[{"name": "web_search"}],
         llm_kwargs={"model": "gpt-4o-mini"},
         agent_log_head_lines=2,
         max_tokens_per_question=4000,

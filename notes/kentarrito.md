@@ -1719,26 +1719,128 @@ used: codex 0.72.0 + GPT5.1-codex-high-reasoning
 Now BASE_SYSTEM_PROMPT_LIST in exp9_mobile_data_small/train_v3_eval.py makes LLM not listen to what knowledge text says. I added KLG_SYSTEM_PROMPT_LIST just below BASE_SYSTEM_PROMPT_LIST, so make 10 prompts for knowledge augmented inference to listen to what knowledge text says more carefully and make more knowledge specific output. You need to also change system prompt depending on whether base inference or knowledge augmented inference
 ```
 
+train_v3_eval_results1.json
+-> -0.035 mean point improvement for fair comparison
+
 -> make train_v3_eval_results2.json
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_FINAL_RERUNS = 7
 -> 0.1 mean point improvement for fair comparison
 
-
 -> make train_v3_eval_results3.json
 DEFAULT_N_KNOWLEDGE_STEPS = 1
 DEFAULT_KNOWLEDGE_PER_STEP = 1
 DEFAULT_FINAL_RERUNS = 7
+-> -0.47 mean point improvement for fair comparison
+
+-> make train_v3_eval_results4.json
+DEFAULT_N_KNOWLEDGE_STEPS = 6
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 7
+-> -0.272 mean point improvement for fair comparison
+
+
+
+- [x] Improve train_v3_eval.py (Add previous knowledge in prompt in generate_step_knowledge)
+```
+Modify exp9_mobile_data_small/train_v3_eval.py following
+1. See all the file and understand it deeply
+2. I wanna pass knowledge, its score and feedback to generate_step_knowledge. the knowledge, its score and feedback should be same as the one which transcript_json comes from.
+3. In the prompt in generate_step_knowledge, add explanation about the knowledge, its score and feedback.
+```
+
+
+-> make train_v3_eval_results5.json
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_FINAL_RERUNS = 7
 -> mean point improvement for fair comparison
 
 
+- [x] Make train_v3_eval_sample.py (sampling philosophy)
+```
+Make exp9_mobile_data_small/train_v3_eval_sample.py refering to exp9_mobile_data_small/train_v3_eval.py. 
+
+Now in train_v3_eval.py, it processes like
+1. make 1 base inference
+2. generate DEFAULT_KNOWLEDGE_PER_STEP pieces of knowledge
+3. generate DEFAULT_KNOWLEDGE_PER_STEP inferences with these knowledge (if there is previous knowledge, start inference from the previous knowledge step)
+4. score the DEFAULT_KNOWLEDGE_PER_STEP inferences
+5. get the best inference and knowledge
+6. go back to 2 with the best inference of the step
+7. loop 2 - 6 for DEFAULT_N_KNOWLEDGE_STEPS times
+8. with the DEFAULT_N_KNOWLEDGE_STEPS best knowledge texts for all steps, run base and knowledge inference DEFAULT_FINAL_RERUNS times and compare the scores
+
+Make train_v3_eval_sample.py following
+1. make DEFAULT_KNOWLEDGE_PER_STEP base inferences
+2. generate DEFAULT_KNOWLEDGE_PER_STEP pieces of knowledge for all base inferences (if there is previous knowledge, start inference from the previous knowledge step)
+3. generate DEFAULT_KNOWLEDGE_PER_STEP inferences with these knowledge
+4. go back to 2
+5. loop 2 - 4 for DEFAULT_N_KNOWLEDGE_STEPS times
+6. Now you have DEFAULT_KNOWLEDGE_PER_STEP * DEFAULT_N_KNOWLEDGE_STEPS knowledge texts. Each DEFAULT_N_KNOWLEDGE_STEPS knowledge texts (let's call it knowledge chunk) should be created independently from other ones.
+7. Run run_full_problem_trials for DEFAULT_N_CHECK_KNOWLEDGE times for all knowledge chunk and get the best chunk from the mean score.
+8. with the best knowledge chunk, run base and knowledge inference DEFAULT_FINAL_RERUNS times and compare the mean scores.
+
+When you will finally save the output, you can redesign the detail field flexibly but follow the format below about summary part.
+
+"summary": {
+    "total_problems": 10,
+    "mean_score_improvement": -0.47,
+    "base_vs_final": [
+      [
+        5.71,
+        4.0
+      ],
+      ...
+    ],
+    "overall_base_mean": 4.171,
+    "overall_final_mean": 3.701,
+    "win_loss_tie": {
+      "win": 4,
+      "tie": 0,
+      "loss": 6
+    },
+    "knowledge_chunk_mean_scores": [
+        [3.0, 3.5, 4.1], # if DEFAULT_KNOWLEDGE_PER_STEP=3
+        ...
+    ]
+}
+
+first understand train_v3_eval.py deeply start making train_v3_eval_sample.py.
+```
+
+- [x] Realized mistake
+* I ran train_v3_eval_results4.json (and probably some others) main but switched branch to develop after putting run command. I realized develop branch didn'y have csv files so most likely the json result was crap... But running it in develop branch now is not good because function_calling is not completed yet. I merged exp9 from main to develop and started train_v3_eval_sample.py in main. I think it's okay to switch the branch now.
 
 
+- [ ] Run train_v3_eval_sample.py
+
+```
+train_v3_eval_sample_results.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_N_CHECK_KNOWLEDGE = 3
+DEFAULT_FINAL_RERUNS = 7
+-> 0.4
+
+train_v3_eval_sample_results2.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 6
+DEFAULT_N_CHECK_KNOWLEDGE = 4
+DEFAULT_FINAL_RERUNS = 7
+-> 0.3
+```
 
 
+## Dec 17
 
-
+- [ ] Allow agent_config = [{"name":"..."}]
+```
+Now when seimei initializing, I can specify agent_config = [{"file_path":"..."}]. But this is inconvinient if seimei folder is unclear. Instead allow users to specify it agent_config = [{"name":"..."}] too. Ex. agent_config = [{"name":"code_act"}, {"name":"edit_file"}] or agent_config = [{"name":"code_act"}, {"file_path":"seimei/agents/edit_file"}].
+```
 
 
 ## Past ToDo

@@ -9,11 +9,12 @@ from seimei import load_run_messages, seimei
 
 EXP_DIR = Path("exp9_mobile_data_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results5.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_sample_results2.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
-DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 6
+DEFAULT_N_CHECK_KNOWLEDGE = 4
 DEFAULT_FINAL_RERUNS = 7
 
 BASE_SYSTEM_PROMPT_LIST = [
@@ -106,6 +107,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_KNOWLEDGE_PER_STEP,
         help="How many knowledge candidates to generate per step.",
+    )
+    parser.add_argument(
+        "--n-check-knowledge",
+        type=int,
+        default=DEFAULT_N_CHECK_KNOWLEDGE,
+        help="How many reruns to execute per knowledge chunk when selecting the best chunk.",
     )
     parser.add_argument(
         "--final-reruns",
@@ -494,7 +501,7 @@ async def run_candidate_inference(
         }
     ]
     knowledge_config = build_knowledge_config(manual_entries)
-    run_name = f"train_v3_eval_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
+    run_name = f"train_v3_eval_sample_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
     result = await orchestrator(
         messages=rerun_messages,
         run_name=run_name,
@@ -549,7 +556,7 @@ async def run_full_problem_trials(
         )
         result = await orchestrator(
             messages=rerun_messages,
-            run_name=f"train_v3_eval_{dataset_index:04d}_{label}_r{trial + 1}",
+            run_name=f"train_v3_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}",
             knowledge_config=knowledge_config,
         )
         run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
@@ -581,6 +588,7 @@ async def run_problem(
     *,
     n_knowledge_steps: int,
     knowledge_per_step: int,
+    n_check_knowledge: int,
     final_reruns: int,
 ) -> Dict[str, Any]:
     question = dataset_entry.get("Question", "")
@@ -593,86 +601,93 @@ async def run_problem(
             "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}",
         }
     ]
-    base_messages = randomize_system_prompt(base_prompt_messages)
 
-    base_result = await orchestrator(
-        messages=[dict(msg) for msg in base_messages],
-        run_name=f"train_v3_eval_{index:04d}_base",
-        knowledge_config=build_knowledge_config(),
-    )
-    base_run_id = normalize_result_run_id(base_result, Path(orchestrator.log_dir))
-    base_output = base_result.get("output", "")
-    score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
-    base_score = score_info.get("score", 0.0) or 0.0
-    base_feedback = score_info.get("feedback")
+    chunk_records: List[Dict[str, Any]] = []
+    base_inferences: List[Dict[str, Any]] = []
+    log_dir = Path(orchestrator.log_dir)
 
-    record: Dict[str, Any] = {
-        "id": entry_id,
-        "csv_path": csv_path,
-        "base": {
+    for chunk_idx in range(knowledge_per_step):
+        base_messages = randomize_system_prompt(base_prompt_messages)
+        base_result = await orchestrator(
+            messages=[dict(msg) for msg in base_messages],
+            run_name=f"train_v3_eval_sample_{index:04d}_base_seed{chunk_idx + 1}",
+            knowledge_config=build_knowledge_config(),
+        )
+        base_run_id = normalize_result_run_id(base_result, log_dir)
+        base_output = base_result.get("output", "")
+        score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
+        base_score = score_info.get("score", 0.0) or 0.0
+        base_feedback = score_info.get("feedback")
+
+        base_run = {
+            "chunk_index": chunk_idx + 1,
             "run_id": base_run_id,
             "score": base_score,
             "score_feedback": base_feedback,
             "output": base_output,
-        },
-        "steps": [],
-        "score_history": [
+        }
+        base_inferences.append(base_run)
+        chunk_records.append(
             {
-                "step": 0,
-                "score": base_score,
-                "run_id": base_run_id,
+                "chunk_index": chunk_idx + 1,
+                "base_run": base_run,
+                "current_result": base_result,
+                "current_run_id": base_run_id,
+                "current_score": base_score,
+                "current_feedback": base_feedback,
+                "manual_entries": [],
+                "knowledge_steps": [],
+                "score_history": [
+                    {
+                        "step": 0,
+                        "score": base_score,
+                        "run_id": base_run_id,
+                    }
+                ],
             }
-        ],
+        )
+        print(f"[sample {index}] chunk {chunk_idx + 1} base score={base_score}")
+
+    record: Dict[str, Any] = {
+        "id": entry_id,
+        "csv_path": csv_path,
+        "base_inferences": base_inferences,
+        "chunks": [],
+        "knowledge_chunk_mean_scores": [],
     }
-
-    selected_manual_entries: List[Dict[str, Any]] = []
-    best_result = base_result
-    best_run_id = base_run_id
-    best_score = base_score
-    best_feedback = base_feedback
-
-    print(f"[eval {index}] baseline score={base_score}")
+    best_base_entry = max(base_inferences, key=lambda entry: entry["score"]) if base_inferences else None
+    if best_base_entry:
+        record["base"] = best_base_entry
 
     for step in range(1, n_knowledge_steps + 1):
-        messages = get_messages_for_run(best_result, Path(orchestrator.log_dir))
-        agent_messages = extract_agent_messages(messages)
-        if step > len(agent_messages):
-            print(f"[eval {index}] step {step}: no agent messages, stopping.")
-            break
-        truncated_history = truncate_messages_before_step(messages, step)
-        step_record: Dict[str, Any] = {
-            "step": step,
-            "starting_run_id": best_run_id,
-            "starting_score": best_score,
-            "candidate_evaluations": [],
-            "best_index": None,
-            "best_run_id": best_run_id,
-            "best_score": best_score,
-            "delta_from_start": 0.0,
-        }
-        record["steps"].append(step_record)
-
-        step_best_idx: Optional[int] = None
-        step_best_result: Optional[Dict[str, Any]] = None
-        step_best_score: Optional[float] = None
-
-        for candidate_idx in range(knowledge_per_step):
+        for chunk_data in chunk_records:
+            messages = get_messages_for_run(chunk_data["current_result"], log_dir)
+            agent_messages = extract_agent_messages(messages)
+            if step > len(agent_messages):
+                print(
+                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
+                    "insufficient agent messages"
+                )
+                continue
+            truncated_history = truncate_messages_before_step(messages, step)
             knowledge_entry = await generate_step_knowledge(
                 orchestrator.llm,
                 dataset_entry=dataset_entry,
                 messages=messages,
                 step=step,
-                iteration=candidate_idx,
-                prior_knowledge=[dict(entry) for entry in selected_manual_entries],
-                transcript_score=best_score,
-                transcript_feedback=best_feedback,
+                iteration=chunk_data["chunk_index"] - 1,
+                prior_knowledge=[dict(entry) for entry in chunk_data["manual_entries"]],
+                transcript_score=chunk_data["current_score"],
+                transcript_feedback=chunk_data["current_feedback"],
             )
             if not knowledge_entry:
-                print(f"[eval {index}] step {step} cand {candidate_idx + 1}: no knowledge generated")
+                print(
+                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
+                    "no knowledge generated"
+                )
                 continue
             if not knowledge_entry.get("agent"):
-                inferred_agent = get_agent_name_for_step(messages, step) or "think"
-                knowledge_entry["agent"] = inferred_agent
+                knowledge_entry["agent"] = get_agent_name_for_step(messages, step) or "think"
 
             candidate = await run_candidate_inference(
                 orchestrator,
@@ -681,64 +696,104 @@ async def run_problem(
                 step=step,
                 knowledge_entry=knowledge_entry,
                 dataset_index=index,
-                candidate_index=candidate_idx,
+                candidate_index=chunk_data["chunk_index"] - 1,
             )
             candidate_info = candidate["info"]
-            step_record["candidate_evaluations"].append(candidate_info)
-            candidate_score = candidate_info["score"]
-
-            if step_best_score is None or candidate_score > step_best_score:
-                step_best_score = candidate_score
-                step_best_idx = len(step_record["candidate_evaluations"]) - 1
-                step_best_result = candidate["result"]
-
-        if step_best_idx is not None and step_best_result is not None:
-            best_result = step_best_result
-            best_run_id = step_record["candidate_evaluations"][step_best_idx]["run_id"]
-            best_score = step_best_score if step_best_score is not None else best_score
-            step_record["best_index"] = step_best_idx
-            step_record["best_run_id"] = best_run_id
-            step_record["best_score"] = best_score
-            step_record["delta_from_start"] = round(best_score - step_record["starting_score"], 2)
-            chosen_knowledge = step_record["candidate_evaluations"][step_best_idx].get("knowledge") or {}
-            step_record["selected_knowledge"] = chosen_knowledge
-            best_feedback = (
-                step_record["candidate_evaluations"][step_best_idx].get("score_feedback") or best_feedback
+            chunk_data["knowledge_steps"].append(
+                {
+                    "step": step,
+                    "knowledge": candidate_info.get("knowledge"),
+                    "run_id": candidate_info.get("run_id"),
+                    "score": candidate_info.get("score"),
+                    "score_feedback": candidate_info.get("score_feedback"),
+                    "output": candidate_info.get("output"),
+                }
             )
+            chunk_data["current_result"] = candidate["result"]
+            chunk_data["current_run_id"] = candidate_info.get("run_id")
+            chunk_data["current_score"] = candidate_info.get("score", chunk_data["current_score"])
+            chunk_data["current_feedback"] = candidate_info.get("score_feedback")
             manual_entry = {
                 "step": step,
-                "agent": chosen_knowledge.get("agent") or "think",
-                "text": chosen_knowledge.get("text", ""),
-                "tags": chosen_knowledge.get("tags") or [],
+                "agent": candidate_info.get("knowledge", {}).get("agent") or "think",
+                "text": candidate_info.get("knowledge", {}).get("text", ""),
+                "tags": candidate_info.get("knowledge", {}).get("tags") or [],
             }
             if manual_entry["text"]:
-                selected_manual_entries.append(manual_entry)
-            print(
-                f"[eval {index}] step {step}: best score={best_score} "
-                f"(delta {step_record['delta_from_start']})"
+                chunk_data["manual_entries"].append(manual_entry)
+            chunk_data["score_history"].append(
+                {
+                    "step": step,
+                    "score": chunk_data["current_score"],
+                    "run_id": chunk_data["current_run_id"],
+                }
             )
-        else:
-            print(f"[eval {index}] step {step}: no successful candidates")
+            print(
+                f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
+                f"score={chunk_data['current_score']}"
+            )
 
-        record["score_history"].append(
-            {
-                "step": step,
-                "score": best_score,
-                "run_id": best_run_id,
-            }
+    for chunk_data in chunk_records:
+        chunk_data["final_single_run"] = {
+            "run_id": chunk_data["current_run_id"],
+            "score": chunk_data["current_score"],
+            "score_feedback": chunk_data["current_feedback"],
+            "output": chunk_data["current_result"].get("output", ""),
+        }
+        chunk_entry = {
+            "chunk_index": chunk_data["chunk_index"],
+            "base_run": chunk_data["base_run"],
+            "knowledge_steps": chunk_data["knowledge_steps"],
+            "score_history": chunk_data["score_history"],
+            "selected_knowledge": [dict(entry) for entry in chunk_data["manual_entries"]],
+            "final_single_run": chunk_data["final_single_run"],
+        }
+        record["chunks"].append(chunk_entry)
+        chunk_data["record_entry"] = chunk_entry
+
+    knowledge_chunk_scores: List[float] = []
+    best_chunk_mean: Optional[float] = None
+    best_chunk_data: Optional[Dict[str, Any]] = None
+    best_chunk_manual_entries: Optional[List[Dict[str, Any]]] = None
+
+    for chunk_data in chunk_records:
+        manual_entries = chunk_data["manual_entries"]
+        label = f"chunk{chunk_data['chunk_index']}"
+        chunk_trials, chunk_mean = await run_full_problem_trials(
+            orchestrator,
+            dataset_entry=dataset_entry,
+            base_prompt_messages=base_prompt_messages,
+            manual_entries=manual_entries if manual_entries else None,
+            trials=n_check_knowledge,
+            dataset_index=index,
+            label=label,
         )
+        chunk_mean = round(chunk_mean, 2)
+        knowledge_chunk_scores.append(chunk_mean)
+        chunk_data["record_entry"]["chunk_trials"] = chunk_trials
+        chunk_data["record_entry"]["chunk_mean_score"] = chunk_mean
+        if best_chunk_mean is None or chunk_mean > best_chunk_mean:
+            best_chunk_mean = chunk_mean
+            best_chunk_data = chunk_data
+            best_chunk_manual_entries = manual_entries if manual_entries else []
 
-    record["final_run_id"] = best_run_id
-    record["final_score"] = best_score
-    record["final_output"] = best_result.get("output", "")
-    record["final_single_run"] = {
-        "run_id": best_run_id,
-        "score": best_score,
-        "score_feedback": best_feedback,
-        "output": record["final_output"],
-    }
-    record["steps_evaluated"] = len(record["steps"])
-    record["selected_knowledge"] = [dict(entry) for entry in selected_manual_entries]
+    record["knowledge_chunk_mean_scores"] = knowledge_chunk_scores
+    if best_chunk_data:
+        record["best_chunk_index"] = best_chunk_data["chunk_index"]
+        record["best_chunk_mean_score"] = best_chunk_mean
+        record["selected_knowledge"] = [dict(entry) for entry in best_chunk_manual_entries or []]
+        record["final_single_run"] = best_chunk_data["final_single_run"]
+        record["final_run_id"] = best_chunk_data["current_run_id"]
+        record["final_score"] = best_chunk_data["current_score"]
+        record["final_output"] = best_chunk_data["final_single_run"]["output"]
+        record["score_history"] = best_chunk_data["score_history"]
+    else:
+        record["final_run_id"] = None
+        record["final_score"] = 0.0
+        record["final_output"] = ""
+        record["score_history"] = []
+        record["selected_knowledge"] = []
+        record["final_single_run"] = None
 
     base_trials, base_mean = await run_full_problem_trials(
         orchestrator,
@@ -747,16 +802,16 @@ async def run_problem(
         manual_entries=None,
         trials=final_reruns,
         dataset_index=index,
-        label="base",
+        label="base_final",
     )
     knowledge_trials, knowledge_mean = await run_full_problem_trials(
         orchestrator,
         dataset_entry=dataset_entry,
         base_prompt_messages=base_prompt_messages,
-        manual_entries=selected_manual_entries if selected_manual_entries else None,
+        manual_entries=best_chunk_manual_entries if best_chunk_manual_entries else None,
         trials=final_reruns,
         dataset_index=index,
-        label="knowledge",
+        label="knowledge_final",
     )
 
     record["fair_comparison"] = {
@@ -771,7 +826,7 @@ async def run_problem(
     record["final_rerun_mean_score"] = knowledge_mean
 
     print(
-        f"[eval {index}] reruns avg base={base_mean} knowledge={knowledge_mean} "
+        f"[sample {index}] reruns avg base={base_mean} knowledge={knowledge_mean} "
         f"(Δ {round(knowledge_mean - base_mean, 2)})"
     )
 
@@ -794,9 +849,9 @@ def load_existing_eval_entries(
                 entries = raw
                 needs_resave = True
             else:
-                print(f"[train_v3_eval] Ignoring malformed cache at {output_path}")
+                print(f"[train_v3_eval_sample] Ignoring malformed cache at {output_path}")
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[train_v3_eval] Failed to load cached eval entries: {exc}")
+            print(f"[train_v3_eval_sample] Failed to load cached eval entries: {exc}")
         for idx, entry in enumerate(entries):
             entry_id = str(entry.get("id") or "").strip()
             if not entry_id and idx < len(dataset):
@@ -817,9 +872,11 @@ def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             "overall_base_mean": 0.0,
             "overall_final_mean": 0.0,
             "win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
+            "knowledge_chunk_mean_scores": [],
         }
     base_vs_final: List[List[float]] = []
     improvements: List[float] = []
+    chunk_score_table: List[List[float]] = []
     for entry in entries:
         base_score = entry.get("base_rerun_mean_score")
         final_score = entry.get("final_rerun_mean_score")
@@ -831,6 +888,8 @@ def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         final_val = round(float(final_score), 2)
         base_vs_final.append([base_val, final_val])
         improvements.append(final_val - base_val)
+        chunk_scores = entry.get("knowledge_chunk_mean_scores") or []
+        chunk_score_table.append([round(float(score), 3) for score in chunk_scores])
     total = len(base_vs_final)
     mean_improvement = round(sum(improvements) / total, 4) if total else 0.0
     wins = sum(1 for diff in improvements if diff > 0)
@@ -849,6 +908,7 @@ def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
         "overall_base_mean": overall_base_mean,
         "overall_final_mean": overall_final_mean,
         "win_loss_tie": {"win": wins, "tie": ties, "loss": losses},
+        "knowledge_chunk_mean_scores": chunk_score_table,
     }
 
 
@@ -879,7 +939,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
     if needs_resave:
         save_eval_entries(eval_entries, args.output_path)
     if processed_ids:
-        print(f"[train_v3_eval] Resuming with {len(processed_ids)} cached entries")
+        print(f"[train_v3_eval_sample] Resuming with {len(processed_ids)} cached entries")
 
     pending: List[Tuple[int, Dict[str, Any], str]] = []
     for idx, entry in enumerate(dataset):
@@ -892,7 +952,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
     if not pending:
         print(
-            f"[train_v3_eval] All {len(processed_ids)} entries already processed. "
+            f"[train_v3_eval_sample] All {len(processed_ids)} entries already processed. "
             f"Results stored at {args.output_path}"
         )
         return
@@ -907,6 +967,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                 entry_id,
                 n_knowledge_steps=args.n_knowledge_steps,
                 knowledge_per_step=args.knowledge_per_step,
+                n_check_knowledge=args.n_check_knowledge,
                 final_reruns=args.final_reruns,
             )
             for dataset_idx, entry, entry_id in batch_slice
@@ -923,10 +984,10 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         save_eval_entries(eval_entries, args.output_path)
         batch_idx = batch_start // args.batch_size + 1
         print(
-            f"[train_v3_eval] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
+            f"[train_v3_eval_sample] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
         )
 
-    print(f"[train_v3_eval] Saved evaluation dataset to {args.output_path}")
+    print(f"[train_v3_eval_sample] Saved evaluation dataset to {args.output_path}")
 
 
 if __name__ == "__main__":
