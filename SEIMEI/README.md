@@ -15,7 +15,7 @@ It loads pluggable *agents* from a folder/file, routes steps using `rmsearch` (i
 6. `agents/code_act.py` — example agent that executes *whitelisted* shell commands with a timeout
 7. `agents/answer.py` — finalizer agent that summarizes findings into the user-facing reply
 
-> You can add more agents by dropping Python files that define subclasses of `Agent` into a directory and pointing `agent_config` to it.
+> You can add more agents by dropping Python files that define subclasses of `Agent` into a directory and pointing `agent_config` to it (via `dir_path` / `file_path`) or by referencing the registered agent by `name`.
 
 ---
 
@@ -141,7 +141,7 @@ class prioritise_docs(Agent):
         return {"content": f"Review next:\n{plan}", "log": {"query": question, "sections": ranked}}
 ```
 
-Drop this file into a directory referenced by `agent_config` and SEIMEI will register it automatically.
+Drop this file into a directory referenced by `agent_config` and SEIMEI will register it automatically (or use `{"name": "prioritise_docs"}` if the module is already on the import path).
 
 Key shared context entries exposed to agents:
 - `shared_ctx["search"]`: async helper that routes to `rmsearch` when available or falls back to LLM-based ranking. Accepts `query`, `keys`, optional `k`, and a `context` dict.
@@ -210,7 +210,7 @@ result = await orchestrator(messages=messages)
 ## `seimei.__init__`
 
 **Arguments**
-- `agent_config: list[dict]` — A list of entries like `{"dir_path": "path/to/agents"}` or `{"file_path": "path/to/agent.py"}`.
+- `agent_config: list[dict]` — A list of entries like `{"dir_path": "path/to/agents"}`, `{"file_path": "path/to/agent.py"}`, or `{"name": "code_act"}` to pick from already-registered agents.
 - `llm_kwargs: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url` and options like `max_concurrent_requests` for throttling.
 - `rm_kwargs: dict` — Optional; forwarded to `rmsearch` if you use it.
 - `log_dir: str` — Directory to store dataset logs. Default: `./seimei_runs`.
