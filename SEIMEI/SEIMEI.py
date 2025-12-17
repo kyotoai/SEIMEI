@@ -105,7 +105,10 @@ class seimei:
         self.agent_config_spec = [
             dict(cfg) for cfg in normalized_agent_config if isinstance(cfg, dict)
         ]
-        self._designated_agent_files = self._resolve_agent_config_paths(self.agent_config_spec)
+        (
+            self._designated_agent_files,
+            self._designated_agent_names,
+        ) = self._resolve_agent_config_targets(self.agent_config_spec)
         self._restrict_agents_to_config = bool(self.agent_config_spec)
         self._load_agents(self.agent_config_spec)
 
@@ -147,8 +150,11 @@ class seimei:
                     file=sys.stderr,
                 )
 
-    def _resolve_agent_config_paths(self, configs: Sequence[Dict[str, Any]]) -> Set[Path]:
-        resolved: Set[Path] = set()
+    def _resolve_agent_config_targets(
+        self, configs: Sequence[Dict[str, Any]]
+    ) -> Tuple[Set[Path], Set[str]]:
+        resolved_paths: Set[Path] = set()
+        agent_names: Set[str] = set()
 
         def _safe_resolve(value: Any) -> Optional[Path]:
             if value in (None, ""):
@@ -165,9 +171,14 @@ class seimei:
         for cfg in configs:
             if not isinstance(cfg, dict):
                 continue
+            name = cfg.get("name")
+            if isinstance(name, str):
+                stripped = name.strip()
+                if stripped:
+                    agent_names.add(stripped)
             file_path = _safe_resolve(cfg.get("file_path"))
             if file_path and file_path.is_file():
-                resolved.add(file_path)
+                resolved_paths.add(file_path)
 
             dir_path = _safe_resolve(cfg.get("dir_path"))
             if dir_path and dir_path.is_dir():
@@ -179,13 +190,13 @@ class seimei:
                         if not name.endswith(".py") or name.startswith("_"):
                             continue
                         try:
-                            resolved.add(entry.resolve())
+                            resolved_paths.add(entry.resolve())
                         except Exception:
-                            resolved.add(entry)
+                            resolved_paths.add(entry)
                 except OSError:
                     continue
 
-        return resolved
+        return resolved_paths, agent_names
 
     def _should_include_agent_class(self, cls: Type[Agent]) -> bool:
         name = getattr(cls, "name", None) or cls.__name__
@@ -202,7 +213,11 @@ class seimei:
                     module_path = Path(module_file).resolve()
                 except Exception:
                     module_path = Path(os.path.abspath(module_file))
-        if module_path and module_path in getattr(self, "_designated_agent_files", set()):
+        designated_names = getattr(self, "_designated_agent_names", set())
+        designated_files = getattr(self, "_designated_agent_files", set())
+        if module_path and module_path in designated_files:
+            return True
+        if designated_names and name in designated_names:
             return True
         return False
 
