@@ -127,15 +127,23 @@ class seimei:
     # -------------------------- Agent loading --------------------------
 
     def _load_agents(self, configs: Sequence[Dict[str, Any]]) -> None:
+        requested_names: List[str] = []
+        seen_names: Set[str] = set()
         for cfg in configs:
             if not isinstance(cfg, dict):
                 continue
+            name = self._normalize_agent_name(cfg.get("name"))
+            if name and name not in seen_names:
+                requested_names.append(name)
+                seen_names.add(name)
             dir_path = cfg.get("dir_path")
             file_path = cfg.get("file_path")
             if dir_path:
                 self._load_agents_from_dir(dir_path)
             if file_path:
                 self._load_agents_from_file(file_path)
+        if requested_names:
+            self._load_agents_from_names(requested_names)
 
         # instantiate
         for cls in get_agent_subclasses().values():
@@ -171,11 +179,9 @@ class seimei:
         for cfg in configs:
             if not isinstance(cfg, dict):
                 continue
-            name = cfg.get("name")
-            if isinstance(name, str):
-                stripped = name.strip()
-                if stripped:
-                    agent_names.add(stripped)
+            name = self._normalize_agent_name(cfg.get("name"))
+            if name:
+                agent_names.add(name)
             file_path = _safe_resolve(cfg.get("file_path"))
             if file_path and file_path.is_file():
                 resolved_paths.add(file_path)
@@ -197,6 +203,21 @@ class seimei:
                     continue
 
         return resolved_paths, agent_names
+
+    @staticmethod
+    def _normalize_agent_name(value: Any) -> Optional[str]:
+        if not isinstance(value, str):
+            return None
+        name = value.strip()
+        if not name:
+            return None
+        for sep in (os.sep, os.altsep):
+            if sep and sep in name:
+                name = name.rsplit(sep, 1)[-1]
+        if name.endswith(".py"):
+            name = name[:-3]
+        name = name.strip()
+        return name or None
 
     def _should_include_agent_class(self, cls: Type[Agent]) -> bool:
         name = getattr(cls, "name", None) or cls.__name__
@@ -238,6 +259,15 @@ class seimei:
             module = importlib.util.module_from_spec(spec)
             sys.modules[mod_name] = module
             spec.loader.exec_module(module)  # type: ignore
+
+    def _load_agents_from_names(self, names: Sequence[str]) -> None:
+        base_dir = Path(__file__).resolve().parent / "agents"
+        for name in names:
+            if name in get_agent_subclasses():
+                continue
+            candidate = base_dir / f"{name}.py"
+            if candidate.is_file():
+                self._load_agents_from_file(str(candidate))
 
     def _load_knowledge_store(self, path: Optional[str]) -> Dict[str, List[Dict[str, Any]]]:
         if not path:

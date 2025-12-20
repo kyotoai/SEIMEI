@@ -1845,7 +1845,7 @@ DEFAULT_FINAL_RERUNS = 7
 
 ## Dec 17
 
-- [ ] Allow agent_config = [{"name":"..."}]
+- [x] Allow agent_config = [{"name":"..."}]
 ```
 Now when seimei initializing, I can specify agent_config = [{"file_path":"..."}]. But this is inconvinient if seimei folder is unclear. Instead allow users to specify it agent_config = [{"name":"..."}] too. Ex. agent_config = [{"name":"code_act"}, {"name":"edit_file"}] or agent_config = [{"name":"code_act"}, {"file_path":"seimei/agents/edit_file"}].
 ```
@@ -1975,7 +1975,10 @@ Follow
 
 ## Dec 20
 
-- [ ]
+- [ ] make train_v3_sample.py
+- [ ] make train_v4_eval_sample.py
+
+- [ ] make it 
 
 
 
