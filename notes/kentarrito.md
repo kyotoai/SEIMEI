@@ -1832,6 +1832,14 @@ DEFAULT_KNOWLEDGE_PER_STEP = 6
 DEFAULT_N_CHECK_KNOWLEDGE = 4
 DEFAULT_FINAL_RERUNS = 7
 -> 0.3
+
+train_v3_eval_sample_results3.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_N_CHECK_KNOWLEDGE = 3
+DEFAULT_FINAL_RERUNS = 7
+-> 
 ```
 
 
@@ -1841,6 +1849,25 @@ DEFAULT_FINAL_RERUNS = 7
 ```
 Now when seimei initializing, I can specify agent_config = [{"file_path":"..."}]. But this is inconvinient if seimei folder is unclear. Instead allow users to specify it agent_config = [{"name":"..."}] too. Ex. agent_config = [{"name":"code_act"}, {"name":"edit_file"}] or agent_config = [{"name":"code_act"}, {"file_path":"seimei/agents/edit_file"}].
 ```
+
+## Dec 18
+
+- [x] Map API integration
+```
+Refer to exp9_mobile_data_small/map_api_test.py and implement overpass agent in seimei. Follow
+1. refer to other agents for how to make agent file. Implement it in seimei/agents folder.
+2. in overpass agent, from the past analysis, make query for overpass api call by llm and get information about building around a point.
+```
+
+- [ ] Fix an error it has now.
+    - it didn't go to answer agent for some reason
+
+- [ ] Implement VertexAI
+- [ ] Try this with NTT data (on GCP)
+!!!! - [ ] Decide a point to improve () 
+- [ ] make rmsearch prompt to improve it
+
+- [x] Overpass agent
 
 
 ## Past ToDo
@@ -1942,3 +1969,19 @@ Follow
 
 
 ```
+
+
+
+
+## Dec 20
+
+- [ ]
+
+
+
+
+
+
+
+
+
