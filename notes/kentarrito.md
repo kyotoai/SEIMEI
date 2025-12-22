@@ -1987,9 +1987,9 @@ Follow
 Now exp11_plasma_gkv_v3/train_v3_eval_sample.py creates workspace_copies and apply patch for each file. But it didn't specify the working space path in seimei __call__ for each problem, so directly acting agent on the current directory. Try to implement workspace argument in seimei __call__ and pass workspace for each problem. To implement this feature, read the entire file exp11_plasma_gkv_v3/train_v3_eval_sample.py and investigate other relevant files including seimei.py deeply, and modidfy the relevant files.
 ```
 
-- [ ] Debug 2 exp11_plasma_gkv_v3/train_v3_eval_sample.py
+- [x] Debug 2 exp11_plasma_gkv_v3/train_v3_eval_sample.py
     * delete unnecessary scoring
-    * save in
+    * save inference
 ```
 In exp11_plasma_gkv_v3/train_v3_eval_sample.py, record is only saved at the end of all the processes. But I want you to save the record in the output path as often as possible. Also if running the python file is unexpectedly ended and I try to restart again, skip the processes which are done last time. You can check if the process is ended from the saved record file.
 ```

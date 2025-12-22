@@ -4,6 +4,7 @@ import json
 import random
 import shutil
 import os
+import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -61,7 +62,6 @@ KLG_SYSTEM_PROMPT_LIST = [
     "Weave the knowledge cues into your debugging narrative by mirroring their language and pointing to the exact Fortran constructs involved.",
 ]
 
-
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
     "Judge factual accuracy, coverage, and clarity. Return ONLY a JSON object with keys 'score' "
@@ -75,6 +75,95 @@ KNOWLEDGE_SYSTEM_PROMPT = (
 )
 
 RUN_ID_CACHE: Dict[str, str] = {}
+
+# ---------- NEW: durable run cache + incremental saving ----------
+CACHE_SCHEMA_VERSION = 2
+
+
+def _now_iso() -> str:
+    return time.strftime("%Y-%m-%dT%H:%M:%S%z")
+
+
+def _safe_json_size(obj: Any) -> int:
+    try:
+        return len(json.dumps(obj, ensure_ascii=False))
+    except Exception:
+        return 10**9
+
+
+def _compact_msg_history(history: Any) -> Optional[List[Dict[str, Any]]]:
+    """
+    Keep a bounded msg_history as a fallback if run logs are missing.
+    Prefer not to bloat the results file.
+    """
+    if not isinstance(history, list) or not history:
+        return None
+    if len(history) > 160:
+        return None
+    # Bound total JSON size (rough)
+    if _safe_json_size(history) > 250_000:
+        return None
+    compact: List[Dict[str, Any]] = []
+    for msg in history:
+        if isinstance(msg, dict):
+            compact.append(dict(msg))
+    return compact or None
+
+
+@dataclass
+class EvalCheckpoint:
+    output_path: Path
+    eval_entries: List[Dict[str, Any]]
+    run_cache: Dict[str, Dict[str, Any]]
+    lock: asyncio.Lock
+
+    @staticmethod
+    def make_run_key(entry_id: str, run_name: str) -> str:
+        return f"{entry_id}::{run_name}"
+
+    def get_cached(self, *, entry_id: str, run_name: str) -> Optional[Dict[str, Any]]:
+        key = self.make_run_key(entry_id, run_name)
+        cached = self.run_cache.get(key)
+        if not isinstance(cached, dict):
+            return None
+        # Return a shallow copy so callers can safely mutate fields like run_id normalization.
+        return dict(cached)
+
+    async def record_run(
+        self,
+        *,
+        entry_id: str,
+        dataset_index: int,
+        run_name: str,
+        orchestrator_log_dir: Path,
+        result: Dict[str, Any],
+    ) -> None:
+        """
+        Persist minimal run outputs immediately after each orchestrator call.
+        This enables resuming by skipping runs that already exist in run_cache.
+        """
+        key = self.make_run_key(entry_id, run_name)
+        normalize_result_run_id(result, Path(orchestrator_log_dir))
+        payload: Dict[str, Any] = {
+            "entry_id": entry_id,
+            "dataset_index": int(dataset_index),
+            "run_name": run_name,
+            "run_id": str(result.get("run_id") or "").strip(),
+            "output": result.get("output", ""),
+            "saved_at": _now_iso(),
+        }
+        msg_history = _compact_msg_history(result.get("msg_history"))
+        if msg_history is not None:
+            payload["msg_history"] = msg_history
+
+        async with self.lock:
+            # Avoid unnecessary rewrites if identical cached entry exists.
+            prev = self.run_cache.get(key)
+            if isinstance(prev, dict) and prev.get("run_id") == payload.get("run_id") and prev.get("output") == payload.get("output"):
+                return
+            self.run_cache[key] = payload
+            # Must save after every run ends (user requirement).
+            save_eval_entries(self.eval_entries, self.output_path, run_cache=self.run_cache)
 
 
 def _sanitize_id_component(text: str, *, limit: int = 48) -> str:
@@ -249,7 +338,7 @@ def _build_orchestrator(args: argparse.Namespace, workspace: Path):
     os.chdir(workspace)
     try:
         return seimei(
-            #agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+            # agent_config=[{"file_path": "seimei/agents/code_act.py"}],
             agent_config=[{"name": "code_act"}],
             llm_kwargs={"model": "gpt-5-nano"},
             rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
@@ -294,14 +383,42 @@ async def run_orchestrator_with_patch(
     messages: Sequence[Dict[str, Any]],
     run_name: str,
     knowledge_config: Dict[str, Any],
+    checkpoint: Optional[EvalCheckpoint] = None,
+    entry_id: Optional[str] = None,
 ) -> Dict[str, Any]:
+    """
+    NEW behavior:
+    - If checkpoint has a cached run for (entry_id, run_name), return it and skip inference.
+    - Otherwise, run inference, then immediately persist the result via save_eval_entries.
+    """
+    resolved_entry_id = entry_id or compute_entry_id(dataset_entry, dataset_index)
+    if checkpoint is not None:
+        cached = checkpoint.get_cached(entry_id=resolved_entry_id, run_name=run_name)
+        if cached:
+            # Ensure minimal keys exist for downstream code.
+            cached.setdefault("run_id", cached.get("run_id") or "")
+            cached.setdefault("output", cached.get("output") or "")
+            if "msg_history" in cached:
+                cached["msg_history"] = cached.get("msg_history")
+            return cached
+
     with patch_manager.apply_for_problem(dataset_entry, dataset_index):
-        return await orchestrator(
+        result = await orchestrator(
             messages=messages,
             run_name=run_name,
             knowledge_config=knowledge_config,
             workspace=patch_manager.workspace,
         )
+
+    if checkpoint is not None:
+        await checkpoint.record_run(
+            entry_id=resolved_entry_id,
+            dataset_index=dataset_index,
+            run_name=run_name,
+            orchestrator_log_dir=Path(orchestrator.log_dir),
+            result=result,
+        )
+    return result
 
 
 def parse_args() -> argparse.Namespace:
@@ -600,6 +717,7 @@ def get_messages_for_run(
     try:
         raw_messages = load_run_messages(run_id, runs_dir=log_dir, step=max_agent_step)
     except FileNotFoundError:
+        # Fallback: if this run_result came from run_cache and included msg_history, _normalize above handles it.
         return []
     return _normalize(raw_messages)
 
@@ -645,8 +763,6 @@ async def generate_step_knowledge(
     step: int,
     iteration: int,
     prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
-    #transcript_score: Optional[float] = None,
-    #transcript_feedback: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
     question = build_task_prompt(dataset_entry)
     reference = extract_reference_answer(dataset_entry)
@@ -654,14 +770,10 @@ async def generate_step_knowledge(
     step_text = get_agent_step_text(messages, step)
     knowledge_snapshot = [dict(entry) for entry in prior_knowledge or []]
     knowledge_json = json.dumps(knowledge_snapshot, ensure_ascii=False, indent=2)
-    #score_str = "unknown" if transcript_score is None else f"{float(transcript_score):.2f}"
-    #feedback_text = (transcript_feedback or "").strip() or "No judge feedback recorded."
     prompt = (
         f"You are writing reusable knowledge that will be inserted before agent step {step} "
         "in a code-debugging workflow for the gyrokinetic plasma repository.\n\n"
         "Evaluation summary for the run that produced this transcript:\n"
-        #f"- Score: {score_str}\n"
-        #f"- Judge feedback: {feedback_text}\n"
         "- Knowledge snippets already injected (JSON array, matches this transcript exactly):\n"
         f"{knowledge_json}\n\n"
         f"Full message history before rerun (JSON transcript):\n{transcript_json}\n\n"
@@ -732,6 +844,8 @@ async def run_candidate_inference(
     knowledge_entry: Dict[str, Any],
     dataset_index: int,
     candidate_index: int,
+    checkpoint: Optional[EvalCheckpoint],
+    entry_id: str,
 ) -> Dict[str, Any]:
     rerun_messages = randomize_system_prompt(truncated_history, use_knowledge_prompt=True)
     manual_entries = [
@@ -752,19 +866,16 @@ async def run_candidate_inference(
         messages=rerun_messages,
         run_name=run_name,
         knowledge_config=knowledge_config,
+        checkpoint=checkpoint,
+        entry_id=entry_id,
     )
     new_run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
     new_output = result.get("output", "")
-    question = build_task_prompt(dataset_entry)
-    reference = extract_reference_answer(dataset_entry)
-    #score_info = await score_answer(orchestrator.llm, question, reference, new_output)
-    #new_score = score_info.get("score", 0.0) or 0.0
 
     candidate_info = {
         "candidate_index": candidate_index + 1,
+        "run_name": run_name,
         "run_id": new_run_id,
-        #"score": new_score,
-        #"score_feedback": score_info.get("feedback"),
         "output": new_output,
         "knowledge": {
             "text": knowledge_entry.get("text"),
@@ -788,6 +899,8 @@ async def run_full_problem_trials(
     trials: int,
     dataset_index: int,
     label: str,
+    checkpoint: Optional[EvalCheckpoint],
+    entry_id: str,
 ) -> Tuple[List[Dict[str, Any]], float]:
     if trials <= 0:
         return [], 0.0
@@ -801,14 +914,17 @@ async def run_full_problem_trials(
         knowledge_config = build_knowledge_config(
             [dict(entry) for entry in manual_entries] if manual_entries else None
         )
+        run_name = f"train_v3_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}"
         result = await run_orchestrator_with_patch(
             orchestrator,
             patch_manager,
             dataset_entry=dataset_entry,
             dataset_index=dataset_index,
             messages=rerun_messages,
-            run_name=f"train_v3_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}",
+            run_name=run_name,
             knowledge_config=knowledge_config,
+            checkpoint=checkpoint,
+            entry_id=entry_id,
         )
         run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
         output = result.get("output", "")
@@ -817,6 +933,7 @@ async def run_full_problem_trials(
         trial_records.append(
             {
                 "trial": trial + 1,
+                "run_name": run_name,
                 "run_id": run_id,
                 "score": score,
                 "score_feedback": score_info.get("feedback"),
@@ -842,6 +959,7 @@ async def run_problem(
     knowledge_per_step: int,
     n_check_knowledge: int,
     final_reruns: int,
+    checkpoint: Optional[EvalCheckpoint],
 ) -> Dict[str, Any]:
     problem_text = extract_problem_text(dataset_entry)
     prompt_text = build_task_prompt(dataset_entry) or problem_text
@@ -854,12 +972,7 @@ async def run_problem(
     except FileNotFoundError as exc:
         raise RuntimeError(f"[sample {index}] Missing patch file: {exc}") from exc
 
-    base_prompt_messages = [
-        {
-            "role": "user",
-            "content": prompt_text,
-        }
-    ]
+    base_prompt_messages = [{"role": "user", "content": prompt_text}]
 
     chunk_records: List[Dict[str, Any]] = []
     base_inferences: List[Dict[str, Any]] = []
@@ -867,26 +980,25 @@ async def run_problem(
 
     for chunk_idx in range(knowledge_per_step):
         base_messages = randomize_system_prompt(base_prompt_messages)
+        run_name = f"train_v3_eval_sample_{index:04d}_base_seed{chunk_idx + 1}"
         base_result = await run_orchestrator_with_patch(
             orchestrator,
             patch_manager,
             dataset_entry=dataset_entry,
             dataset_index=index,
             messages=[dict(msg) for msg in base_messages],
-            run_name=f"train_v3_eval_sample_{index:04d}_base_seed{chunk_idx + 1}",
+            run_name=run_name,
             knowledge_config=build_knowledge_config(),
+            checkpoint=checkpoint,
+            entry_id=entry_id,
         )
         base_run_id = normalize_result_run_id(base_result, log_dir)
         base_output = base_result.get("output", "")
-        #score_info = await score_answer(orchestrator.llm, prompt_text, reference_answer, base_output)
-        #base_score = score_info.get("score", 0.0) or 0.0
-        #base_feedback = score_info.get("feedback")
 
         base_run = {
             "chunk_index": chunk_idx + 1,
+            "run_name": run_name,
             "run_id": base_run_id,
-            #"score": base_score,
-            #"score_feedback": base_feedback,
             "output": base_output,
         }
         base_inferences.append(base_run)
@@ -896,20 +1008,14 @@ async def run_problem(
                 "base_run": base_run,
                 "current_result": base_result,
                 "current_run_id": base_run_id,
-                #"current_score": base_score,
-                #"current_feedback": base_feedback,
+                "current_score": None,  # keep for compatibility
+                "current_feedback": None,
                 "manual_entries": [],
                 "knowledge_steps": [],
-                "score_history": [
-                    {
-                        "step": 0,
-                        #"score": base_score,
-                        "run_id": base_run_id,
-                    }
-                ],
+                "score_history": [{"step": 0, "run_id": base_run_id, "score": None}],
             }
         )
-        print(f"[sample {index}] chunk {chunk_idx + 1}") # base score={base_score}")
+        print(f"[sample {index}] chunk {chunk_idx + 1}")
 
     record: Dict[str, Any] = {
         "id": entry_id,
@@ -920,9 +1026,6 @@ async def run_problem(
         "chunks": [],
         "knowledge_chunk_mean_scores": [],
     }
-    #best_base_entry = max(base_inferences, key=lambda entry: entry["score"]) if base_inferences else None
-    #if best_base_entry:
-    #    record["base"] = best_base_entry
 
     for step in range(1, n_knowledge_steps + 1):
         for chunk_data in chunk_records:
@@ -942,8 +1045,6 @@ async def run_problem(
                 step=step,
                 iteration=chunk_data["chunk_index"] - 1,
                 prior_knowledge=[dict(entry) for entry in chunk_data["manual_entries"]],
-                #transcript_score=chunk_data["current_score"],
-                #transcript_feedback=chunk_data["current_feedback"],
             )
             if not knowledge_entry:
                 print(
@@ -963,22 +1064,22 @@ async def run_problem(
                 knowledge_entry=knowledge_entry,
                 dataset_index=index,
                 candidate_index=chunk_data["chunk_index"] - 1,
+                checkpoint=checkpoint,
+                entry_id=entry_id,
             )
             candidate_info = candidate["info"]
             chunk_data["knowledge_steps"].append(
                 {
                     "step": step,
                     "knowledge": candidate_info.get("knowledge"),
+                    "run_name": candidate_info.get("run_name"),
                     "run_id": candidate_info.get("run_id"),
-                    #"score": candidate_info.get("score"),
-                    #"score_feedback": candidate_info.get("score_feedback"),
                     "output": candidate_info.get("output"),
                 }
             )
             chunk_data["current_result"] = candidate["result"]
             chunk_data["current_run_id"] = candidate_info.get("run_id")
-            #chunk_data["current_score"] = candidate_info.get("score", chunk_data["current_score"])
-            #chunk_data["current_feedback"] = candidate_info.get("score_feedback")
+
             manual_entry = {
                 "step": step,
                 "agent": candidate_info.get("knowledge", {}).get("agent") or "think",
@@ -987,30 +1088,27 @@ async def run_problem(
             }
             if manual_entry["text"]:
                 chunk_data["manual_entries"].append(manual_entry)
-            #chunk_data["score_history"].append(
-            #    {
-            #        "step": step,
-            #        "score": chunk_data["current_score"],
-            #        "run_id": chunk_data["current_run_id"],
-            #    }
-            #)
-            print(
-                f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
-                #f"score={chunk_data['current_score']}"
+
+            chunk_data["score_history"].append(
+                {
+                    "step": step,
+                    "score": chunk_data.get("current_score"),
+                    "run_id": chunk_data["current_run_id"],
+                }
             )
+            print(f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}:")
 
     for chunk_data in chunk_records:
         chunk_data["final_single_run"] = {
             "run_id": chunk_data["current_run_id"],
-            #"score": chunk_data["current_score"],
-            #"score_feedback": chunk_data["current_feedback"],
+            "score": chunk_data.get("current_score"),
+            "score_feedback": chunk_data.get("current_feedback"),
             "output": chunk_data["current_result"].get("output", ""),
         }
         chunk_entry = {
             "chunk_index": chunk_data["chunk_index"],
             "base_run": chunk_data["base_run"],
             "knowledge_steps": chunk_data["knowledge_steps"],
-            #"score_history": chunk_data["score_history"],
             "selected_knowledge": [dict(entry) for entry in chunk_data["manual_entries"]],
             "final_single_run": chunk_data["final_single_run"],
         }
@@ -1034,6 +1132,8 @@ async def run_problem(
             trials=n_check_knowledge,
             dataset_index=index,
             label=label,
+            checkpoint=checkpoint,
+            entry_id=entry_id,
         )
         chunk_mean = round(chunk_mean, 2)
         knowledge_chunk_scores.append(chunk_mean)
@@ -1051,9 +1151,9 @@ async def run_problem(
         record["selected_knowledge"] = [dict(entry) for entry in best_chunk_manual_entries or []]
         record["final_single_run"] = best_chunk_data["final_single_run"]
         record["final_run_id"] = best_chunk_data["current_run_id"]
-        record["final_score"] = best_chunk_data["current_score"]
+        record["final_score"] = best_chunk_data.get("current_score", 0.0) or 0.0
         record["final_output"] = best_chunk_data["final_single_run"]["output"]
-        record["score_history"] = best_chunk_data["score_history"]
+        record["score_history"] = best_chunk_data.get("score_history", [])
     else:
         record["final_run_id"] = None
         record["final_score"] = 0.0
@@ -1071,6 +1171,8 @@ async def run_problem(
         trials=final_reruns,
         dataset_index=index,
         label="base_final",
+        checkpoint=checkpoint,
+        entry_id=entry_id,
     )
     knowledge_trials, knowledge_mean = await run_full_problem_trials(
         orchestrator,
@@ -1081,6 +1183,8 @@ async def run_problem(
         trials=final_reruns,
         dataset_index=index,
         label="knowledge_final",
+        checkpoint=checkpoint,
+        entry_id=entry_id,
     )
 
     record["fair_comparison"] = {
@@ -1105,15 +1209,20 @@ async def run_problem(
 def load_existing_eval_entries(
     dataset: List[Dict[str, Any]],
     output_path: Path,
-) -> Tuple[List[Dict[str, Any]], Set[str], bool]:
+) -> Tuple[List[Dict[str, Any]], Set[str], bool, Dict[str, Dict[str, Any]]]:
     entries: List[Dict[str, Any]] = []
     processed_ids: Set[str] = set()
     needs_resave = False
+    run_cache: Dict[str, Dict[str, Any]] = {}
     if output_path.exists():
         try:
             raw = json.loads(output_path.read_text(encoding="utf-8"))
             if isinstance(raw, dict):
                 entries = raw.get("detail") or []
+                rc = raw.get("run_cache") or {}
+                if isinstance(rc, dict):
+                    # ensure values are dicts
+                    run_cache = {str(k): v for k, v in rc.items() if isinstance(v, dict)}
             elif isinstance(raw, list):
                 entries = raw
                 needs_resave = True
@@ -1129,7 +1238,7 @@ def load_existing_eval_entries(
                 needs_resave = True
             if entry_id:
                 processed_ids.add(entry_id)
-    return entries, processed_ids, needs_resave
+    return entries, processed_ids, needs_resave, run_cache
 
 
 def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1181,13 +1290,24 @@ def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def save_eval_entries(entries: List[Dict[str, Any]], output_path: Path) -> None:
+def save_eval_entries(
+    entries: List[Dict[str, Any]],
+    output_path: Path,
+    *,
+    run_cache: Optional[Dict[str, Dict[str, Any]]] = None,
+) -> None:
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = json.dumps(
-        {"summary": build_eval_summary(entries), "detail": entries},
-        ensure_ascii=False,
-        indent=2,
-    )
+    payload_obj: Dict[str, Any] = {
+        "schema_version": CACHE_SCHEMA_VERSION,
+        "saved_at": _now_iso(),
+        "summary": build_eval_summary(entries),
+        "detail": entries,
+    }
+    if run_cache is not None:
+        payload_obj["run_cache"] = run_cache
+        payload_obj["run_cache_count"] = len(run_cache)
+
+    payload = json.dumps(payload_obj, ensure_ascii=False, indent=2)
     tmp_path = output_path.with_suffix(output_path.suffix + ".tmp")
     tmp_path.write_text(payload, encoding="utf-8")
     tmp_path.replace(output_path)
@@ -1208,11 +1328,22 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         )
     workspace_pool = build_workspace_pool(args, workspace_count)
 
-    eval_entries, processed_ids, needs_resave = load_existing_eval_entries(dataset, args.output_path)
+    eval_entries, processed_ids, needs_resave, run_cache = load_existing_eval_entries(
+        dataset, args.output_path
+    )
+    checkpoint = EvalCheckpoint(
+        output_path=args.output_path,
+        eval_entries=eval_entries,
+        run_cache=run_cache,
+        lock=asyncio.Lock(),
+    )
+
     if needs_resave:
-        save_eval_entries(eval_entries, args.output_path)
+        save_eval_entries(eval_entries, args.output_path, run_cache=run_cache)
     if processed_ids:
         print(f"[train_v3_eval_sample] Resuming with {len(processed_ids)} cached entries")
+    if run_cache:
+        print(f"[train_v3_eval_sample] Loaded run_cache with {len(run_cache)} runs")
 
     pending: List[Tuple[int, Dict[str, Any], str]] = []
     for idx, entry in enumerate(dataset):
@@ -1243,6 +1374,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                 knowledge_per_step=args.knowledge_per_step,
                 n_check_knowledge=args.n_check_knowledge,
                 final_reruns=args.final_reruns,
+                checkpoint=checkpoint,
             )
             for handle, (dataset_idx, entry, entry_id) in zip(workspace_pool, batch_slice)
         ]
@@ -1250,12 +1382,15 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         for record in batch_records:
             if not record:
                 continue
-            entry_id = record.get("id")
-            if not entry_id or entry_id in processed_ids:
+            rid = str(record.get("id") or "").strip()
+            if not rid or rid in processed_ids:
                 continue
             eval_entries.append(record)
-            processed_ids.add(entry_id)
-        save_eval_entries(eval_entries, args.output_path)
+            processed_ids.add(rid)
+
+        # Keep existing behavior: save completed-problem detail after each batch,
+        # but now we also persist run_cache continuously from inside run_orchestrator_with_patch.
+        save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
         batch_idx = batch_start // args.batch_size + 1
         print(
             f"[train_v3_eval_sample] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
