@@ -1,0 +1,45 @@
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+   SUBROUTINE literm_k_rev ( ff, psi, chi, lf )
+ !--------------------------------------
+ !     z-derivative of ff
+ 
+     complex(kind=DP), intent(in), &
+       dimension(-nx:nx,0:ny,-nz-nzb:nz-1+nzb,1-nvb:2*nv+nvb,0-nvb:nm+nvb) :: ff
+     complex(kind=DP), intent(in), &
+       dimension(-nx:nx,0:ny,-nz-nzb:nz-1+nzb,0:nm) :: psi, chi
+     complex(kind=DP), intent(out), &
+       dimension(-nx:nx,0:ny,-nz:nz-1,1:2*nv,0:nm) :: lf
+ 
+-    real(kind=DP) :: cs1, cs2, kvd, kvs
++    real(kind=DP) :: kvd
+     integer  ::  mx, my, iz, iv, im
+@@
+                                            call clock_sta(1320)
+                                          ! call fapp_start("literm_perp",1320,1)
+ 
+-      cs1    = sgn(ranks) * Znum(ranks) / tau(ranks)
+-      cs2    = sqrt( tau(ranks) / Anum(ranks) )
+-
+-!$OMP parallel do collapse(3) private(kvd,kvs)
++!$OMP parallel do collapse(3) private(kvd)
+       do im = 0, nm
+         do iv = 1, 2*nv
+           do iz = -nz, nz-1
+@@
+             do my = ist_y, iend_y
+               do mx = -nx, nx
+                 kvd = kx(mx) * vdx(iz,iv,im) + ky(my) * vdy(iz,iv,im)
+-                kvs = ky(my) * vsy(iz,iv,im)
+-                lf(mx,my,iz,iv,im) =                  &
+-                   - ui * kvd * ff(mx,my,iz,iv,im)    &
+-                   - cs1 * fmx(iz,iv,im) * (          &
+-                       + ui * kvd * psi(mx,my,iz,im)  &
+-                       - ui * kvs                     &
+-                            * ( psi(mx,my,iz,im) - cs2 * vl(iv) * chi(mx,my,iz,im) ) )
++                lf(mx,my,iz,iv,im) = - ui * kvd * ff(mx,my,iz,iv,im)
+               end do
+             end do
+           end do
+*** End Patch

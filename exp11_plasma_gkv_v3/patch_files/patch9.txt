@@ -1,0 +1,49 @@
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+             do mx = -nx, nx
+               lf(mx,my,iz,iv) = lf(mx,my,iz,iv)       &
+               !%%% For shearflow rotating flux tube model %%%
+-              !!!- vl(iv) * cefz(iz) * (              &
+-                 - (vl(iv) * cefz(iz) + rotating_cf4) * ( &
++                !!!- vl(iv) * cefz(iz) * (              &
++                 - rotating_cf4 * (                     &
+               !%%%
+                      -         ff(mx,my,iz+2,iv)      &
+@@
+                   lf(mx,my,iz,iv) = lf(mx,my,iz,iv)       &
+                     !%%% For shearflow rotating flux tube model %%%
+                      - rotating_cf4 * (                   &
+                          -         ff(mx,my,iz+2,iv)      &
+                          + 8._DP * ff(mx,my,iz+1,iv)      &
+                          - 8._DP * ff(mx,my,iz-1,iv)      &
+                          +         ff(mx,my,iz-2,iv) )    &
+                     !%%%
+-                     - vl(iv) * cefz2(iz) * (             &
+-                         - 3._DP * ff(mx,my,iz+2,iv)      &
+-                         +30._DP * ff(mx,my,iz+1,iv)      &
+-                         +20._DP * ff(mx,my,iz  ,iv)      &
+-                         -60._DP * ff(mx,my,iz-1,iv)      &
+-                         +15._DP * ff(mx,my,iz-2,iv)      &
+-                         - 2._DP * ff(mx,my,iz-3,iv) )    &
+                      + mir(iz,im) * cefv * (              &
+                          -         ff(mx,my,iz,iv+2)      &
+@@
+                   lf(mx,my,iz,iv) = lf(mx,my,iz,iv)       &
+                     !%%% For shearflow rotating flux tube model %%%
+                      - rotating_cf4 * (                   &
+                          -         ff(mx,my,iz+2,iv)      &
+                          + 8._DP * ff(mx,my,iz+1,iv)      &
+                          - 8._DP * ff(mx,my,iz-1,iv)      &
+                          +         ff(mx,my,iz-2,iv) )    &
+                     !%%%
+-                     - vl(iv) * cefz2(iz) * (             &
+-                         + 2._DP * ff(mx,my,iz+3,iv)      &
+-                         -15._DP * ff(mx,my,iz+2,iv)      &
+-                         +60._DP * ff(mx,my,iz+1,iv)      &
+-                         -20._DP * ff(mx,my,iz  ,iv)      &
+-                         -30._DP * ff(mx,my,iz-1,iv)      &
+-                         + 3._DP * ff(mx,my,iz-2,iv) )    &
+                      + mir(iz,im) * cefv * (              &
+                          -         ff(mx,my,iz,iv+2)      &
+*** End Patch

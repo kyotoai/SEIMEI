@@ -1,0 +1,13 @@
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+         call tips_reality ( hh )
+ 
+                                            call clock_sta(12)
+                                          ! call fapp_start("esfield",12,1)
+         call fld_hh2ff( hh, Al, ff )
+-        call fld_esfield( ff, phi )
+                                          ! call fapp_stop("esfield",12,1)
+                                            call clock_end(12)
+       end do
+*** End Patch

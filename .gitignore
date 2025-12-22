@@ -58,7 +58,7 @@ exp8_csv_small/*.json
 exp9_mobile_data_small/train*.json
 exp9_mobile_data_small/csv.zip
 exp9_mobile_data_small.zip
-exp11*/
+exp11_plasma_gkv_v2/
 
 # files created as seimei runs
 seimei_runs*
