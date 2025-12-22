@@ -1349,6 +1349,7 @@ class seimei:
         stop_when: Optional[Callable[[List[Dict[str, Any]]], bool]] = None,
         return_usage: bool = True,
         run_name: Optional[str] = None,
+        workspace: Optional[Union[str, Path]] = None,
         knowledge_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
@@ -1418,6 +1419,15 @@ class seimei:
         run_save_path = normalized_config["save_knowledge_path"]
         run_prompt_path = normalized_config["knowledge_prompt_path"]
         run_shared_ctx = dict(self.shared_ctx)
+        if workspace not in (None, ""):
+            try:
+                workspace_path = Path(workspace).expanduser()
+            except Exception:
+                workspace_path = None
+            if workspace_path:
+                run_shared_ctx["workspace"] = str(workspace_path)
+        else:
+            run_shared_ctx.pop("workspace", None)
 
         def _update_run_knowledge(step: Optional[int]) -> None:
             run_shared_ctx["knowledge"] = self._compose_step_knowledge(
