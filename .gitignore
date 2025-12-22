@@ -53,8 +53,10 @@ exp4_csv_middle/
 exp5/
 exp6_ycdemo/
 exp7/
+exp7.zip
 exp8_csv_small/*.json
 exp9_mobile_data_small/train*.json
+exp9_mobile_data_small/csv.zip
 exp9_mobile_data_small.zip
 exp11*/
 

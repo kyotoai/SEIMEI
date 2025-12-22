@@ -1978,7 +1978,16 @@ Follow
 - [ ] make train_v3_sample.py
 - [ ] make train_v4_eval_sample.py
 
-- [ ] make it 
+
+## Dec 22
+
+- [x] Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py
+    - each seimei needs to have working dir
+```
+Now exp11_plasma_gkv_v3/train_v3_eval_sample.py creates workspace_copies and apply patch for each file. But it didn't specify the working space path in seimei __call__ for each problem, so directly acting agent on the current directory. Try to implement workspace argument in seimei __call__ and pass workspace for each problem. To implement this feature, read the entire file exp11_plasma_gkv_v3/train_v3_eval_sample.py and investigate other relevant files including seimei.py deeply, and modidfy the relevant files.
+```
+
+- [ ] 
 
 
 
