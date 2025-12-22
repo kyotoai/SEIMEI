@@ -1,0 +1,52 @@
+[
+  {
+    "problem": "The electromagnetic advance in src/gkvp_advnc.f90:advnc_rkgsteps_rev no longer updates A_l because the call to fld_emfield_hh was removed. Restore the beta>0 branch so that Apar is recomputed every RK stage.",
+    "answer": "In src/gkvp_advnc.f90 inside advnc_rkgsteps_rev, locate the block between the fld timing calls where hh is made real. Reinsert the three-line guard `if (beta > 0._DP) then; call fld_emfield_hh(hh,Al); end if` so that Apar follows the high-order h distribution. Keep the fld_hh2ff and fld_esfield calls that follow. Rebuild and run `cd gkvp/run && make && ./shoot 1 1` to confirm the electromagnetic solver evolves Apar again.",
+    "expected_simulation_result_difference": "Without Apar updates, electromagnetic fluctuations stay frozen; restoring the call lets shear-Alfvén dynamics reappear."
+  },
+  {
+    "problem": "Phi never changes between RK stages because advnc_rkgsteps_rev stopped calling fld_esfield in src/gkvp_advnc.f90. Bring back the electrostatic field solve.",
+    "answer": "In the same timing block of advnc_rkgsteps_rev, add back the `call fld_esfield(ff,phi)` line immediately after fld_hh2ff. This returns the Poisson solve that enforces quasi-neutrality. Recompile and run `cd gkvp/run && make && ./shoot 1 1` to verify phi evolves.",
+    "expected_simulation_result_difference": "Restoring fld_esfield lets potential fluctuations respond to the moments again instead of staying at their initial values."
+  },
+  {
+    "problem": "Gyroaveraging was stripped from caldlt_rev in src/gkvp_advnc.f90: psi and chi are now set equal to phi and Al without the J0 operator. Reinstate the j0 multipliers inside that initialization loop.",
+    "answer": "In caldlt_rev's OpenMP block that fills psi and chi, change the two assignments inside the innermost mx loop back to `psi = j0 * phi` and `chi = j0 * Al`. That restores FLR effects in the RHS. Build/test with `cd gkvp/run && make && ./shoot 1 1`.",
+    "expected_simulation_result_difference": "Without J0 the FLR shielding vanishes; restoring it recovers finite-Larmor-radius stabilization."
+  },
+  {
+    "problem": "Ghost-cell fills for psi were removed: caldlt_linear no longer calls bndry_bound_e in src/gkvp_advnc.f90 before literm_k_rev. Put that boundary exchange back so z-derivative stencils use updated padding.",
+    "answer": "Right before the call to literm_k_rev in caldlt_linear, reinsert `call bndry_bound_e(psi)` so the even parity boundaries are refreshed. After editing, rerun `cd gkvp/run && make && ./shoot 1 1` to ensure no guard-cell contamination.",
+    "expected_simulation_result_difference": "Without the boundary fill, parallel derivatives use stale values and introduce spurious modes; restoring it reinstates the correct periodic extension."
+  },
+  {
+    "problem": "Collisions are completely disabled: the entire collision-term branch in caldlt_rev (src/gkvp_advnc.f90) was deleted, so neither LB nor full operators run. Re-add that logic.",
+    "answer": "In caldlt_rev, immediately after `call caldlt_linear`, restore the `if (trim(colliflag)=='collisional')` block that dispatches to colli_LB or colliimp_calc_colli_full and the accompanying collisionless/else guards. Make sure cf is filled before dh assembly. Validate with `cd gkvp/run && make && ./shoot 1 1` while using a collisional flag.",
+    "expected_simulation_result_difference": "Reintroducing the operator allows pitch-angle scattering and energy diffusion to damp distribution tails again."
+  },
+  {
+    "problem": "The nonlinear ExB term is gone: caldlt_rev in src/gkvp_advnc.f90 no longer calls exb_NL_term and the dh combination loops that subtracted ef were deleted. Restore the nonlinear call and both branches that add cf and subtract ef into dh.",
+    "answer": "In caldlt_rev, under the `!%%% Nonlinear term %%%` comment reinstate `call exb_NL_term(hh,psi,chi,ef)`, then reinsert the following `if (trim(colliflag)=='collisional')` / `else if` OpenMP loops that add cf and subtract ef from dh. Leave the z-filter section untouched. Rebuild/run with `cd gkvp/run && make && ./shoot 1 1` to see turbulence drive return.",
+    "expected_simulation_result_difference": "Without the nonlinear transfer the system stays laminar; restoring the term brings back turbulence and zonal-flow drive."
+  },
+  {
+    "problem": "Field-line filtering is disabled: the zfilter call at the end of caldlt_rev (src/gkvp_advnc.f90) was removed. Reintroduce the `if (trim(z_filt)=='on') call zfilter(dh)` block.",
+    "answer": "Within caldlt_rev right after the `call clock_sta(15)` instrumentation, add back the `if (trim(z_filt)=='on') then; call zfilter(dh); end if` block before the fapp_stop line. Then rebuild/run via `cd gkvp/run && make && ./shoot 1 1` to regain the high-kz filter.",
+    "expected_simulation_result_difference": "Restoring the filter suppresses high-parallel noise that otherwise degrades numerical stability."
+  },
+  {
+    "problem": "Pitch-angle advection is gone: caldlt_linear no longer calls literm_vp when vp_coord==1 in src/gkvp_advnc.f90. Add that call back so the mu/vp derivative is evaluated.",
+    "answer": "Near the end of caldlt_linear right after the vb*_deallocate lines, reinsert the conditional `if (vp_coord == 1) call literm_vp(ff,psi,dh)` block. That restores the additional vp derivative used when vp_coord selects vp. Rebuild/test with `cd gkvp/run && make && ./shoot 1 1` in a vp-enabled case.",
+    "expected_simulation_result_difference": "Without literm_vp, velocity-space advection in the vp coordinate vanishes; restoring it reintroduces that damping/stiffness."
+  },
+  {
+    "problem": "literm_k_rev in src/gkvp_advnc.f90 was simplified to only keep the -i k·v term, dropping the cs1/cs2-driven electromagnetic drive. Reconstruct the cs1/cs2 variables and the coupling to psi/chi when computing lf.",
+    "answer": "Inside literm_k_rev, declare cs1, cs2, kvs, restore their initialization to sgn(ranks)*Znum/tau and sqrt(tau/Anum), keep `private(kvd,kvs)` in the OMP pragma, and in the innermost loop restore the block that subtracts `cs1*fmx*(+i*kvd*psi - i*kvs*(psi - cs2*vl*chi))`. That reinstates the perpendicular field and compressibility response. Validate via `cd gkvp/run && make && ./shoot 1 1`.",
+    "expected_simulation_result_difference": "With the term back, parallel electric fields and curvature coupling drive/gain energy again instead of purely following E×B advection."
+  },
+  {
+    "problem": "literm_zv (src/gkvp_advnc.f90) no longer includes the vl(iv) derivatives: the cf4/up5 streaming operators were replaced with pure rotating_cf4 terms. Restore the `-(vl*cefz)` factor in the cf4 branch and both `-vl*cefz2` blocks in the upwind branch.",
+    "answer": "In literm_zv's cf4 branch, change the coefficient in front of the high-order stencil back to `-(vl(iv)*cefz(iz) + rotating_cf4)` instead of just `-rotating_cf4`. Then in both up5 branches (positive and negative vl) reinsert the entire `- vl(iv) * cefz2(iz) * (...)` difference blocks that were deleted. After editing, recompile/run `cd gkvp/run && make && ./shoot 1 1` to ensure parallel streaming works.",
+    "expected_simulation_result_difference": "Restoring the vl-dependent derivatives lets parallel streaming and Landau damping operate again rather than only the rotating-frame correction."
+  }
+]

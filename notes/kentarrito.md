@@ -1987,7 +1987,16 @@ Follow
 Now exp11_plasma_gkv_v3/train_v3_eval_sample.py creates workspace_copies and apply patch for each file. But it didn't specify the working space path in seimei __call__ for each problem, so directly acting agent on the current directory. Try to implement workspace argument in seimei __call__ and pass workspace for each problem. To implement this feature, read the entire file exp11_plasma_gkv_v3/train_v3_eval_sample.py and investigate other relevant files including seimei.py deeply, and modidfy the relevant files.
 ```
 
-- [ ] 
+- [ ] Debug 2 exp11_plasma_gkv_v3/train_v3_eval_sample.py
+    * delete unnecessary scoring
+    * save in
+```
+In exp11_plasma_gkv_v3/train_v3_eval_sample.py, record is only saved at the end of all the processes. But I want you to save the record in the output path as often as possible. Also if running the python file is unexpectedly ended and I try to restart again, skip the processes which are done last time. You can check if the process is ended from the saved record file.
+```
+
+```
+In exp11_plasma_gkv_v3/train_v3_eval_sample.py, result is only saved at the end of all the processes. but because run_orchestrator_with_patch requires LLM inference and it takes time, I want to save result every time run_orchestrator_with_patch ends. Run save_eval_entries function at the end of the run_orchestrator_with_patch. Also, implementing this means that train_v3_eval_sample.py gets to need to handle the case only part of the entire process finishes. In this case, I want you to skip run_orchestrator_with_patch process which is already done and whose result is saved in the result file, and use the result generated in the past. This requires deep understanding about the result file format. Implement these features and return the modified code.
+```
 
 
 
