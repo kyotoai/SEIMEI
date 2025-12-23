@@ -1999,6 +1999,187 @@ In exp11_plasma_gkv_v3/train_v3_eval_sample.py, result is only saved at the end 
 ```
 
 
+- [x] Make exp11_plasma_gkv_v3/train_v4_eval_sample.py
+```
+Refering to exp11_plasma_gkv_v3/train_v3_eval_sample.py, make exp11_plasma_gkv_v3/train_v4_eval_sample.py. comparing with v3, v4 has the following features,
+1. Instead of generating knowledge in generate_step_knowledge, it chooses knowledge from DEFAULT_KNOWLEDGE_POOL from same information given in generate_step_knowledge prompt. You should modify prompt adding DEFAULT_KNOWLEDGE_POOL to the information, and let LLM choose which knowledge to use for the specified step.
+2. The DEFAULT_KNOWLEDGE_POOL below is an example. You don't need to change knowledge for the command usage. But there are knowledge for csv analysis, which should be substituted by ones for coding tasks. You should think of a lot of ways to analyze code files running some command or python code, and generate knowledge for that.
+3. When choosing knowledge, you should not choose the same knowledge in the same step of same problem. You can use same knowledge for different step in the same problem or you can do it for same step in different problem.
+
+DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
+    {
+        "id": "code_ls_inventory",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `ls -a` to inventory the working directory before touching files so you know which CSVs, notes, or scripts exist.",
+        "tags": ["shell", "ls", "context"],
+    },
+    {
+        "id": "code_pwd_confirm",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `pwd` and ensure it matches the dataset's location; misaligned paths often explain missing-file errors.",
+        "tags": ["shell", "pwd", "sanity-check"],
+    },
+    {
+        "id": "code_rg_search",
+        "agent": "code_act",
+        "step": None,
+        "text": "Fire `rg -n \"keyword\"` across the repo to find where a metric or parameter is defined before assuming its meaning.",
+        "tags": ["shell", "rg", "search"],
+    },
+    {
+        "id": "code_head_preview",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `head -n 20 some_file_path` to glance at headers and value formatting without opening heavy tooling.",
+        "tags": ["shell", "head", "preview"],
+    },
+    {
+        "id": "code_tail_logs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `tail -n 20` on generated artifacts to inspect the most recent rows that often contain anomalies.",
+        "tags": ["shell", "tail", "sanity-check"],
+    },
+    {
+        "id": "code_wc_rowcount",
+        "agent": "code_act",
+        "step": None,
+        "text": "`wc -l some_file_path` quickly reveals row counts so you can compare dataset sizes without loading pandas.",
+        "tags": ["shell", "wc", "metrics"],
+    },
+    {
+        "id": "code_cut_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pipe through `cut -d',' -f1-5 some_file_path | head` when you only need a few early columns for orientation.",
+        "tags": ["shell", "cut", "preview"],
+    },
+    {
+        "id": "code_python_head",
+        "agent": "code_act",
+        "step": None,
+        "text": "Spin up a short Python snippet `import pandas as pd; print(pd.read_csv(...).head())` to inspect with types and NaNs annotated.",
+        "tags": ["python", "pandas", "preview"],
+    },
+    {
+        "id": "code_python_schema",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write a helper that loads the CSV and prints `df.dtypes` so you know which columns are numeric or categorical.",
+        "tags": ["python", "schema", "pandas"],
+    },
+    {
+        "id": "code_diff_versions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `diff` between two CSV snapshots (or `git diff`) to highlight columns that changed when experiments were rerun.",
+        "tags": ["shell", "diff", "comparison"],
+    },
+    {
+        "id": "code_sort_values",
+        "agent": "code_act",
+        "step": None,
+        "text": "Make a quick pandas script to `sort_values` by the target metric and print the top/bottom rows to see effect extremes.",
+        "tags": ["python", "ranking", "analysis"],
+    },
+    {
+        "id": "code_value_counts",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `df['column'].value_counts()` to uncover category prevalence or confirm that a flag toggled as expected.",
+        "tags": ["python", "pandas", "diagnostics"],
+    },
+    {
+        "id": "code_extract_params",
+        "agent": "code_act",
+        "step": None,
+        "text": "Parse filenames with Python (Path.stem.split or regex) to extract hyper-parameters encoded outside the CSV body.",
+        "tags": ["python", "parsing", "metadata"],
+    },
+    {
+        "id": "code_clone_compare",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write Python to duplicate a CSV row-by-row, regenerate a derived column, and diff the result to deduce the transformation.",
+        "tags": ["python", "replication", "csv"],
+    },
+    {
+        "id": "code_group_inspection",
+        "agent": "code_act",
+        "step": None,
+        "text": "Automate `df.groupby(key).agg({...})` and print the summary so you can spot hidden parameter regimes.",
+        "tags": ["python", "groupby", "analysis"],
+    },
+    {
+        "id": "code_hist_distributions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Plot quick histograms or `df[column].describe()` to detect skewed distributions that hint at tuning knobs.",
+        "tags": ["python", "statistics", "exploration"],
+    },
+    {
+        "id": "code_delta_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute differences between sequential rows (`df[column].diff()`) to catch incremental schedules or warmups.",
+        "tags": ["python", "timeseries", "analysis"],
+    },
+    {
+        "id": "code_join_metadata",
+        "agent": "code_act",
+        "step": None,
+        "text": "Join the CSV with auxiliary metadata tables to see which hidden flags align with performance spikes.",
+        "tags": ["python", "merge", "metadata"],
+    },
+    {
+        "id": "code_checksum_validate",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute a hash (`md5sum some_file_path`) before and after transformations to ensure you are analyzing the intended version.",
+        "tags": ["shell", "md5sum", "integrity"],
+    },
+    {
+        "id": "code_sampling_probe",
+        "agent": "code_act",
+        "step": None,
+        "text": "Sample a handful of random rows (`df.sample(5, random_state=0)`) to manually verify pattern assumptions.",
+        "tags": ["python", "sampling", "validation"],
+    },
+    {
+        "id": "code_param_grid",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pivot parameters versus metrics (`df.pivot_table`) to reverse-engineer which hyper-parameters matter most.",
+        "tags": ["python", "pivot", "analysis"],
+    },
+    {
+        "id": "code_correlate_metrics",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `df.corr(numeric_only=True)` to uncover non-trivial relationships between metrics and latent knobs.",
+        "tags": ["python", "correlation", "insight"],
+    },
+    {
+        "id": "code_flag_anomalies",
+        "agent": "code_act",
+        "step": None,
+        "text": "Add a quick check that flags rows with z-score > 3 to spot outliers that often encode special-case settings.",
+        "tags": ["python", "anomaly", "quality"],
+    },
+    {
+        "id": "code_compare_runs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
+        "tags": ["python", "concat", "comparison"],
+    },
+]
+
+You should read all of v3 and understand it very deeply, and implement the features above into v4. On top of v4, comment out the major changes from v3 and rough algorithm of v4. Also add same kind of comment out on top of v3 too.
+```
+
 
 
 
