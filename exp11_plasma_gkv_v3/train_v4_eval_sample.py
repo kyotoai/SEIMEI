@@ -13,16 +13,17 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 from seimei import load_run_messages, seimei
 from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
 
-# v3 eval sample notes:
-# - Knowledge is generated per step per chunk from the run transcript (problem-specific + abstract advice).
-# - Algorithm: run base chunks, then for each step generate knowledge per chunk, rerun with injection, and
+# v4 eval sample notes (vs v3):
+# - Major change: knowledge is selected from DEFAULT_KNOWLEDGE_POOL (by id) instead of generated from scratch.
+# - Enforce unique knowledge ids per step within a problem across chunks.
+# - Algorithm: run base chunks, then for each step pick pool knowledge per chunk, rerun with injection, and
 #   finish with reruns comparing base vs knowledge-assisted runs.
 
 EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_sample_results2.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results2.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
@@ -67,6 +68,184 @@ KLG_SYSTEM_PROMPT_LIST = [
     "Weave the knowledge cues into your debugging narrative by mirroring their language and pointing to the exact Fortran constructs involved.",
 ]
 
+DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
+    {
+        "id": "code_ls_inventory",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `ls -a` to inventory the repo before touching files so you know which modules, patches, or scripts exist.",
+        "tags": ["shell", "ls", "context"],
+    },
+    {
+        "id": "code_pwd_confirm",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `pwd` and confirm you are inside the experiment workspace before editing paths.",
+        "tags": ["shell", "pwd", "sanity-check"],
+    },
+    {
+        "id": "code_rg_search",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `rg -n \"keyword\"` across the repo to locate definitions or uses before assuming semantics.",
+        "tags": ["shell", "rg", "search"],
+    },
+    {
+        "id": "code_rg_fortran_files",
+        "agent": "code_act",
+        "step": None,
+        "text": "List Fortran sources with `rg --files -g '*.f90'` to scope the search surface.",
+        "tags": ["shell", "rg", "inventory"],
+    },
+    {
+        "id": "code_rg_module",
+        "agent": "code_act",
+        "step": None,
+        "text": "Search for module or routine names with `rg -n \"module_name\" -g '*.f90'` to find declarations.",
+        "tags": ["shell", "rg", "fortran"],
+    },
+    {
+        "id": "code_rg_call_sites",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `rg -n \"call routine_name\" -g '*.f90'` to find call sites and verify control flow.",
+        "tags": ["shell", "rg", "call-graph"],
+    },
+    {
+        "id": "code_rg_flags",
+        "agent": "code_act",
+        "step": None,
+        "text": "Track a config flag via `rg -n \"flag_name\"` to see where branches diverge.",
+        "tags": ["shell", "rg", "config"],
+    },
+    {
+        "id": "code_head_preview",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `head -n 40 path/to/file` to see file headers, module names, and includes.",
+        "tags": ["shell", "head", "preview"],
+    },
+    {
+        "id": "code_tail_logs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `tail -n 40` on build or run logs to spot the most recent error lines.",
+        "tags": ["shell", "tail", "sanity-check"],
+    },
+    {
+        "id": "code_wc_loc",
+        "agent": "code_act",
+        "step": None,
+        "text": "`wc -l file.f90` gives a quick sense of file size before deep edits.",
+        "tags": ["shell", "wc", "metrics"],
+    },
+    {
+        "id": "code_sed_context",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `sed -n '120,200p' file.f90` or `nl -ba file.f90 | sed -n '120,200p'` to view numbered context.",
+        "tags": ["shell", "sed", "preview"],
+    },
+    {
+        "id": "code_diff_versions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `git diff -U3 path/to/file` to compare local edits with expected changes.",
+        "tags": ["shell", "git", "diff"],
+    },
+    {
+        "id": "code_git_status",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `git status -sb` to confirm which files changed before and after patching.",
+        "tags": ["shell", "git", "status"],
+    },
+    {
+        "id": "code_rg_preproc",
+        "agent": "code_act",
+        "step": None,
+        "text": "Search preprocessor guards with `rg -n \"#if|#ifdef\" -g '*.[Ff]90'` to check compile-time branches.",
+        "tags": ["shell", "rg", "preprocessor"],
+    },
+    {
+        "id": "code_rg_parameters",
+        "agent": "code_act",
+        "step": None,
+        "text": "Find constants with `rg -n \"parameter\" -g '*.f90'` to locate default values.",
+        "tags": ["shell", "rg", "constants"],
+    },
+    {
+        "id": "code_python_find_defs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use a short Python regex to list subroutine/module names so you can map the file structure quickly.",
+        "tags": ["python", "parsing", "fortran"],
+    },
+    {
+        "id": "code_python_find_assign",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write a Python snippet to scan for assignments to a target variable and print line numbers.",
+        "tags": ["python", "search", "variables"],
+    },
+    {
+        "id": "code_python_extract_block",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use Python to extract and print a specific block (between two markers) when the file is large.",
+        "tags": ["python", "parsing", "context"],
+    },
+    {
+        "id": "code_python_call_graph",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use Python to scan `call` statements across files and build a quick caller list for a routine.",
+        "tags": ["python", "call-graph", "analysis"],
+    },
+    {
+        "id": "code_python_compare_files",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use Python's difflib to compare two versions of a source file and isolate the minimal delta.",
+        "tags": ["python", "diff", "analysis"],
+    },
+    {
+        "id": "code_rg_runtime_params",
+        "agent": "code_act",
+        "step": None,
+        "text": "Search namelist or input parameters with `rg -n \"&\" -g '*.nml'` or `rg -n \"namelist\"` to trace runtime flags.",
+        "tags": ["shell", "rg", "runtime"],
+    },
+    {
+        "id": "code_find_config_files",
+        "agent": "code_act",
+        "step": None,
+        "text": "List relevant configs with `rg --files -g '*.nml' -g '*.in'` so you know where inputs live.",
+        "tags": ["shell", "rg", "config"],
+    },
+    {
+        "id": "code_rg_todo",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `rg -n \"TODO|FIXME\"` to see if there are hints about known issues.",
+        "tags": ["shell", "rg", "context"],
+    },
+    {
+        "id": "code_python_symbol_counts",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use Python to count how often a symbol appears per file to prioritize where to inspect first.",
+        "tags": ["python", "metrics", "analysis"],
+    },
+    {
+        "id": "code_checksum_validate",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute `md5sum path/to/file` before and after edits to confirm you are modifying the intended file.",
+        "tags": ["shell", "md5sum", "integrity"],
+    },
+]
+
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
     "Judge factual accuracy, coverage, and clarity. Return ONLY a JSON object with keys 'score' "
@@ -77,6 +256,11 @@ SCORING_SYSTEM_PROMPT = (
 KNOWLEDGE_SYSTEM_PROMPT = (
     "You provide concise, reusable advice (1-3 short lines) that nudges the agent back onto a reliable "
     "reasoning path without giving away the final answer."
+)
+
+KNOWLEDGE_SELECTION_SYSTEM_PROMPT = (
+    "You select the most helpful reusable knowledge snippet from the pool to inject before the "
+    "next agent action. Respond only with JSON."
 )
 
 RUN_ID_CACHE: Dict[str, str] = {}
@@ -587,6 +771,72 @@ def _parse_json_array(raw: str) -> List[Any]:
     return []
 
 
+def _normalize_step_filter(value: Any) -> Optional[Set[int]]:
+    if value in (None, "", "*"):
+        return None
+    normalized: Set[int] = set()
+    if isinstance(value, int):
+        normalized.add(value)
+        return normalized
+    if isinstance(value, (list, tuple, set)):
+        for item in value:
+            try:
+                normalized.add(int(item))
+            except (TypeError, ValueError):
+                continue
+        return normalized or None
+    try:
+        normalized.add(int(value))
+    except (TypeError, ValueError):
+        return None
+    return normalized or None
+
+
+def _normalize_pool_entry(entry: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
+    text = str(entry.get("text") or entry.get("knowledge") or "").strip()
+    if not text:
+        return None
+    normalized: Dict[str, Any] = {
+        "id": str(entry.get("id") or f"default_pool_{index + 1}").strip(),
+        "agent": str(entry.get("agent") or "think").strip() or "think",
+        "text": text,
+        "original_text": entry.get("original_text") or text,
+        "tags": entry.get("tags") or [],
+    }
+    normalized["_step_filter"] = _normalize_step_filter(entry.get("step"))
+    return normalized
+
+
+def _format_pool_candidates(candidates: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    formatted: List[Dict[str, Any]] = []
+    for entry in candidates:
+        formatted.append(
+            {
+                "id": entry.get("id"),
+                "agent": entry.get("agent"),
+                "text": entry.get("text"),
+                "tags": entry.get("tags") or [],
+            }
+        )
+    return formatted
+
+
+def _prepare_pool_candidates(step: int, used_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
+    used = used_ids or set()
+    applicable: List[Dict[str, Any]] = []
+    for idx, raw_entry in enumerate(DEFAULT_KNOWLEDGE_POOL):
+        normalized = _normalize_pool_entry(raw_entry, idx)
+        if not normalized:
+            continue
+        step_filter = normalized.pop("_step_filter", None)
+        if step_filter is not None and step not in step_filter:
+            continue
+        if normalized["id"] in used:
+            continue
+        applicable.append(normalized)
+    return applicable
+
+
 def _coerce_score(value: Any) -> float:
     try:
         score = float(value)
@@ -768,6 +1018,7 @@ async def generate_step_knowledge(
     step: int,
     iteration: int,
     prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
+    used_knowledge_ids: Optional[Set[str]] = None,
 ) -> Optional[Dict[str, Any]]:
     question = build_task_prompt(dataset_entry)
     reference = extract_reference_answer(dataset_entry)
@@ -775,8 +1026,13 @@ async def generate_step_knowledge(
     step_text = get_agent_step_text(messages, step)
     knowledge_snapshot = [dict(entry) for entry in prior_knowledge or []]
     knowledge_json = json.dumps(knowledge_snapshot, ensure_ascii=False, indent=2)
+    candidates = _prepare_pool_candidates(step, used_knowledge_ids)
+    if not candidates:
+        return None
+    candidate_json = json.dumps(_format_pool_candidates(candidates), ensure_ascii=False, indent=2)
+    used_ids_json = json.dumps(sorted(used_knowledge_ids or set()), ensure_ascii=False, indent=2)
     prompt = (
-        f"You are writing reusable knowledge that will be inserted before agent step {step} "
+        f"You are selecting reusable knowledge to insert before agent step {step} "
         "in a code-debugging workflow for the gyrokinetic plasma repository.\n\n"
         "Evaluation summary for the run that produced this transcript:\n"
         "- Knowledge snippets already injected (JSON array, matches this transcript exactly):\n"
@@ -785,57 +1041,45 @@ async def generate_step_knowledge(
         f"Original agent step {step} transcript:\n{step_text}\n\n"
         f"Question:\n{question}\n\n"
         f"Reference answer:\n{reference}\n\n"
+        "Candidate knowledge pool (JSON array):\n"
+        f"{candidate_json}\n\n"
+        "Knowledge ids already used for this step in this problem (do not repeat them):\n"
+        f"{used_ids_json}\n\n"
         "Your task:\n"
-        "1. Decide the single best next reasoning move or tiny experiment the agent should run "
-        "just before executing this step.\n"
-        "2. Express this move twice:\n"
-        "   - once as CONCRETE, problem-specific advice (original_text), and\n"
-        "   - once as ABSTRACT, problem-agnostic advice (text) that can be reused.\n\n"
-        "Guidelines:\n"
-        "- Write 1–3 short lines that describe the debugging path or inspection, not the final answer.\n"
-        "- Focus on what to diff, inspect, instrument, or edit inside the repo so the reasoning stays aligned.\n"
-        "- original_text may reference concrete files, routines, arrays, or physics settings from this transcript.\n"
-        "- text must be abstract and reusable (use generic terms like 'target subroutine' or 'field solve').\n"
-        "- Choose the agent whose skills progress this specific step; vary the choice beyond think when warranted.\n\n"
-        "Agents and agent field:\n"
-        "- The agent designates which SEIMEI agent executes this inserted step.\n"
-        "- think — Plans the next actions by synthesizing prior findings and knowledge cues.\n"
-        "- code_act — Runs shell/Python commands (e.g., grep, sed, apply_patch) to inspect or modify the repo.\n"
-        "- web_search — Performs a quick web lookup to gather missing outside facts or clarifications.\n"
-        "- answer — Summarizes gathered evidence or describes the applied patch when the solution is ready.\n\n"
+        "1. Choose the single best candidate knowledge entry for this step.\n"
+        "2. Return only a JSON object with the chosen id and a 1-sentence justification.\n\n"
         "Output format (JSON only):\n"
-        "[\n"
-        "  {\n"
-        "    \"agent\": \"think\" | \"code_act\" | \"web_search\" | \"answer\",\n"
-        "    \"original_text\": \"concrete advice inserted before rerunning this step\",\n"
-        "    \"text\": \"abstract, problem-agnostic advice derived from original_text\",\n"
-        "    \"tags\": [\"importance\", \"topic\"]\n"
-        "  }\n"
-        "]\n\n"
-        "Return only valid JSON. Do not include explanations outside the JSON."
+        "{\n"
+        "  \"id\": \"candidate_id\",\n"
+        "  \"justification\": \"short reason\"\n"
+        "}\n"
     )
     try:
         response, _ = await llm_client.chat(
             messages=[{"role": "user", "content": prompt}],
-            system=KNOWLEDGE_SYSTEM_PROMPT,
+            system=KNOWLEDGE_SELECTION_SYSTEM_PROMPT,
         )
     except Exception as exc:  # pragma: no cover - runtime guard
-        print(f"[knowledge step {step} iter {iteration + 1}] generation failed: {exc}")
+        print(f"[knowledge step {step} iter {iteration + 1}] selection failed: {exc}")
         return None
 
-    candidates = _parse_json_array(response)
-    if not candidates:
-        return None
-    entry = candidates[0]
-    if not isinstance(entry, dict):
-        return None
-    text = str(entry.get("text") or entry.get("knowledge") or "").strip()
-    if not text:
-        return None
+    parsed = _parse_json_response(response)
+    selected_id = str(parsed.get("id") or parsed.get("selected_id") or "").strip()
+    if not selected_id:
+        array = _parse_json_array(response)
+        if array and isinstance(array[0], dict):
+            selected_id = str(array[0].get("id") or "").strip()
+    id_map = {entry["id"]: entry for entry in candidates}
+    selected = id_map.get(selected_id)
+    if not selected:
+        random.shuffle(candidates)
+        selected = candidates[0]
+    entry = dict(selected)
     entry.setdefault("step", step)
+    entry.setdefault("iteration", iteration + 1)
     entry.setdefault("agent", entry.get("agent") or "think")
     entry.setdefault("tags", entry.get("tags") or [])
-    entry.setdefault("iteration", iteration + 1)
+    entry.setdefault("original_text", entry.get("text") or "")
     return entry
 
 
@@ -862,7 +1106,7 @@ async def run_candidate_inference(
         }
     ]
     knowledge_config = build_knowledge_config(manual_entries)
-    run_name = f"train_v3_eval_sample_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
+    run_name = f"train_v4_eval_sample_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
     result = await run_orchestrator_with_patch(
         orchestrator,
         patch_manager,
@@ -883,6 +1127,7 @@ async def run_candidate_inference(
         "run_id": new_run_id,
         "output": new_output,
         "knowledge": {
+            "id": knowledge_entry.get("id"),
             "text": knowledge_entry.get("text"),
             "original_text": knowledge_entry.get("original_text"),
             "agent": knowledge_entry.get("agent"),
@@ -919,7 +1164,7 @@ async def run_full_problem_trials(
         knowledge_config = build_knowledge_config(
             [dict(entry) for entry in manual_entries] if manual_entries else None
         )
-        run_name = f"train_v3_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}"
+        run_name = f"train_v4_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}"
         result = await run_orchestrator_with_patch(
             orchestrator,
             patch_manager,
@@ -985,7 +1230,7 @@ async def run_problem(
 
     for chunk_idx in range(knowledge_per_step):
         base_messages = randomize_system_prompt(base_prompt_messages)
-        run_name = f"train_v3_eval_sample_{index:04d}_base_seed{chunk_idx + 1}"
+        run_name = f"train_v4_eval_sample_{index:04d}_base_seed{chunk_idx + 1}"
         base_result = await run_orchestrator_with_patch(
             orchestrator,
             patch_manager,
@@ -1033,6 +1278,7 @@ async def run_problem(
     }
 
     for step in range(1, n_knowledge_steps + 1):
+        used_ids_for_step: Set[str] = set()
         for chunk_data in chunk_records:
             messages = get_messages_for_run(chunk_data["current_result"], log_dir)
             agent_messages = extract_agent_messages(messages)
@@ -1050,13 +1296,28 @@ async def run_problem(
                 step=step,
                 iteration=chunk_data["chunk_index"] - 1,
                 prior_knowledge=[dict(entry) for entry in chunk_data["manual_entries"]],
+                used_knowledge_ids=used_ids_for_step,
             )
             if not knowledge_entry:
                 print(
                     f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
-                    "no knowledge generated"
+                    "no knowledge selected"
                 )
                 continue
+            knowledge_id = str(knowledge_entry.get("id") or "").strip()
+            if not knowledge_id:
+                print(
+                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
+                    "knowledge missing id"
+                )
+                continue
+            if knowledge_id in used_ids_for_step:
+                print(
+                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
+                    "duplicate knowledge id detected"
+                )
+                continue
+            used_ids_for_step.add(knowledge_id)
             if not knowledge_entry.get("agent"):
                 knowledge_entry["agent"] = get_agent_name_for_step(messages, step) or "think"
 
@@ -1232,9 +1493,9 @@ def load_existing_eval_entries(
                 entries = raw
                 needs_resave = True
             else:
-                print(f"[train_v3_eval_sample] Ignoring malformed cache at {output_path}")
+                print(f"[train_v4_eval_sample] Ignoring malformed cache at {output_path}")
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[train_v3_eval_sample] Failed to load cached eval entries: {exc}")
+            print(f"[train_v4_eval_sample] Failed to load cached eval entries: {exc}")
         for idx, entry in enumerate(entries):
             entry_id = str(entry.get("id") or "").strip()
             if not entry_id and idx < len(dataset):
@@ -1328,7 +1589,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         raise RuntimeError("batch_size must be >= 1 and patch_files must be non-empty.")
     if args.batch_size != workspace_count:
         print(
-            "[train_v3_eval_sample] Limiting concurrency to "
+            "[train_v4_eval_sample] Limiting concurrency to "
             f"{workspace_count} based on patch file count."
         )
     workspace_pool = build_workspace_pool(args, workspace_count)
@@ -1346,9 +1607,9 @@ async def run_evaluation(args: argparse.Namespace) -> None:
     if needs_resave:
         save_eval_entries(eval_entries, args.output_path, run_cache=run_cache)
     if processed_ids:
-        print(f"[train_v3_eval_sample] Resuming with {len(processed_ids)} cached entries")
+        print(f"[train_v4_eval_sample] Resuming with {len(processed_ids)} cached entries")
     if run_cache:
-        print(f"[train_v3_eval_sample] Loaded run_cache with {len(run_cache)} runs")
+        print(f"[train_v4_eval_sample] Loaded run_cache with {len(run_cache)} runs")
 
     pending: List[Tuple[int, Dict[str, Any], str]] = []
     for idx, entry in enumerate(dataset):
@@ -1361,7 +1622,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
     if not pending:
         print(
-            f"[train_v3_eval_sample] All {len(processed_ids)} entries already processed. "
+            f"[train_v4_eval_sample] All {len(processed_ids)} entries already processed. "
             f"Results stored at {args.output_path}"
         )
         return
@@ -1398,10 +1659,10 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
         batch_idx = batch_start // args.batch_size + 1
         print(
-            f"[train_v3_eval_sample] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
+            f"[train_v4_eval_sample] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
         )
 
-    print(f"[train_v3_eval_sample] Saved evaluation dataset to {args.output_path}")
+    print(f"[train_v4_eval_sample] Saved evaluation dataset to {args.output_path}")
 
 
 if __name__ == "__main__":
