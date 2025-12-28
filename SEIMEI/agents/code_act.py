@@ -102,12 +102,14 @@ class code_act(Agent):
                     code="pwd",
                     timeout=timeout,
                     python_heredoc=None,
+                    cwd=cwd,
                 ))
         
         print(_run_command(
                     code="ls",
                     timeout=timeout,
                     python_heredoc=None,
+                    cwd=cwd,
                 ))
         '''
 

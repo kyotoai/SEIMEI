@@ -599,6 +599,16 @@ def _coerce_score(value: Any) -> float:
     return round(score, 2)
 
 
+def _is_bugged_score(score: float, feedback: Optional[str]) -> bool:
+    if score != 0.0:
+        return False
+    if feedback is None:
+        return True
+    if isinstance(feedback, str) and not feedback.strip():
+        return True
+    return False
+
+
 def _resolve_run_dir_name(run_id: Optional[str], log_dir: Path) -> Optional[str]:
     run_id_str = str(run_id or "").strip()
     if not run_id_str:
@@ -912,6 +922,7 @@ async def run_full_problem_trials(
     question = build_task_prompt(dataset_entry)
     reference = extract_reference_answer(dataset_entry)
     trial_records: List[Dict[str, Any]] = []
+    valid_scores: List[float] = []
     for trial in range(trials):
         rerun_messages = randomize_system_prompt(
             base_prompt_messages, use_knowledge_prompt=bool(manual_entries)
@@ -935,19 +946,22 @@ async def run_full_problem_trials(
         output = result.get("output", "")
         score_info = await score_answer(orchestrator.llm, question, reference, output)
         score = score_info.get("score", 0.0) or 0.0
+        feedback = score_info.get("feedback")
+        if not _is_bugged_score(score, feedback):
+            valid_scores.append(score)
         trial_records.append(
             {
                 "trial": trial + 1,
                 "run_name": run_name,
                 "run_id": run_id,
                 "score": score,
-                "score_feedback": score_info.get("feedback"),
+                "score_feedback": feedback,
                 "output": output,
             }
         )
     mean_score = (
-        round(sum(item["score"] for item in trial_records) / len(trial_records), 2)
-        if trial_records
+        round(sum(valid_scores) / len(valid_scores), 2)
+        if valid_scores
         else 0.0
     )
     return trial_records, mean_score

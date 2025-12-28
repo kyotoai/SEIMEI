@@ -2182,6 +2182,17 @@ You should read all of v3 and understand it very deeply, and implement the featu
 
 
 
+## Dec 27
+
+- [x] Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py
+```
+Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py. Scoring feedback is sometimes "". I guess this is caused by json format error or something. This shouldn't be included when calculating mean score value, but the mean output of run_full_problem_trials counts it as 0 and calculate mean value including the 0. That's not good. Modify both exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py so that it will skip 0 from bugged llm output.
+```
+
+- [ ] token limit -> skip too? -> I can leave this for now
+
+- [ ] convert 
+
 
 
 
