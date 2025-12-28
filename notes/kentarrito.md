@@ -2191,7 +2191,125 @@ Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_
 
 - [ ] token limit -> skip too? -> I can leave this for now
 
-- [ ] convert 
+
+## Dec 28
+
+- [x] convert eval_sample_result to dpo format data
+    - convert should be done by dpo_converter1.py and dpo_converter2.py.
+    - dpo_converter1.py: train_v3,4_eval_sample_result -> train_v3,4_eval_sample_dpo1 (this needs modification depending on eval_sample_result format, other knowledge sampling method, etc.)
+    - dpo_converter2.py: train_v3,4_eval_sample_dpo1 -> train_v3,4_eval_sample_dpo2 (almost fix. convert it if rmsearch format changes)
+
+```
+Make exp11_plasma_gkv_v3/dpo_converter1.py and exp11_plasma_gkv_v3/dpo_converter2.py
+
+* dpo_converter1.py: 
+convert the result file of exp11_plasma_gkv_v3/train_v3_eval_sample.py into something like
+
+'''
+[
+  {
+    "message": [
+      {
+        "role": "system",
+        "content": "Think as an automation engineer who prototypes tiny helpers, inspects their output, and keeps narration crisp."
+      },
+      {
+        "role": "user",
+        "content": "Analyze inside exp8_csv_small/csv/urban_air_quality_sensors_1_1.csv and answer the question below:\n\nIn the CSV generated for ..."
+      },
+      {
+        "role": "agent",
+        "name": "code_act",
+        "content": "$ python - <<'PY'\nimport csv, json\npath = ...",
+        
+      },
+    ],
+    "knowledge": [
+      {
+        "id": null,
+        "text": null,
+        "agent": null,
+        "tags": [],
+      },
+      {
+        "id": "...",
+        "text": "Scan all columns for JSON-like content (not just params_json/payload_json) and extract any keys that hint at diurnal/seasonality, anomaly_rate, urban_density, or sensor_count.\nMap hyper_param_index to the reported sensor_count and total rows; derive total_rows ≈ sensor_count × 24 and locate where sensor_count is stored.\nOnce you have explicit parameter names, tie them to (a) diurnal shaping, (b) anomaly frequency/size, and (c) total rows, and report the exact mappings.",
+        "agent": "think",
+        "tags": [
+          "data-exploration",
+          "parameter-mapping"
+        ],
+      },
+      {
+        "id": "...",
+        "text": "Scan every column for JSON-like content and extract keys that resemble seasonality/diurnal, anomaly, urban_density, and sensor_count.\nMap what you find to (a) diurnal PM2.5 shaping, (b) anomaly frequency/size, and (c) total rows/sensors by linking to hyper_param_index and total_hyper_params.\nIf explicit params_json/payload_json fields aren’t present, search for nested JSON blobs or alternate key names and report the exact keys you map to each aspect.",
+        "agent": "think",
+        "tags": [
+          "diagnostic",
+          "mapping",
+          "parameter-extraction"
+        ],
+      },
+      {
+        "id": "...",
+        "text": "Scan all CSV columns for any JSON-like content, not only fields named params_json or payload_json.\nCollect keys that look like diurnal/seasonality and anomaly-related terms (e.g., diurnal, seasonality, anomaly, spike) and note their values.\nLook for total_rows, sensor_count, or per-sensor data to infer the total emitted rows; tie these counts back to hyper_param_index and total_hyper_params.",
+        "agent": "think",
+        "tags": [
+          "data-inspection",
+          "mapping",
+          "hyperparameters"
+        ],
+      }
+    ],
+    "comparison": [
+      [
+        1, # chosen knowledge id
+        0  # rejected knowledge id
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        0
+      ]
+    ],
+    "scores": [
+      1.0,
+      2.0,
+      3.0,
+      2.0
+    ]
+  },
+  ...
+]
+'''
+
+1. In the message field, you should put the message history before the step which is augumented by knowledge. The message should be taken from random one element of fair_comparison->knowledge_trials. You can get the message from "seimei_runs/(run_id)/messages.json"
+
+2. In the knowledge field, you should put candidate knowledge texts which augmented the step. When you get the knowledge texts, you should pick one from each knowledge chunks. You should collect DEFAULT_KNOWLEDGE_PER_STEP knowledge texts which have same step number from all chunks. 
+
+3. In scores, you should get score of null knowledge from base_rerun_mean_score and scores of knowledges from knowledge_chunk_mean_scores.
+
+4. From the scores above, you should make comparison list. If a difference of score between any knowledge score pair is bigger than DEFAULT_COMPARISON_THRESHOLD (like 0.5), put the pair into comparison list. [(chosen knowledge id at knowledge field), (rejected knowledge id at knowledge field)]
+
+There are DEFAULT_N_KNOWLEDGE_STEPS knowledge texts for each chunk. You should do 1 - 4 procedures for all the knowledge steps. You should collect the messages from different knowledge_trials element so that the dataset becomes more various and avoid overfitting.
+
+
+* dpo_converter2.py: 
+copy from seimei/dataset/dpo_converter.py.
+```
+
+
 
 
 
