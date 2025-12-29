@@ -7,308 +7,20 @@ from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 
 from seimei import load_run_messages, seimei
 
-EXP_DIR = Path("exp8_csv_small")
+EXP_DIR = Path("exp9_mobile_data_small")
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_results2.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_results3.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
-# DEFAULT_BATCH_SIZE = 2
-# DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_N_KNOWLEDGE_STEPS = 7
 DEFAULT_KNOWLEDGE_PER_STEP = 3
-# DEFAULT_FINAL_RERUNS = 3
 DEFAULT_FINAL_RERUNS = 8
-DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
-    {
-        "id": "code_ls_inventory",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use `ls -a` to inventory the working directory before touching files so you know which CSVs, notes, or scripts exist.",
-        "tags": ["shell", "ls", "context"],
-    },
-    {
-        "id": "code_pwd_confirm",
-        "agent": "code_act",
-        "step": None,
-        "text": "Run `pwd` and ensure it matches the dataset's location; misaligned paths often explain missing-file errors.",
-        "tags": ["shell", "pwd", "sanity-check"],
-    },
-    {
-        "id": "code_rg_search",
-        "agent": "code_act",
-        "step": None,
-        "text": "Fire `rg -n \"keyword\"` across the repo to find where a metric or parameter is defined before assuming its meaning.",
-        "tags": ["shell", "rg", "search"],
-    },
-    {
-        "id": "code_head_preview",
-        "agent": "code_act",
-        "step": None,
-        "text": "Call `head -n 20 some.csv` to glance at headers and value formatting without opening heavy tooling.",
-        "tags": ["shell", "head", "preview"],
-    },
-    {
-        "id": "code_tail_logs",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use `tail -n 20` on generated artifacts to inspect the most recent rows that often contain anomalies.",
-        "tags": ["shell", "tail", "sanity-check"],
-    },
-    {
-        "id": "code_wc_rowcount",
-        "agent": "code_act",
-        "step": None,
-        "text": "`wc -l file.csv` quickly reveals row counts so you can compare dataset sizes without loading pandas.",
-        "tags": ["shell", "wc", "metrics"],
-    },
-    {
-        "id": "code_cut_columns",
-        "agent": "code_act",
-        "step": None,
-        "text": "Pipe through `cut -d',' -f1-5 file.csv | head` when you only need a few early columns for orientation.",
-        "tags": ["shell", "cut", "preview"],
-    },
-    {
-        "id": "code_python_head",
-        "agent": "code_act",
-        "step": None,
-        "text": "Spin up a short Python snippet `import pandas as pd; print(pd.read_csv(...).head())` to inspect with types and NaNs annotated.",
-        "tags": ["python", "pandas", "preview"],
-    },
-    {
-        "id": "code_python_schema",
-        "agent": "code_act",
-        "step": None,
-        "text": "Write a helper that loads the CSV and prints `df.dtypes` so you know which columns are numeric or categorical.",
-        "tags": ["python", "schema", "pandas"],
-    },
-    {
-        "id": "code_diff_versions",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use `diff` between two CSV snapshots (or `git diff`) to highlight columns that changed when experiments were rerun.",
-        "tags": ["shell", "diff", "comparison"],
-    },
-    {
-        "id": "code_sort_values",
-        "agent": "code_act",
-        "step": None,
-        "text": "Make a quick pandas script to `sort_values` by the target metric and print the top/bottom rows to see effect extremes.",
-        "tags": ["python", "ranking", "analysis"],
-    },
-    {
-        "id": "code_value_counts",
-        "agent": "code_act",
-        "step": None,
-        "text": "Call `df['column'].value_counts()` to uncover category prevalence or confirm that a flag toggled as expected.",
-        "tags": ["python", "pandas", "diagnostics"],
-    },
-    {
-        "id": "code_extract_params",
-        "agent": "code_act",
-        "step": None,
-        "text": "Parse filenames with Python (Path.stem.split or regex) to extract hyper-parameters encoded outside the CSV body.",
-        "tags": ["python", "parsing", "metadata"],
-    },
-    {
-        "id": "code_clone_compare",
-        "agent": "code_act",
-        "step": None,
-        "text": "Write Python to duplicate a CSV row-by-row, regenerate a derived column, and diff the result to deduce the transformation.",
-        "tags": ["python", "replication", "csv"],
-    },
-    {
-        "id": "code_group_inspection",
-        "agent": "code_act",
-        "step": None,
-        "text": "Automate `df.groupby(key).agg({...})` and print the summary so you can spot hidden parameter regimes.",
-        "tags": ["python", "groupby", "analysis"],
-    },
-    {
-        "id": "code_hist_distributions",
-        "agent": "code_act",
-        "step": None,
-        "text": "Plot quick histograms or `df[column].describe()` to detect skewed distributions that hint at tuning knobs.",
-        "tags": ["python", "statistics", "exploration"],
-    },
-    {
-        "id": "code_delta_columns",
-        "agent": "code_act",
-        "step": None,
-        "text": "Compute differences between sequential rows (`df[column].diff()`) to catch incremental schedules or warmups.",
-        "tags": ["python", "timeseries", "analysis"],
-    },
-    {
-        "id": "code_join_metadata",
-        "agent": "code_act",
-        "step": None,
-        "text": "Join the CSV with auxiliary metadata tables to see which hidden flags align with performance spikes.",
-        "tags": ["python", "merge", "metadata"],
-    },
-    {
-        "id": "code_checksum_validate",
-        "agent": "code_act",
-        "step": None,
-        "text": "Compute a hash (`md5sum file.csv`) before and after transformations to ensure you are analyzing the intended version.",
-        "tags": ["shell", "md5sum", "integrity"],
-    },
-    {
-        "id": "code_sampling_probe",
-        "agent": "code_act",
-        "step": None,
-        "text": "Sample a handful of random rows (`df.sample(5, random_state=0)`) to manually verify pattern assumptions.",
-        "tags": ["python", "sampling", "validation"],
-    },
-    {
-        "id": "code_param_grid",
-        "agent": "code_act",
-        "step": None,
-        "text": "Pivot parameters versus metrics (`df.pivot_table`) to reverse-engineer which hyper-parameters matter most.",
-        "tags": ["python", "pivot", "analysis"],
-    },
-    {
-        "id": "code_correlate_metrics",
-        "agent": "code_act",
-        "step": None,
-        "text": "Run `df.corr(numeric_only=True)` to uncover non-trivial relationships between metrics and latent knobs.",
-        "tags": ["python", "correlation", "insight"],
-    },
-    {
-        "id": "code_flag_anomalies",
-        "agent": "code_act",
-        "step": None,
-        "text": "Add a quick check that flags rows with z-score > 3 to spot outliers that often encode special-case settings.",
-        "tags": ["python", "anomaly", "quality"],
-    },
-    {
-        "id": "code_compare_runs",
-        "agent": "code_act",
-        "step": None,
-        "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
-        "tags": ["python", "concat", "comparison"],
-    },
-]
-'''
-    {
-        "id": "plan_columns",
-        "agent": "think",
-        "step": [0, 1, 2],
-        "text": (
-            "Restate the task, list the CSV columns that look relevant, and sketch a two-step plan "
-            "before writing any tools."
-        ),
-        "tags": ["planning", "orientation"],
-    },
-    {
-        "id": "inspect_csv",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Load the CSV into pandas, call head() and describe() on the metrics of interest, and "
-            "note any missing or surprising values."
-        ),
-        "tags": ["inspection", "pandas"],
-    },
-    {
-        "id": "compare_groups",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Group by the key dimension mentioned in the question, compute aggregates that answer "
-            "the prompt, and log the intermediate results."
-        ),
-        "tags": ["groupby", "analysis"],
-    },
-    {
-        "id": "validate_answer",
-        "agent": "think",
-        "step": None,
-        "text": (
-            "Double-check the computed answer against the reference columns, ensure units match, "
-            "and explain any assumptions before concluding."
-        ),
-        "tags": ["validation", "explanation"],
-    },
-    {
-        "id": "think_restate_goal",
-        "agent": "think",
-        "step": None,
-        "text": "Pause to restate the user's exact question and outline the must-have elements before diving deeper.",
-        "tags": ["reflection", "planning"],
-    },
-    {
-        "id": "think_list_outputs",
-        "agent": "think",
-        "step": None,
-        "text": "List which outputs, metrics, or comparisons the answer must cover so you do not wander off-task.",
-        "tags": ["requirements", "focus"],
-    },
-    {
-        "id": "think_trace_evidence",
-        "agent": "think",
-        "step": None,
-        "text": "Map each claim to specific columns or calculations you intend to cite, ensuring the final answer is traceable.",
-        "tags": ["evidence", "planning"],
-    },
-    {
-        "id": "think_unit_check",
-        "agent": "think",
-        "step": None,
-        "text": "Verify that all numbers share the same units/time windows; mismatched scales often explain contradictory results.",
-        "tags": ["validation", "consistency"],
-    },
-    {
-        "id": "think_verify_math",
-        "agent": "think",
-        "step": None,
-        "text": "Recompute any manual math from the prior step to make sure rounding or indexing errors did not creep in.",
-        "tags": ["double-check", "math"],
-    },
-    {
-        "id": "think_alt_strategy",
-        "agent": "think",
-        "step": None,
-        "text": "If the current line of attack stalls, brainstorm an alternate decomposition (grouping, filtering, new metric) before proceeding.",
-        "tags": ["problem-solving", "flexibility"],
-    },
-    {
-        "id": "think_dependency_scan",
-        "agent": "think",
-        "step": None,
-        "text": "Ensure you are referencing the correct dataset path/run ID so that subsequent evidence actually answers the question.",
-        "tags": ["context", "validation"],
-    },
-    {
-        "id": "think_surface_assumptions",
-        "agent": "think",
-        "step": None,
-        "text": "List hidden assumptions (e.g., monotonicity, data completeness) and plan to confirm or caveat them.",
-        "tags": ["assumptions", "rigor"],
-    },
-    {
-        "id": "think_contradiction_scan",
-        "agent": "think",
-        "step": None,
-        "text": "Look for any rows or metrics that contradict your emerging story and address them explicitly.",
-        "tags": ["validation", "covering-cases"],
-    },
-    {
-        "id": "think_audience_check",
-        "agent": "think",
-        "step": None,
-        "text": "Imagine how the user will consume the answer—decide if they need a comparison, a recommendation, or a single figure.",
-        "tags": ["communication", "audience"],
-    },
-    {
-        "id": "think_gap_review",
-        "agent": "think",
-        "step": None,
-        "text": "Before finalizing, scan for unanswered sub-questions or missing context that the user implicitly expects.",
-        "tags": ["coverage", "quality"],
-    },
-]
-'''
-# MODIFY to INCLUSE KNOWLEDGE IMPROVEMENT
+# DEFAULT_N_KNOWLEDGE_STEPS = 1
+# DEFAULT_KNOWLEDGE_PER_STEP = 1
+# DEFAULT_FINAL_RERUNS = 7
+# Emergency-only pool; we stay off by default unless scores stall/regress repeatedly.
+DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = []
+
 BASE_SYSTEM_PROMPT_LIST = [
     "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
     "and cite the evidence before answering.",
@@ -332,6 +44,39 @@ BASE_SYSTEM_PROMPT_LIST = [
     "and provide the confident conclusion.",
 ]
 
+KLG_SYSTEM_PROMPT_LIST = [
+    "You are a knowledge-anchored analyst: reread each injected knowledge line, translate it into a concrete CSV probe, and cite it when comparing evidence.",
+    "Treat the knowledge snippets as marching orders: summarize their intent, run the targeted CSV probes, and explain how findings confirm or challenge them.",
+    "Act like a lab tech following precise notes; echo the relevant knowledge cue before coding and design a quick check that directly tests it.",
+    "Channel a field engineer syncing with HQ guidance by pairing each knowledge cue with the exact column or metric it names and narrating results through that lens.",
+    "Be a knowledge weaver: weave the injected guidance into your mini-plan, execute the calculations it requests, and highlight which parts of the answer each cue inspired.",
+    "Operate as a conscientious fact-checker who obeys the knowledge insert, documenting the snippet, executing its suggested inspection, and tying conclusions back to it.",
+    "Treat the knowledge text as mandatory checkpoints: state each cue, perform the minimal computation it demands, and log whether the outcome aligns.",
+    "Work like a principle-driven coach; quote the knowledge advice, adapt it to the exact CSV columns, and ensure your reasoning never drifts from that script.",
+    "Behave as a hypothesis tester whose hypotheses come from the knowledge text, gathering the data it names and reporting the pass or fail result.",
+    "Adopt a knowledge-to-action workflow: convert every knowledge snippet into code or comparisons, execute them, and attribute final statements to the snippet that inspired them.",
+    "If a run stalls or regresses, pivot: surface missing clues/feedback, verify time-based cycles and environmental drivers (e.g., tide height, distance, congestion windows), and preserve correct mappings while adding only the minimal check needed.",
+]
+
+
+# Adaptive hint to pivot when scores regress/stall while preserving correct mappings
+ADAPTIVE_HINT = {
+    "id": "adaptive_pivot",
+    "agent": "think",
+    "step": None,
+    "text": (
+        "If scores stall/regress: pivot to a targeted verification, surface missing clues/feedback, "
+        "and preserve correct computations/parameter mappings; verify time/phase cycles and environmental drivers "
+        "(e.g., tide height, distance/congestion windows), and apply only minimal fixes."
+    ),
+    "tags": ["adaptive", "stability", "mapping"],
+}
+
+# Seed a small emergency pool so we can inject a pivot hint if scores collapse.
+DEFAULT_KNOWLEDGE_POOL.append(ADAPTIVE_HINT)
+
+
+
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
     "Judge factual accuracy, coverage, and clarity. Return ONLY a JSON object with keys 'score' "
@@ -342,12 +87,6 @@ SCORING_SYSTEM_PROMPT = (
 KNOWLEDGE_SYSTEM_PROMPT = (
     "You provide concise, reusable advice (1-3 short lines) that nudges the agent back onto a reliable "
     "reasoning path without giving away the final answer."
-)
-
-KNOWLEDGE_SELECTION_SYSTEM_PROMPT = (
-    "You are a reviewer who selects the most helpful reusable knowledge snippet to inject before the "
-    "next agent action. Score each candidate 0-10 based on how well it realigns the reasoning without "
-    "revealing the final answer, and respond with a JSON array sorted best-to-worst."
 )
 
 RUN_ID_CACHE: Dict[str, str] = {}
@@ -429,13 +168,24 @@ def compute_entry_id(dataset_entry: Dict[str, Any], index: int) -> str:
     return "|".join(parts)
 
 
+def pick_system_prompt(*, use_knowledge_prompt: bool = False) -> str:
+    pool = (
+        KLG_SYSTEM_PROMPT_LIST
+        if use_knowledge_prompt and KLG_SYSTEM_PROMPT_LIST
+        else BASE_SYSTEM_PROMPT_LIST
+    )
+    return random.choice(pool)
+
+
 def pick_base_system_prompt() -> str:
-    return random.choice(BASE_SYSTEM_PROMPT_LIST)
+    return pick_system_prompt()
 
 
-def randomize_system_prompt(messages: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def randomize_system_prompt(
+    messages: Sequence[Dict[str, Any]], *, use_knowledge_prompt: bool = False
+) -> List[Dict[str, Any]]:
     cloned = [dict(msg) for msg in messages]
-    prompt = pick_base_system_prompt()
+    prompt = pick_system_prompt(use_knowledge_prompt=use_knowledge_prompt)
     if cloned and str(cloned[0].get("role") or "").lower() == "system":
         cloned[0]["content"] = prompt
     else:
@@ -588,8 +338,16 @@ def truncate_messages_before_step(messages: Sequence[Dict[str, Any]], step: int)
     return truncated
 
 
-def build_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
-    cfg: Dict[str, Any] = {"generate_knowledge": False}
+def build_knowledge_config(
+    manual_entries: Optional[List[Dict[str, Any]]] = None,
+    *,
+    emergency_mode: bool = False,
+) -> Dict[str, Any]:
+    cfg: Dict[str, Any] = {
+        # Default: off. Flip on only in emergency_mode (scores stalled/regressed repeatedly).
+        "generate_knowledge": bool(emergency_mode),
+        "knowledge_pool": DEFAULT_KNOWLEDGE_POOL if emergency_mode else [],
+    }
     if manual_entries:
         cfg["knowledge"] = manual_entries
     return cfg
@@ -629,7 +387,7 @@ def get_messages_for_run(
         return []
     return _normalize(raw_messages)
 
-# Modify to include adaptive notes
+
 async def score_answer(orchestrator_llm, question: str, reference_answer: str, model_answer: str) -> Dict[str, Any]:
     prompt = (
         "Evaluate the model's answer.\n"
@@ -662,6 +420,44 @@ async def score_answer(orchestrator_llm, question: str, reference_answer: str, m
         "judge_usage": usage,
     }
 
+#NEW: Include adaptive notes inside the prompt
+def _build_adaptive_notes(
+    *,
+    iteration: int,
+    no_improve_streak: int,
+    best_score: float,
+    last_score: float,
+    best_feedback: str,
+    last_feedback: str,
+    drift_summary: str,
+    missing: str,
+    goal: str,
+) -> str:
+    """Create short adaptive hints to steer the prompt when scores stall/regress."""
+    notes = [
+        f"Iteration {iteration + 1}: best score so far {best_score}; last score {last_score}.",
+    ]
+    if last_score < best_score:
+        notes.append("Last attempt regressed; propose a different, more constrained move.")
+    # Pivot after a consecutive non-improvement
+    if no_improve_streak >= 3:
+        notes.append(
+            "Scores stalled/regressed; change strategy (run a targeted data/verification step, avoid rephrasing)."
+        )
+    if goal:
+        notes.append(f"Revision goal: {goal}")
+    if drift_summary:
+        notes.append(f"Earlier drift summary: {drift_summary}")
+    if missing:
+        notes.append(f"Missing clues to surface: {missing}")
+    if last_feedback:
+        notes.append(f"Most recent judge feedback: {last_feedback}")
+    elif best_feedback:
+        notes.append(f"Best-score judge feedback: {best_feedback}")
+    notes.append(
+        "Preserve any computations/interpretations already correct; do not overwrite accurate aggregates, formulas, or parameter mappings—only add the minimal check to fix the drift."
+    )
+    return "\n".join(f"- {line}" for line in notes)
 
 async def generate_step_knowledge(
     llm_client,
@@ -670,11 +466,31 @@ async def generate_step_knowledge(
     messages: Sequence[Dict[str, Any]],
     step: int,
     iteration: int,
+    no_improve_streak: int = 0,
+    best_score: float = 0.0,
+    last_score: float = 0.0,
+    best_feedback: str = "",
+    last_feedback: str = "",
+    drift_summary: str = "",
+    missing: str = "",
+    goal: str = "",
 ) -> Optional[Dict[str, Any]]:
     question = dataset_entry.get("Question", "")
     reference = dataset_entry.get("CorrectAnswer", "")
     transcript_json = json.dumps(messages, ensure_ascii=False, indent=2)
     step_text = get_agent_step_text(messages, step)
+    # NEW: Adaptive notes to improve score enhancement
+    adaptive_notes = _build_adaptive_notes(
+        iteration=iteration,
+        no_improve_streak=no_improve_streak,
+        best_score=best_score,
+        last_score=last_score,
+        best_feedback=best_feedback,
+        last_feedback=last_feedback,
+        drift_summary=drift_summary,
+        missing=missing,
+        goal=goal,
+    )
     prompt = (
         f"You are writing reusable knowledge that will be inserted before agent step {step} "
         "in a CSV reasoning workflow.\n\n"
@@ -700,6 +516,10 @@ async def generate_step_knowledge(
         "- code_act — Runs small Python or shell commands (e.g., pandas snippets) to inspect or compute from the CSV.\n"
         "- web_search — Performs a quick web lookup to gather missing outside facts or clarifications.\n"
         "- answer — Summarizes gathered evidence into a final response when the solution is ready.\n\n"
+        "Stability constraint:\n" #NEW: include stability constraint
+        "- Preserve any already-correct computations or mappings (aggregates, formulas, parameter references). Only add the smallest verification or correction needed to fix the drift.\n\n"
+        "Adaptive constraints based on scoring feedback and drift analysis:\n" #NEW: constraints from score feedback
+        f"{adaptive_notes}\n\n"
         "Output format (JSON only):\n"
         "[\n"
         "  {\n"
@@ -736,167 +556,6 @@ async def generate_step_knowledge(
     return entry
 
 
-def _normalize_step_filter(value: Any) -> Optional[Set[int]]:
-    if value in (None, "", "*"):
-        return None
-    normalized: Set[int] = set()
-    if isinstance(value, int):
-        normalized.add(value)
-        return normalized
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            try:
-                normalized.add(int(item))
-            except (TypeError, ValueError):
-                continue
-        return normalized or None
-    try:
-        normalized.add(int(value))
-    except (TypeError, ValueError):
-        return None
-    return normalized or None
-
-
-def _normalize_pool_entry(entry: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
-    text = str(entry.get("text") or entry.get("knowledge") or "").strip()
-    if not text:
-        return None
-    normalized: Dict[str, Any] = {
-        "text": text,
-        "original_text": entry.get("original_text") or text,
-        "agent": str(entry.get("agent") or "think").strip() or "think",
-        "tags": entry.get("tags") or [],
-    }
-    normalized["id"] = str(entry.get("id") or f"default_pool_{index+1}")
-    normalized["_step_filter"] = _normalize_step_filter(entry.get("step"))
-    return normalized
-
-
-def _format_pool_candidates(candidates: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    formatted: List[Dict[str, Any]] = []
-    for entry in candidates:
-        formatted.append(
-            {
-                "id": entry["id"],
-                "agent": entry.get("agent"),
-                "text": entry.get("text"),
-                "tags": entry.get("tags") or [],
-            }
-        )
-    return formatted
-
-
-async def _rank_pool_candidates(
-    llm_client,
-    *,
-    dataset_entry: Dict[str, Any],
-    messages: Sequence[Dict[str, Any]],
-    truncated_history: Sequence[Dict[str, Any]],
-    step: int,
-    candidates: Sequence[Dict[str, Any]],
-    limit: int,
-) -> List[str]:
-    if not candidates:
-        return []
-    question = dataset_entry.get("Question", "")
-    reference = dataset_entry.get("CorrectAnswer", "")
-    transcript_json = json.dumps(truncated_history, ensure_ascii=False, indent=2)
-    step_text = get_agent_step_text(messages, step)
-    candidate_json = json.dumps(_format_pool_candidates(candidates), ensure_ascii=False, indent=2)
-    prompt = (
-        f"You are judging reusable knowledge for insertion before agent step {step}.\n\n"
-        f"Full message history before rerun (JSON transcript):\n{transcript_json}\n\n"
-        f"Original agent step {step} transcript:\n{step_text}\n\n"
-        f"Question:\n{question}\n\n"
-        f"Reference answer:\n{reference}\n\n"
-        "Candidate knowledge entries (JSON array):\n"
-        f"{candidate_json}\n\n"
-        "Return a JSON array sorted best to worst. Each item must contain:\n"
-        "- id: the candidate id\n"
-        "- score: integer 0-10 reflecting usefulness\n"
-        "- justification: 1 short sentence\n"
-        f"Select up to {limit} entries. Do not invent new ids."
-    )
-    try:
-        response, _ = await llm_client.chat(
-            messages=[{"role": "user", "content": prompt}],
-            system=KNOWLEDGE_SELECTION_SYSTEM_PROMPT,
-        )
-    except Exception as exc:  # pragma: no cover
-        print(f"[knowledge selection] ranking failed: {exc}")
-        return []
-
-    parsed = _parse_json_array(response)
-    ranked_ids: List[str] = []
-    seen: Set[str] = set()
-    for item in parsed:
-        if not isinstance(item, dict):
-            continue
-        candidate_id = str(item.get("id") or "").strip()
-        if not candidate_id or candidate_id in seen:
-            continue
-        seen.add(candidate_id)
-        ranked_ids.append(candidate_id)
-        if len(ranked_ids) >= limit:
-            break
-    return ranked_ids
-
-
-async def select_pool_knowledge(
-    llm_client,
-    *,
-    dataset_entry: Dict[str, Any],
-    messages: Sequence[Dict[str, Any]],
-    truncated_history: Sequence[Dict[str, Any]],
-    step: int,
-    limit: int,
-) -> List[Dict[str, Any]]:
-    limit = max(int(limit), 0)
-    if limit <= 0:
-        return []
-    applicable: List[Dict[str, Any]] = []
-    for idx, raw_entry in enumerate(DEFAULT_KNOWLEDGE_POOL):
-        normalized = _normalize_pool_entry(raw_entry, idx)
-        if not normalized:
-            continue
-        step_filter = normalized.pop("_step_filter", None)
-        if step_filter is None or step in step_filter:
-            applicable.append(normalized)
-    if not applicable:
-        return []
-    ranked_ids = await _rank_pool_candidates(
-        llm_client,
-        dataset_entry=dataset_entry,
-        messages=messages,
-        truncated_history=truncated_history,
-        step=step,
-        candidates=applicable,
-        limit=limit,
-    )
-    id_map = {entry["id"]: entry for entry in applicable}
-    ordered: List[Dict[str, Any]] = []
-    for candidate_id in ranked_ids:
-        entry = id_map.get(candidate_id)
-        if entry:
-            ordered.append(entry)
-    if not ordered:
-        random.shuffle(applicable)
-        ordered = applicable[: min(limit, len(applicable))]
-    elif len(ordered) < min(limit, len(applicable)):
-        remaining = [entry for entry in applicable if entry["id"] not in {item["id"] for item in ordered}]
-        for entry in remaining:
-            ordered.append(entry)
-            if len(ordered) >= min(limit, len(applicable)):
-                break
-    prepared: List[Dict[str, Any]] = []
-    for idx, entry in enumerate(ordered[:limit]):
-        candidate = dict(entry)
-        candidate.setdefault("iteration", idx + 1)
-        candidate["step"] = step
-        prepared.append(candidate)
-    return prepared
-
-
 async def run_candidate_inference(
     orchestrator,
     *,
@@ -906,8 +565,9 @@ async def run_candidate_inference(
     knowledge_entry: Dict[str, Any],
     dataset_index: int,
     candidate_index: int,
+    emergency_mode: bool = False,
 ) -> Dict[str, Any]:
-    rerun_messages = randomize_system_prompt(truncated_history)
+    rerun_messages = randomize_system_prompt(truncated_history, use_knowledge_prompt=True)
     manual_entries = [
         {
             "step": step,
@@ -916,8 +576,8 @@ async def run_candidate_inference(
             "tags": knowledge_entry.get("tags") or [],
         }
     ]
-    knowledge_config = build_knowledge_config(manual_entries)
-    run_name = f"train_v4_eval_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
+    knowledge_config = build_knowledge_config(manual_entries, emergency_mode=emergency_mode)
+    run_name = f"train_v3_eval_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
     result = await orchestrator(
         messages=rerun_messages,
         run_name=run_name,
@@ -937,7 +597,6 @@ async def run_candidate_inference(
         "score_feedback": score_info.get("feedback"),
         "output": new_output,
         "knowledge": {
-            "id": knowledge_entry.get("id"),
             "text": knowledge_entry.get("text"),
             "original_text": knowledge_entry.get("original_text"),
             "agent": knowledge_entry.get("agent"),
@@ -965,13 +624,15 @@ async def run_full_problem_trials(
     reference = dataset_entry.get("CorrectAnswer", "")
     trial_records: List[Dict[str, Any]] = []
     for trial in range(trials):
-        rerun_messages = randomize_system_prompt(base_prompt_messages)
+        rerun_messages = randomize_system_prompt(
+            base_prompt_messages, use_knowledge_prompt=bool(manual_entries)
+        )
         knowledge_config = build_knowledge_config(
             [dict(entry) for entry in manual_entries] if manual_entries else None
         )
         result = await orchestrator(
             messages=rerun_messages,
-            run_name=f"train_v4_eval_{dataset_index:04d}_{label}_r{trial + 1}",
+            run_name=f"train_v3_eval_{dataset_index:04d}_{label}_r{trial + 1}",
             knowledge_config=knowledge_config,
         )
         run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
@@ -992,7 +653,6 @@ async def run_full_problem_trials(
         if trial_records
         else 0.0
     )
-    # NOTE PABLO : What about the variance ??
     return trial_records, mean_score
 
 
@@ -1020,7 +680,7 @@ async def run_problem(
 
     base_result = await orchestrator(
         messages=[dict(msg) for msg in base_messages],
-        run_name=f"train_v4_eval_{index:04d}_base",
+        run_name=f"train_v3_eval_{index:04d}_base",
         knowledge_config=build_knowledge_config(),
     )
     base_run_id = normalize_result_run_id(base_result, Path(orchestrator.log_dir))
@@ -1051,6 +711,8 @@ async def run_problem(
     best_result = base_result
     best_run_id = base_run_id
     best_score = base_score
+    no_improve_streak = 0
+    emergency_mode = False
 
     print(f"[eval {index}] baseline score={base_score}")
 
@@ -1077,21 +739,29 @@ async def run_problem(
         step_best_result: Optional[Dict[str, Any]] = None
         step_best_score: Optional[float] = None
 
-        pool_candidates = await select_pool_knowledge(
-            orchestrator.llm,
-            dataset_entry=dataset_entry,
-            messages=messages,
-            truncated_history=truncated_history,
-            step=step,
-            limit=knowledge_per_step,
-        )
-        if not pool_candidates:
-            print(f"[eval {index}] step {step}: no knowledge available in pool, skipping.")
-            continue
-
-        for candidate_idx, knowledge_entry in enumerate(pool_candidates):
+        for candidate_idx in range(knowledge_per_step):
+            knowledge_entry = await generate_step_knowledge(
+                orchestrator.llm,
+                dataset_entry=dataset_entry,
+                messages=messages,
+                step=step,
+                iteration=candidate_idx,
+                no_improve_streak=no_improve_streak,
+                best_score=best_score,
+                last_score=best_score,
+                best_feedback="",
+                last_feedback="",
+                drift_summary="",
+                missing="",
+                goal="",
+            )
+            if not knowledge_entry:
+                print(f"[eval {index}] step {step} cand {candidate_idx + 1}: no knowledge generated")
+                continue
             if not knowledge_entry.get("agent"):
-                knowledge_entry["agent"] = get_agent_name_for_step(messages, step) or "think"
+                inferred_agent = get_agent_name_for_step(messages, step) or "think"
+                knowledge_entry["agent"] = inferred_agent
+
             candidate = await run_candidate_inference(
                 orchestrator,
                 dataset_entry=dataset_entry,
@@ -1100,6 +770,7 @@ async def run_problem(
                 knowledge_entry=knowledge_entry,
                 dataset_index=index,
                 candidate_index=candidate_idx,
+                emergency_mode=emergency_mode,
             )
             candidate_info = candidate["info"]
             step_record["candidate_evaluations"].append(candidate_info)
@@ -1142,6 +813,13 @@ async def run_problem(
                 "run_id": best_run_id,
             }
         )
+
+        # Track stalls/regressions to toggle emergency_mode for future steps
+        if step_best_score is None or step_best_score <= step_record["starting_score"]:
+            no_improve_streak += 1
+        else:
+            no_improve_streak = 0
+        emergency_mode = no_improve_streak >= 3 # IMPORTANT: value to flip on knowledge injections
 
     record["final_run_id"] = best_run_id
     record["final_score"] = best_score
@@ -1208,9 +886,9 @@ def load_existing_eval_entries(
                 entries = raw
                 needs_resave = True
             else:
-                print(f"[train_v4_eval] Ignoring malformed cache at {output_path}")
+                print(f"[train_v3_eval] Ignoring malformed cache at {output_path}")
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[train_v4_eval] Failed to load cached eval entries: {exc}")
+            print(f"[train_v3_eval] Failed to load cached eval entries: {exc}")
         for idx, entry in enumerate(entries):
             entry_id = str(entry.get("id") or "").strip()
             if not entry_id and idx < len(dataset):
@@ -1286,7 +964,6 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
         allow_code_exec=True,
         agent_log_head_lines=1,
-        # max_tokens_per_question=40000,
         max_tokens_per_question=80000,
     )
 
@@ -1294,7 +971,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
     if needs_resave:
         save_eval_entries(eval_entries, args.output_path)
     if processed_ids:
-        print(f"[train_v4_eval] Resuming with {len(processed_ids)} cached entries")
+        print(f"[train_v3_eval] Resuming with {len(processed_ids)} cached entries")
 
     pending: List[Tuple[int, Dict[str, Any], str]] = []
     for idx, entry in enumerate(dataset):
@@ -1307,7 +984,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
     if not pending:
         print(
-            f"[train_v4_eval] All {len(processed_ids)} entries already processed. "
+            f"[train_v3_eval] All {len(processed_ids)} entries already processed. "
             f"Results stored at {args.output_path}"
         )
         return
@@ -1338,10 +1015,10 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         save_eval_entries(eval_entries, args.output_path)
         batch_idx = batch_start // args.batch_size + 1
         print(
-            f"[train_v4_eval] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
+            f"[train_v3_eval] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
         )
 
-    print(f"[train_v4_eval] Saved evaluation dataset to {args.output_path}")
+    print(f"[train_v3_eval] Saved evaluation dataset to {args.output_path}")
 
 
 if __name__ == "__main__":
