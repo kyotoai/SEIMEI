@@ -2343,13 +2343,34 @@ file_config = [
 
 
 - [ ] Find opensource model that works for train_v3,4
-- [ ] Make web_search agent work -> make sample train_v4
+
 - [ ] Slide for kubota
 
 - [ ] Train AI
 
 - [ ] Make Eval Function
 
+
+
+## Dec 29
+
+- [x] Make exp12_websearch_small
+```
+I wanna make exp12_websearch_small/train_v4_eval_sample.py, seimei/eval/generate_dataset_websearch.py, seimei/eval/data_generators/websearch.md and seimei/eval/data_generators/websearch_topics.json.
+
+Refer to exp11_plasma_gkv_v3/train_v4_eval_sample.py, seimei/eval/generate_dataset_excel.py, seimei/eval/data_generators/excel.md and seimei/eval/data_generators/excel_topics10.json deeply and use them as a baseline when you make the new files.
+
+generate_dataset_websearch.py:
+Running this file makes exp12_websearch_small/dataset.json. In dataset.json it has a list of dict which has question, answer_scoring field.
+question: question which requires multiple searches and output documents from web_search agent
+answer_scoring: specify requirements of the answer. Ex. "answer needs to include concrete number of ...". Also try to assign scores to each requirement and make sure the total number becomes 10.
+
+websearch.md, websearch_topics.json:
+these files are used to make prompt for LLM to generate the dataset
+
+train_v4_eval_sample.py:
+In this file you should understand the baseline deeply and make a new train_v4_eval_sample.py for websearch. the baseline is for finding best knowledge chunk for plasma simulation code task and check if it augments the baseline inference. Since there is no need for workspaces in web search task, you can delete all the parts related to it. Also try to delete unnecessary fallbacks and suplement functions. Try to make the file only have minimum valuable functions.
+```
 
 
 
