@@ -25,6 +25,16 @@ DEFAULT_TOPICS: Tuple[str, ...] = (
     "hr_attrition",
     "ab_test_sessions",
     "supply_chain",
+    "coastal_tide_wave_interference",
+    "satellite_backhaul_alignment",
+    "festival_roaming_congestion",
+    "factory_machine_interference",
+    "drone_relay_chain",
+    # Additional mobile/network topics for exp10_csv_small
+    "mobile_network_usage_japan",
+    "regional_signal_quality",
+    "satellite_alignment_diagnostics",
+    "event_based_traffic_spikes",
 )
 
 SYSTEM_PROMPT = textwrap.dedent(
@@ -51,7 +61,14 @@ SYSTEM_PROMPT = textwrap.dedent(
     from 1..total_hyper_params. Use that index to pick distinct parameterisations so each CSV differs.
 
     The produced question must focus on the meaning of the generated data and the hyper-parameters.
-    The correct_answer must concisely explain the truth grounded in those hyper-parameters.
+    The correct_answer must concisely explain the truth grounded in those hyper-parameters, using
+    expert-style reasoning for the domain: correlations, seasonality, and interventions that an expert
+    would check to improve outcomes. Examples:
+      - Mobile/network: angle vs signal/bandwidth, outage/asymmetry detection, event-driven spikes.
+      - E-commerce: traffic/reviews/time-of-year/weather effects on orders or churn; uplift drivers.
+      - Supply chain/IoT: lagged sensor anomalies vs throughput; maintenance/preventive actions.
+    Emphasize how the hyper-parameters manifest in the data and what an expert would do to validate
+    or act on the findings.
     """
 ).strip()
 
@@ -157,9 +174,21 @@ def extract_json_object(text: str) -> Dict[str, Any]:
     if not candidate:
         raise ValueError("Empty response.")
 
-    fenced_match = re.search(r"\{.*\}", candidate, flags=re.DOTALL)
-    if fenced_match:
-        candidate = fenced_match.group(0)
+    # Remove common code fences/backticks.
+    candidate = candidate.replace("```json", "").replace("```", "").strip()
+
+    # Grab the longest JSON object span (IMPORTANT FOR LONG PROMPTS).
+    matches = re.findall(r"\{.*\}", candidate, flags=re.DOTALL)
+    if matches:
+        candidate = max(matches, key=len)
+
+    # Guard against empty/trivial candidates that slip in when the model
+    # prepends garbage (e.g., "{} ..." or very short spans).
+    if len(candidate) < 10 or candidate == "{}":
+        raise ValueError("No meaningful JSON object found in response.")
+    # Debugging
+    print("=== CANDIDATE JSON ===")
+    print(candidate[:500])
 
     try:
         data = json.loads(candidate)
@@ -615,6 +644,14 @@ async def request_valid_artifact(
         print(f"[{topic}] LLM attempt {attempt}/{max_attempts}")
         response_text, _ = await llm.chat(messages=messages, system=SYSTEM_PROMPT)
         messages.append({"role": "assistant", "content": response_text})
+        # Debugging
+        print("=== SYSTEM ===")
+        print( SYSTEM_PROMPT )
+        print("=== PROMPT ===")
+        print(prompt[:1000])
+        print("=== RAW RESPONSE (len) ===", len(response_text))
+        print(response_text[:500])
+
 
         try:
             payload = extract_json_object(response_text)
@@ -764,6 +801,8 @@ async def request_artifact_once(
     if len(csv_paths) != len(meta_paths):
         raise DatasetGenerationError("CSV paths and meta paths must have the same length.")
     response_text, _ = await llm.chat(messages=[{"role": "user", "content": prompt}], system=SYSTEM_PROMPT)
+    # response |--->
+    print(response_text)
     try:
         payload = extract_json_object(response_text)
     except ValueError as exc:
