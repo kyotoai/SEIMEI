@@ -22,3 +22,11 @@
 - Entry 8: Eval v4 adaptive (`train_v4_eval_adaptive.json`): 9/9 complete; overall base mean 4.3478 → final 4.2222 (Δ −0.1256), win/loss/tie = 5/4/0; slight overall dip.
 
 - Parameters used: DEFAULT_N_KNOWLEDGE_STEPS=7, DEFAULT_KNOWLEDGE_PER_STEP=3, DEFAULT_FINAL_RERUNS=8.
+
+# Run log (generate_dataset_excel.py)
+- 2025-12-25: Prompt became longer; LLM replies were truncated mid-JSON. Fixed by extracting the longest `{...}` span in `extract_json_object` and allowing larger `max_tokens`. Verified with gpt-4o-mini and gpt-5-nano single-topic runs (exp10_csv_small_gpt4 / gpt5).
+- 2025-12-25: Added Quality checklist guards in `excel.md` (valid Python, no stray backslashes/indent errors; cast numpy scalars/bools to int/float/bool before `json.dumps`; use `rng.integers` instead of `randint`; keep code concise/deterministic).
+- 2025-12-25: Topics bug: passing `--topics seimei/eval/data_generators/excel_topics_middle.json` treated the file path as the topic. Fixed by using `--topics-path` (JSON array) and smaller batch sizes to avoid prompt bloat.
+- 2025-12-25: Baseline dataset with gpt-4o-mini written to `exp10_csv_small_gpt4`; comparison run with gpt-5-nano in `exp10_csv_small_gpt5`. Plan: use gpt-4o-mini as baseline, compare gpt-5-nano after successful single-topic checks; rerun failed topics with small batch and a few retries if needed.
+- 2025-12-26: Small local models (e.g., deepseek-coder 1.3B via Ollama) could not consistently emit valid JSON for some topics (prefixed junk/empty `{}`); runs resulted in zero records. Conclusion: use larger/more compliant models (gpt-4o-mini/5) for this data generation; small models are too unreliable.
+- 2025-12-26: Final conclusion for data-gen: small/edge models keep emitting malformed `{}`/garbage and fail guards even after retries; stick with OpenAI gpt-4o-mini/5 for production runs and use new guardrails to skip empty candidates.
