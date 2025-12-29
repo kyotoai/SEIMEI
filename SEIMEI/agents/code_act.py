@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import re
 import subprocess
+from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
@@ -49,6 +50,13 @@ class code_act(Agent):
         allow = bool(shared_ctx.get("allow_code_exec", False))
         allowed: Optional[Sequence[str]] = shared_ctx.get("allowed_commands") or _SAFE_DEFAULTS
         approve_cb = shared_ctx.get("approval_callback")
+        cwd: Optional[str] = None
+        workspace = shared_ctx.get("workspace")
+        if workspace not in (None, ""):
+            try:
+                cwd = str(Path(workspace).expanduser())
+            except Exception:
+                cwd = None
 
         
         code, knowledge_used = await _generate_command(messages, shared_ctx, allowed)
@@ -88,6 +96,23 @@ class code_act(Agent):
         code = normalized_code
         python_heredoc = _parse_python_heredoc(code)
 
+        '''
+        print("\n---------- run command -----------")
+        print(_run_command(
+                    code="pwd",
+                    timeout=timeout,
+                    python_heredoc=None,
+                    cwd=cwd,
+                ))
+        
+        print(_run_command(
+                    code="ls",
+                    timeout=timeout,
+                    python_heredoc=None,
+                    cwd=cwd,
+                ))
+        '''
+
         try:
             loop = asyncio.get_event_loop()
             proc_out = await loop.run_in_executor(
@@ -96,6 +121,7 @@ class code_act(Agent):
                     code=code,
                     timeout=timeout,
                     python_heredoc=python_heredoc,
+                    cwd=cwd,
                 ),
             )
         except subprocess.TimeoutExpired:
@@ -193,6 +219,7 @@ def _run_command(
     code: str,
     timeout: int,
     python_heredoc: Optional[_PythonHeredoc],
+    cwd: Optional[str],
 ) -> subprocess.CompletedProcess[str]:
     if python_heredoc:
         args: List[str] = [python_heredoc.executable]
@@ -207,6 +234,7 @@ def _run_command(
             capture_output=True,
             text=True,
             timeout=timeout,
+            cwd=cwd,
         )
     return subprocess.run(
         code,
@@ -214,6 +242,7 @@ def _run_command(
         capture_output=True,
         text=True,
         timeout=timeout,
+        cwd=cwd,
     )
 
 
