@@ -1832,15 +1832,42 @@ DEFAULT_KNOWLEDGE_PER_STEP = 6
 DEFAULT_N_CHECK_KNOWLEDGE = 4
 DEFAULT_FINAL_RERUNS = 7
 -> 0.3
+
+train_v3_eval_sample_results3.json
+DEFAULT_BATCH_SIZE = 10
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_KNOWLEDGE_PER_STEP = 3
+DEFAULT_N_CHECK_KNOWLEDGE = 3
+DEFAULT_FINAL_RERUNS = 7
+-> 
 ```
 
 
 ## Dec 17
 
-- [ ] Allow agent_config = [{"name":"..."}]
+- [x] Allow agent_config = [{"name":"..."}]
 ```
 Now when seimei initializing, I can specify agent_config = [{"file_path":"..."}]. But this is inconvinient if seimei folder is unclear. Instead allow users to specify it agent_config = [{"name":"..."}] too. Ex. agent_config = [{"name":"code_act"}, {"name":"edit_file"}] or agent_config = [{"name":"code_act"}, {"file_path":"seimei/agents/edit_file"}].
 ```
+
+## Dec 18
+
+- [x] Map API integration
+```
+Refer to exp9_mobile_data_small/map_api_test.py and implement overpass agent in seimei. Follow
+1. refer to other agents for how to make agent file. Implement it in seimei/agents folder.
+2. in overpass agent, from the past analysis, make query for overpass api call by llm and get information about building around a point.
+```
+
+- [ ] Fix an error it has now.
+    - it didn't go to answer agent for some reason
+
+- [ ] Implement VertexAI
+- [ ] Try this with NTT data (on GCP)
+!!!! - [ ] Decide a point to improve () 
+- [ ] make rmsearch prompt to improve it
+
+- [x] Overpass agent
 
 
 ## Past ToDo
@@ -1942,3 +1969,402 @@ Follow
 
 
 ```
+
+
+
+
+## Dec 20
+
+- [ ] make train_v3_sample.py
+- [ ] make train_v4_eval_sample.py
+
+
+## Dec 22
+
+- [x] Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py
+    - each seimei needs to have working dir
+```
+Now exp11_plasma_gkv_v3/train_v3_eval_sample.py creates workspace_copies and apply patch for each file. But it didn't specify the working space path in seimei __call__ for each problem, so directly acting agent on the current directory. Try to implement workspace argument in seimei __call__ and pass workspace for each problem. To implement this feature, read the entire file exp11_plasma_gkv_v3/train_v3_eval_sample.py and investigate other relevant files including seimei.py deeply, and modidfy the relevant files.
+```
+
+- [x] Debug 2 exp11_plasma_gkv_v3/train_v3_eval_sample.py
+    * delete unnecessary scoring
+    * save inference
+```
+In exp11_plasma_gkv_v3/train_v3_eval_sample.py, record is only saved at the end of all the processes. But I want you to save the record in the output path as often as possible. Also if running the python file is unexpectedly ended and I try to restart again, skip the processes which are done last time. You can check if the process is ended from the saved record file.
+```
+
+```
+In exp11_plasma_gkv_v3/train_v3_eval_sample.py, result is only saved at the end of all the processes. but because run_orchestrator_with_patch requires LLM inference and it takes time, I want to save result every time run_orchestrator_with_patch ends. Run save_eval_entries function at the end of the run_orchestrator_with_patch. Also, implementing this means that train_v3_eval_sample.py gets to need to handle the case only part of the entire process finishes. In this case, I want you to skip run_orchestrator_with_patch process which is already done and whose result is saved in the result file, and use the result generated in the past. This requires deep understanding about the result file format. Implement these features and return the modified code.
+```
+
+
+- [x] Make exp11_plasma_gkv_v3/train_v4_eval_sample.py
+```
+Refering to exp11_plasma_gkv_v3/train_v3_eval_sample.py, make exp11_plasma_gkv_v3/train_v4_eval_sample.py. comparing with v3, v4 has the following features,
+1. Instead of generating knowledge in generate_step_knowledge, it chooses knowledge from DEFAULT_KNOWLEDGE_POOL from same information given in generate_step_knowledge prompt. You should modify prompt adding DEFAULT_KNOWLEDGE_POOL to the information, and let LLM choose which knowledge to use for the specified step.
+2. The DEFAULT_KNOWLEDGE_POOL below is an example. You don't need to change knowledge for the command usage. But there are knowledge for csv analysis, which should be substituted by ones for coding tasks. You should think of a lot of ways to analyze code files running some command or python code, and generate knowledge for that.
+3. When choosing knowledge, you should not choose the same knowledge in the same step of same problem. You can use same knowledge for different step in the same problem or you can do it for same step in different problem.
+
+DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
+    {
+        "id": "code_ls_inventory",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `ls -a` to inventory the working directory before touching files so you know which CSVs, notes, or scripts exist.",
+        "tags": ["shell", "ls", "context"],
+    },
+    {
+        "id": "code_pwd_confirm",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `pwd` and ensure it matches the dataset's location; misaligned paths often explain missing-file errors.",
+        "tags": ["shell", "pwd", "sanity-check"],
+    },
+    {
+        "id": "code_rg_search",
+        "agent": "code_act",
+        "step": None,
+        "text": "Fire `rg -n \"keyword\"` across the repo to find where a metric or parameter is defined before assuming its meaning.",
+        "tags": ["shell", "rg", "search"],
+    },
+    {
+        "id": "code_head_preview",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `head -n 20 some_file_path` to glance at headers and value formatting without opening heavy tooling.",
+        "tags": ["shell", "head", "preview"],
+    },
+    {
+        "id": "code_tail_logs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `tail -n 20` on generated artifacts to inspect the most recent rows that often contain anomalies.",
+        "tags": ["shell", "tail", "sanity-check"],
+    },
+    {
+        "id": "code_wc_rowcount",
+        "agent": "code_act",
+        "step": None,
+        "text": "`wc -l some_file_path` quickly reveals row counts so you can compare dataset sizes without loading pandas.",
+        "tags": ["shell", "wc", "metrics"],
+    },
+    {
+        "id": "code_cut_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pipe through `cut -d',' -f1-5 some_file_path | head` when you only need a few early columns for orientation.",
+        "tags": ["shell", "cut", "preview"],
+    },
+    {
+        "id": "code_python_head",
+        "agent": "code_act",
+        "step": None,
+        "text": "Spin up a short Python snippet `import pandas as pd; print(pd.read_csv(...).head())` to inspect with types and NaNs annotated.",
+        "tags": ["python", "pandas", "preview"],
+    },
+    {
+        "id": "code_python_schema",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write a helper that loads the CSV and prints `df.dtypes` so you know which columns are numeric or categorical.",
+        "tags": ["python", "schema", "pandas"],
+    },
+    {
+        "id": "code_diff_versions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Use `diff` between two CSV snapshots (or `git diff`) to highlight columns that changed when experiments were rerun.",
+        "tags": ["shell", "diff", "comparison"],
+    },
+    {
+        "id": "code_sort_values",
+        "agent": "code_act",
+        "step": None,
+        "text": "Make a quick pandas script to `sort_values` by the target metric and print the top/bottom rows to see effect extremes.",
+        "tags": ["python", "ranking", "analysis"],
+    },
+    {
+        "id": "code_value_counts",
+        "agent": "code_act",
+        "step": None,
+        "text": "Call `df['column'].value_counts()` to uncover category prevalence or confirm that a flag toggled as expected.",
+        "tags": ["python", "pandas", "diagnostics"],
+    },
+    {
+        "id": "code_extract_params",
+        "agent": "code_act",
+        "step": None,
+        "text": "Parse filenames with Python (Path.stem.split or regex) to extract hyper-parameters encoded outside the CSV body.",
+        "tags": ["python", "parsing", "metadata"],
+    },
+    {
+        "id": "code_clone_compare",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write Python to duplicate a CSV row-by-row, regenerate a derived column, and diff the result to deduce the transformation.",
+        "tags": ["python", "replication", "csv"],
+    },
+    {
+        "id": "code_group_inspection",
+        "agent": "code_act",
+        "step": None,
+        "text": "Automate `df.groupby(key).agg({...})` and print the summary so you can spot hidden parameter regimes.",
+        "tags": ["python", "groupby", "analysis"],
+    },
+    {
+        "id": "code_hist_distributions",
+        "agent": "code_act",
+        "step": None,
+        "text": "Plot quick histograms or `df[column].describe()` to detect skewed distributions that hint at tuning knobs.",
+        "tags": ["python", "statistics", "exploration"],
+    },
+    {
+        "id": "code_delta_columns",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute differences between sequential rows (`df[column].diff()`) to catch incremental schedules or warmups.",
+        "tags": ["python", "timeseries", "analysis"],
+    },
+    {
+        "id": "code_join_metadata",
+        "agent": "code_act",
+        "step": None,
+        "text": "Join the CSV with auxiliary metadata tables to see which hidden flags align with performance spikes.",
+        "tags": ["python", "merge", "metadata"],
+    },
+    {
+        "id": "code_checksum_validate",
+        "agent": "code_act",
+        "step": None,
+        "text": "Compute a hash (`md5sum some_file_path`) before and after transformations to ensure you are analyzing the intended version.",
+        "tags": ["shell", "md5sum", "integrity"],
+    },
+    {
+        "id": "code_sampling_probe",
+        "agent": "code_act",
+        "step": None,
+        "text": "Sample a handful of random rows (`df.sample(5, random_state=0)`) to manually verify pattern assumptions.",
+        "tags": ["python", "sampling", "validation"],
+    },
+    {
+        "id": "code_param_grid",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pivot parameters versus metrics (`df.pivot_table`) to reverse-engineer which hyper-parameters matter most.",
+        "tags": ["python", "pivot", "analysis"],
+    },
+    {
+        "id": "code_correlate_metrics",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `df.corr(numeric_only=True)` to uncover non-trivial relationships between metrics and latent knobs.",
+        "tags": ["python", "correlation", "insight"],
+    },
+    {
+        "id": "code_flag_anomalies",
+        "agent": "code_act",
+        "step": None,
+        "text": "Add a quick check that flags rows with z-score > 3 to spot outliers that often encode special-case settings.",
+        "tags": ["python", "anomaly", "quality"],
+    },
+    {
+        "id": "code_compare_runs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
+        "tags": ["python", "concat", "comparison"],
+    },
+]
+
+You should read all of v3 and understand it very deeply, and implement the features above into v4. On top of v4, comment out the major changes from v3 and rough algorithm of v4. Also add same kind of comment out on top of v3 too.
+```
+
+
+
+## Dec 27
+
+- [x] Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py
+```
+Debug exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py. Scoring feedback is sometimes "". I guess this is caused by json format error or something. This shouldn't be included when calculating mean score value, but the mean output of run_full_problem_trials counts it as 0 and calculate mean value including the 0. That's not good. Modify both exp11_plasma_gkv_v3/train_v3_eval_sample.py and exp11_plasma_gkv_v3/train_v4_eval_sample.py so that it will skip 0 from bugged llm output.
+```
+
+- [ ] token limit -> skip too? -> I can leave this for now
+
+
+## Dec 28
+
+- [x] convert eval_sample_result to dpo format data
+    - convert should be done by dpo_converter1.py and dpo_converter2.py.
+    - dpo_converter1.py: train_v3,4_eval_sample_result -> train_v3,4_eval_sample_dpo1 (this needs modification depending on eval_sample_result format, other knowledge sampling method, etc.)
+    - dpo_converter2.py: train_v3,4_eval_sample_dpo1 -> train_v3,4_eval_sample_dpo2 (almost fix. convert it if rmsearch format changes)
+
+```
+Make exp11_plasma_gkv_v3/dpo_converter1.py and exp11_plasma_gkv_v3/dpo_converter2.py
+
+* dpo_converter1.py: 
+convert the result file of exp11_plasma_gkv_v3/train_v3_eval_sample.py into something like
+
+'''
+[
+  {
+    "message": [
+      {
+        "role": "system",
+        "content": "Think as an automation engineer who prototypes tiny helpers, inspects their output, and keeps narration crisp."
+      },
+      {
+        "role": "user",
+        "content": "Analyze inside exp8_csv_small/csv/urban_air_quality_sensors_1_1.csv and answer the question below:\n\nIn the CSV generated for ..."
+      },
+      {
+        "role": "agent",
+        "name": "code_act",
+        "content": "$ python - <<'PY'\nimport csv, json\npath = ...",
+        
+      },
+    ],
+    "knowledge": [
+      {
+        "id": null,
+        "text": null,
+        "agent": null,
+        "tags": [],
+      },
+      {
+        "id": "...",
+        "text": "Scan all columns for JSON-like content (not just params_json/payload_json) and extract any keys that hint at diurnal/seasonality, anomaly_rate, urban_density, or sensor_count.\nMap hyper_param_index to the reported sensor_count and total rows; derive total_rows ≈ sensor_count × 24 and locate where sensor_count is stored.\nOnce you have explicit parameter names, tie them to (a) diurnal shaping, (b) anomaly frequency/size, and (c) total rows, and report the exact mappings.",
+        "agent": "think",
+        "tags": [
+          "data-exploration",
+          "parameter-mapping"
+        ],
+      },
+      {
+        "id": "...",
+        "text": "Scan every column for JSON-like content and extract keys that resemble seasonality/diurnal, anomaly, urban_density, and sensor_count.\nMap what you find to (a) diurnal PM2.5 shaping, (b) anomaly frequency/size, and (c) total rows/sensors by linking to hyper_param_index and total_hyper_params.\nIf explicit params_json/payload_json fields aren’t present, search for nested JSON blobs or alternate key names and report the exact keys you map to each aspect.",
+        "agent": "think",
+        "tags": [
+          "diagnostic",
+          "mapping",
+          "parameter-extraction"
+        ],
+      },
+      {
+        "id": "...",
+        "text": "Scan all CSV columns for any JSON-like content, not only fields named params_json or payload_json.\nCollect keys that look like diurnal/seasonality and anomaly-related terms (e.g., diurnal, seasonality, anomaly, spike) and note their values.\nLook for total_rows, sensor_count, or per-sensor data to infer the total emitted rows; tie these counts back to hyper_param_index and total_hyper_params.",
+        "agent": "think",
+        "tags": [
+          "data-inspection",
+          "mapping",
+          "hyperparameters"
+        ],
+      }
+    ],
+    "comparison": [
+      [
+        1, # chosen knowledge id
+        0  # rejected knowledge id
+      ],
+      [
+        2,
+        1
+      ],
+      [
+        2,
+        0
+      ],
+      [
+        2,
+        3
+      ],
+      [
+        3,
+        0
+      ]
+    ],
+    "scores": [
+      1.0,
+      2.0,
+      3.0,
+      2.0
+    ]
+  },
+  ...
+]
+'''
+
+1. In the message field, you should put the message history before the step which is augumented by knowledge. The message should be taken from random one element of fair_comparison->knowledge_trials. You can get the message from "seimei_runs/(run_id)/messages.json"
+
+2. In the knowledge field, you should put candidate knowledge texts which augmented the step. When you get the knowledge texts, you should pick one from each knowledge chunks. You should collect DEFAULT_KNOWLEDGE_PER_STEP knowledge texts which have same step number from all chunks. 
+
+3. In scores, you should get score of null knowledge from base_rerun_mean_score and scores of knowledges from knowledge_chunk_mean_scores.
+
+4. From the scores above, you should make comparison list. If a difference of score between any knowledge score pair is bigger than DEFAULT_COMPARISON_THRESHOLD (like 0.5), put the pair into comparison list. [(chosen knowledge id at knowledge field), (rejected knowledge id at knowledge field)]
+
+There are DEFAULT_N_KNOWLEDGE_STEPS knowledge texts for each chunk. You should do 1 - 4 procedures for all the knowledge steps. You should collect the messages from different knowledge_trials element so that the dataset becomes more various and avoid overfitting.
+
+
+* dpo_converter2.py: 
+copy from seimei/dataset/dpo_converter.py.
+```
+
+
+
+- [ ] Make the dataset bigger
+    - [x] Run codex-5.2-reasoning-high with 200 dataset rows
+    -> didn't go well. Should be that LLM generates 5 ~ 10 patches for one file.
+
+```
+I wanna make seimei/eval/generate_dataset_code.py. This python file generates dataset.json, patches/ folder from designated files. 
+
+designated files are specified like
+file_config = [
+    {
+        "folder_path":"./src/"
+    },
+    {
+        "folder_path":"./run/",
+        "exclude":["backup/"]
+    },
+    {
+        "folder_path":"./lib/",
+        "exclude":["sample_bessel/", "Bessel0_Zeros.f90"]
+    },
+    {
+        "file_path":"...",
+    }
+]
+
+
+```
+
+    - [ ] Test the patches
+
+
+- [ ] Find opensource model that works for train_v3,4
+- [ ] Make web_search agent work -> make sample train_v4
+- [ ] Slide for kubota
+
+- [ ] Train AI
+
+- [ ] Make Eval Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

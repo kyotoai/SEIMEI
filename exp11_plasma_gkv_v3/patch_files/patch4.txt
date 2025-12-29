@@ -1,0 +1,44 @@
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+                                            call clock_sta(13)
+                                          ! call fapp_start("literm",13,1)
+     !%%% Linear collisionless term %%%
+      call caldlt_linear( ff, psi, chi, dh )
+ 
+     !%%% Collision term %%%
+-      if ( trim(colliflag) == "collisional" ) then
+-
+-        if ( trim(col_type) == "LB" ) then
+-          call colli_LB( ff, phi, cf )
+-        else if ( trim(col_type) == "full" .or. &
+-                  trim(col_type) == "lorentz" ) then
+-          !call colli_full( ff, phi, cf )
+-          call colliimp_calc_colli_full( ff, phi, cf )
+-        else 
+-          write(olog,*) "## Illegal choice for col_type!! ---> stop"
+-          call flush(olog)
+-          call MPI_Finalize(ierr_mpi)
+-          stop
+-        end if
+-
+-      else if ( trim(colliflag) == "collisionless" ) then
+-
+-!!$OMP parallel workshare
+-!        cf(:,:,:,:,:) = (0._DP, 0._DP)
+-!!$OMP end parallel workshare
+-
+-      else 
+-
+-        write(olog,*) "## Illegal choice for colliflag:", colliflag
+-        call flush(olog)
+-        call MPI_Finalize(ierr_mpi)
+-        stop
+-
+-      end if
+                                          ! call fapp_stop("literm",13,1)
+                                            call clock_end(13)
+ 
+                                            call clock_sta(14)
+                                          ! call fapp_start("nlterm",14,1)
+*** End Patch

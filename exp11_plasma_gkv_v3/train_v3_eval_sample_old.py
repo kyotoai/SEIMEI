@@ -2,55 +2,59 @@ import argparse
 import asyncio
 import json
 import random
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from seimei import load_run_messages, seimei
+from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
 
-EXP_DIR = Path("exp9_mobile_data_small")
+EXP_DIR = Path(__file__).resolve().parent
+REPO_ROOT = EXP_DIR.parent
+PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_sample_results3.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v3_eval_sample_results.json"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
-DEFAULT_BATCH_SIZE = 10
+DEFAULT_BATCH_SIZE = 1
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_N_CHECK_KNOWLEDGE = 3
 DEFAULT_FINAL_RERUNS = 7
 
 BASE_SYSTEM_PROMPT_LIST = [
-    "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
-    "and cite the evidence before answering.",
-    "Adopt a precise scientist mindset—identify helpful columns, run quick calculations, "
-    "and only conclude after verifying trends.",
-    "Work as a spreadsheet detective who double-checks every assumption with the CSV before "
-    "writing a short, justified answer.",
-    "Be a pragmatic Python user: outline a minimal approach, inspect the CSV, and respond with "
-    "clear reasoning anchored in computations.",
-    "Channel a skeptical reviewer—question each step, confirm numbers with the CSV, and explain "
-    "why the final answer follows.",
-    "Operate like a project lead: summarize the task, gather CSV evidence, and deliver the answer "
-    "with a brief audit trail.",
-    "Act as a careful statistician: describe the metrics you need, compute them succinctly, "
-    "and interpret them before answering.",
-    "Think as an automation engineer who prototypes tiny helpers, inspects their output, "
-    "and keeps narration crisp.",
-    "Take the role of a mentor guiding a junior analyst—state the strategy, run compact checks, "
-    "and highlight the decisive facts.",
-    "Imagine you are debugging an analysis: surface hypotheses, validate them with the CSV, "
-    "and provide the confident conclusion.",
+    "Act as a senior Fortran plasma physicist: inspect the local repo, reason about the magnetic-field terms, "
+    "edit the source carefully, and summarize the exact patches you applied.",
+    "Work like a responsible HPC debugger—diff the relevant modules, trace the control flow, and document the "
+    "precise code edits that resolve the regression.",
+    "Channel a gyrokinetic code maintainer: read the bug report, open the Fortran files, add or remove lines "
+    "surgically, then explain why the change restores the missing physics.",
+    "Be a cautious tokamak simulation engineer who tests hypotheses against the source, edits with apply_patch, "
+    "and double-checks each assumption before writing the final note.",
+    "Think like a numerical physicist reviewing electromagnetic solvers: inspect coefficients, restore missing "
+    "operators, and narrate the fix with references to specific routines.",
+    "Operate as a debugging lead: outline the failure mode, open the file, add the missing calls or loops, and "
+    "describe the scientific impact of the change.",
+    "Take the role of a patch surgeon—identify the minimal diff required, keep the edits consistent with coding "
+    "style, and justify how the fix affects simulations.",
+    "Behave as an HPC maintainer who validates interface contracts, reinstates removed code paths, and records "
+    "the before/after physics effect.",
+    "Think as a code-review mentor: reproduce the bug mentally, craft the Fortran changes step by step, and "
+    "document what each edit re-enables.",
+    "Act like an integration engineer ensuring GKV regressions are fixed; reason about boundary conditions, "
+    "tweak the loops, and clearly explain the resulting behavior.",
 ]
 
 KLG_SYSTEM_PROMPT_LIST = [
-    "You are a knowledge-anchored analyst: reread each injected knowledge line, translate it into a concrete CSV probe, and cite it when comparing evidence.",
-    "Treat the knowledge snippets as marching orders: summarize their intent, run the targeted CSV probes, and explain how findings confirm or challenge them.",
-    "Act like a lab tech following precise notes; echo the relevant knowledge cue before coding and design a quick check that directly tests it.",
-    "Channel a field engineer syncing with HQ guidance by pairing each knowledge cue with the exact column or metric it names and narrating results through that lens.",
-    "Be a knowledge weaver: weave the injected guidance into your mini-plan, execute the calculations it requests, and highlight which parts of the answer each cue inspired.",
-    "Operate as a conscientious fact-checker who obeys the knowledge insert, documenting the snippet, executing its suggested inspection, and tying conclusions back to it.",
-    "Treat the knowledge text as mandatory checkpoints: state each cue, perform the minimal computation it demands, and log whether the outcome aligns.",
-    "Work like a principle-driven coach; quote the knowledge advice, adapt it to the exact CSV columns, and ensure your reasoning never drifts from that script.",
-    "Behave as a hypothesis tester whose hypotheses come from the knowledge text, gathering the data it names and reporting the pass or fail result.",
-    "Adopt a knowledge-to-action workflow: convert every knowledge snippet into code or comparisons, execute them, and attribute final statements to the snippet that inspired them.",
+    "Treat each knowledge snippet as a mini patch review: restate the code cue, inspect the matching lines, and explain how to adjust them.",
+    "Use the knowledge hints as guardrails by quoting the routine or loop they mention, checking that context, and guiding the edit there.",
+    "Think like a reviewer handing you TODO comments—translate each snippet into a concrete Fortran action and report the result.",
+    "Anchor every move to the knowledge cue: name the variables it references, open that block, and describe the precise change.",
+    "Consider the knowledge text mandatory checkpoints; for each, cite the routine, verify current behavior, and note the edit to make.",
+    "Behave as a cautious maintainer who paraphrases the knowledge, inspects the code around it, and ties conclusions directly back.",
+    "Use the knowledge to prioritize lines: mention the snippet, map it to the workspace, and describe the instrumentation or edit you will run.",
+    "Let the knowledge drive your micro-plan—quote it, echo the relevant arrays or flags, and keep reasoning tethered to that instruction.",
+    "Imagine the knowledge as diff hunks; state the intended change, verify the file, and reason about its impact before moving on.",
+    "Weave the knowledge cues into your debugging narrative by mirroring their language and pointing to the exact Fortran constructs involved.",
 ]
 
 
@@ -67,6 +71,186 @@ KNOWLEDGE_SYSTEM_PROMPT = (
 )
 
 RUN_ID_CACHE: Dict[str, str] = {}
+
+
+def _sanitize_id_component(text: str, *, limit: int = 48) -> str:
+    cleaned = "".join(ch if (ch.isalnum() or ch in {"-", "_", " "}) else " " for ch in text)
+    collapsed = "_".join(cleaned.split())
+    return collapsed[:limit]
+
+
+def extract_problem_text(entry: Dict[str, Any]) -> str:
+    return str(entry.get("problem") or entry.get("Question") or "").strip()
+
+
+def extract_reference_answer(entry: Dict[str, Any]) -> str:
+    return str(entry.get("answer") or entry.get("CorrectAnswer") or "").strip()
+
+
+def extract_expected_difference(entry: Dict[str, Any]) -> str:
+    return str(entry.get("expected_simulation_result_difference") or "").strip()
+
+
+def build_problem_prompt(problem: str, expected_difference: str) -> str:
+    lines = [
+        "You are debugging the gyrokinetic plasma simulation workspace. "
+        "Edit the local Fortran sources to resolve the regression described below.",
+    ]
+    if problem:
+        lines.append(f"Problem statement:\n{problem}")
+    if expected_difference:
+        lines.append(
+            "Expected simulation behavior after applying a correct fix:\n"
+            f"{expected_difference}"
+        )
+    lines.append(
+        "Apply minimal, precise code edits to resolve the issue. Reference the exact files and routines you touch, "
+        "and explain why the fix restores the intended physics before concluding."
+    )
+    return "\n\n".join(line for line in lines if line.strip())
+
+
+def build_task_prompt(entry: Dict[str, Any]) -> str:
+    problem = extract_problem_text(entry)
+    if problem:
+        return build_problem_prompt(problem, extract_expected_difference(entry))
+    csv_path = str(entry.get("CSVPath") or "").strip()
+    question = str(entry.get("Question") or "").strip()
+    if csv_path and question:
+        return f"Analyze inside {csv_path} and answer the question below:\n\n{question}"
+    return question or problem
+
+
+def format_relative_path(path: Path) -> str:
+    try:
+        return path.relative_to(REPO_ROOT).as_posix()
+    except ValueError:
+        return str(path)
+
+
+class PatchWorkspaceManager:
+    def __init__(self, workspace: Path, patch_dir: Path) -> None:
+        self.workspace = workspace.resolve()
+        self.patch_dir = patch_dir.resolve()
+
+    def resolve_patch_path(self, dataset_entry: Dict[str, Any], dataset_index: int) -> Path:
+        custom_field = str(
+            dataset_entry.get("patch_file")
+            or dataset_entry.get("patch_path")
+            or ""
+        ).strip()
+        if custom_field:
+            candidate = self._coerce_patch_path(Path(custom_field))
+            if candidate:
+                return candidate
+            raise FileNotFoundError(f"Could not find patch file '{custom_field}' for sample {dataset_index}")
+
+        default_name = f"patch{dataset_index}.txt"
+        default_path = (self.patch_dir / default_name).resolve()
+        if default_path.exists():
+            return default_path
+        raise FileNotFoundError(
+            f"No patch file found for dataset index {dataset_index} under {self.patch_dir}"
+        )
+
+    def _coerce_patch_path(self, candidate: Path) -> Optional[Path]:
+        search_paths: List[Path] = []
+        if candidate.is_absolute():
+            search_paths.append(candidate)
+        else:
+            search_paths.append(self.patch_dir / candidate)
+            search_paths.append(self.workspace / candidate)
+            search_paths.append(candidate)
+        for option in search_paths:
+            resolved = option.resolve()
+            if resolved.exists():
+                return resolved
+        return None
+
+    @contextmanager
+    def apply_for_problem(self, dataset_entry: Dict[str, Any], dataset_index: int):
+        patch_path = self.resolve_patch_path(dataset_entry, dataset_index)
+        patch_text = patch_path.read_text(encoding="utf-8")
+        touched_paths = self._collect_touched_paths(patch_text)
+        backups = self._snapshot_files(touched_paths)
+        try:
+            apply_patch_to_workspace(patch_text, self.workspace)
+        except (PatchApplyError, PatchParseError) as exc:
+            rel_name = self._relative_patch_name(patch_path)
+            raise RuntimeError(f"Failed to apply patch {rel_name}: {exc}") from exc
+        try:
+            yield
+        finally:
+            self._restore_files(backups)
+
+    def _relative_patch_name(self, patch_path: Path) -> str:
+        try:
+            return patch_path.relative_to(self.workspace).as_posix()
+        except ValueError:
+            return str(patch_path)
+
+    def _collect_touched_paths(self, patch_text: str) -> Iterable[str]:
+        markers = (
+            "*** Update File:",
+            "*** Add File:",
+            "*** Delete File:",
+            "*** Move to:",
+        )
+        seen: Dict[str, None] = {}
+        for raw_line in patch_text.splitlines():
+            stripped = raw_line.strip()
+            for marker in markers:
+                if stripped.startswith(marker):
+                    rel_path = stripped[len(marker) :].strip()
+                    if rel_path and rel_path not in seen:
+                        seen[rel_path] = None
+                    break
+        return tuple(seen.keys())
+
+    def _snapshot_files(self, rel_paths: Iterable[str]) -> Dict[Path, Optional[bytes]]:
+        backups: Dict[Path, Optional[bytes]] = {}
+        for rel_path in rel_paths:
+            absolute = self._resolve_within_workspace(rel_path)
+            if absolute in backups:
+                continue
+            backups[absolute] = absolute.read_bytes() if absolute.exists() else None
+        return backups
+
+    def _resolve_within_workspace(self, rel_path: str) -> Path:
+        candidate = (self.workspace / Path(rel_path)).resolve()
+        try:
+            candidate.relative_to(self.workspace)
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise AssertionError(f"Patch references a path outside the workspace: {rel_path}") from exc
+        return candidate
+
+    def _restore_files(self, backups: Dict[Path, Optional[bytes]]) -> None:
+        for path, content in backups.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+
+PATCH_MANAGER = PatchWorkspaceManager(REPO_ROOT, PATCH_DIR)
+
+
+async def run_orchestrator_with_patch(
+    orchestrator,
+    *,
+    dataset_entry: Dict[str, Any],
+    dataset_index: int,
+    messages: Sequence[Dict[str, Any]],
+    run_name: str,
+    knowledge_config: Dict[str, Any],
+) -> Dict[str, Any]:
+    with PATCH_MANAGER.apply_for_problem(dataset_entry, dataset_index):
+        return await orchestrator(
+            messages=messages,
+            run_name=run_name,
+            knowledge_config=knowledge_config,
+        )
 
 
 def parse_args() -> argparse.Namespace:
@@ -94,7 +278,7 @@ def parse_args() -> argparse.Namespace:
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help="Number of problems to process concurrently.",
+        help="Number of problems to process concurrently (forced to 1 for patch isolation).",
     )
     parser.add_argument(
         "--n-knowledge-steps",
@@ -130,20 +314,26 @@ def parse_args() -> argparse.Namespace:
 
 
 def compute_entry_id(dataset_entry: Dict[str, Any], index: int) -> str:
-    explicit_keys = ["id", "ID", "question_id", "QuestionID"]
+    explicit_keys = ["id", "ID", "question_id", "QuestionID", "problem_id", "ProblemID"]
     for key in explicit_keys:
         value = dataset_entry.get(key)
         if value:
             return str(value)
+    patch_hint = str(dataset_entry.get("patch_file") or dataset_entry.get("patch_path") or "").strip()
+    if patch_hint:
+        return patch_hint
     csv_path = str(dataset_entry.get("CSVPath") or "").strip()
     if csv_path:
         return csv_path
     topic = str(dataset_entry.get("Topic") or "").strip()
+    problem = extract_problem_text(dataset_entry)
     hyper = dataset_entry.get("HyperParamIndex")
     sample = dataset_entry.get("SampleIndex")
     parts = [f"idx_{index:05d}"]
     if topic:
-        parts.append(topic)
+        parts.append(_sanitize_id_component(topic))
+    elif problem:
+        parts.append(_sanitize_id_component(problem))
     if hyper not in (None, ""):
         parts.append(f"hp_{hyper}")
     if sample not in (None, ""):
@@ -407,8 +597,8 @@ async def generate_step_knowledge(
     transcript_score: Optional[float] = None,
     transcript_feedback: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
-    question = dataset_entry.get("Question", "")
-    reference = dataset_entry.get("CorrectAnswer", "")
+    question = build_task_prompt(dataset_entry)
+    reference = extract_reference_answer(dataset_entry)
     transcript_json = json.dumps(messages, ensure_ascii=False, indent=2)
     step_text = get_agent_step_text(messages, step)
     knowledge_snapshot = [dict(entry) for entry in prior_knowledge or []]
@@ -417,7 +607,7 @@ async def generate_step_knowledge(
     feedback_text = (transcript_feedback or "").strip() or "No judge feedback recorded."
     prompt = (
         f"You are writing reusable knowledge that will be inserted before agent step {step} "
-        "in a CSV reasoning workflow.\n\n"
+        "in a code-debugging workflow for the gyrokinetic plasma repository.\n\n"
         "Evaluation summary for the run that produced this transcript:\n"
         f"- Score: {score_str}\n"
         f"- Judge feedback: {feedback_text}\n"
@@ -434,17 +624,17 @@ async def generate_step_knowledge(
         "   - once as CONCRETE, problem-specific advice (original_text), and\n"
         "   - once as ABSTRACT, problem-agnostic advice (text) that can be reused.\n\n"
         "Guidelines:\n"
-        "- Write 1–3 short lines that describe the thinking path or small experiment, not the final answer.\n"
-        "- Focus on what to calculate, compare, inspect, or log so the reasoning stays aligned.\n"
-        "- original_text may reference concrete column names or entities from this transcript.\n"
-        "- text must be abstract and reusable (use generic terms like 'target column' or 'input table').\n"
+        "- Write 1–3 short lines that describe the debugging path or inspection, not the final answer.\n"
+        "- Focus on what to diff, inspect, instrument, or edit inside the repo so the reasoning stays aligned.\n"
+        "- original_text may reference concrete files, routines, arrays, or physics settings from this transcript.\n"
+        "- text must be abstract and reusable (use generic terms like 'target subroutine' or 'field solve').\n"
         "- Choose the agent whose skills progress this specific step; vary the choice beyond think when warranted.\n\n"
         "Agents and agent field:\n"
         "- The agent designates which SEIMEI agent executes this inserted step.\n"
         "- think — Plans the next actions by synthesizing prior findings and knowledge cues.\n"
-        "- code_act — Runs small Python or shell commands (e.g., pandas snippets) to inspect or compute from the CSV.\n"
+        "- code_act — Runs shell/Python commands (e.g., grep, sed, apply_patch) to inspect or modify the repo.\n"
         "- web_search — Performs a quick web lookup to gather missing outside facts or clarifications.\n"
-        "- answer — Summarizes gathered evidence into a final response when the solution is ready.\n\n"
+        "- answer — Summarizes gathered evidence or describes the applied patch when the solution is ready.\n\n"
         "Output format (JSON only):\n"
         "[\n"
         "  {\n"
@@ -502,15 +692,18 @@ async def run_candidate_inference(
     ]
     knowledge_config = build_knowledge_config(manual_entries)
     run_name = f"train_v3_eval_sample_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
-    result = await orchestrator(
+    result = await run_orchestrator_with_patch(
+        orchestrator,
+        dataset_entry=dataset_entry,
+        dataset_index=dataset_index,
         messages=rerun_messages,
         run_name=run_name,
         knowledge_config=knowledge_config,
     )
     new_run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
     new_output = result.get("output", "")
-    question = dataset_entry.get("Question", "")
-    reference = dataset_entry.get("CorrectAnswer", "")
+    question = build_task_prompt(dataset_entry)
+    reference = extract_reference_answer(dataset_entry)
     score_info = await score_answer(orchestrator.llm, question, reference, new_output)
     new_score = score_info.get("score", 0.0) or 0.0
 
@@ -544,8 +737,8 @@ async def run_full_problem_trials(
 ) -> Tuple[List[Dict[str, Any]], float]:
     if trials <= 0:
         return [], 0.0
-    question = dataset_entry.get("Question", "")
-    reference = dataset_entry.get("CorrectAnswer", "")
+    question = build_task_prompt(dataset_entry)
+    reference = extract_reference_answer(dataset_entry)
     trial_records: List[Dict[str, Any]] = []
     for trial in range(trials):
         rerun_messages = randomize_system_prompt(
@@ -554,7 +747,10 @@ async def run_full_problem_trials(
         knowledge_config = build_knowledge_config(
             [dict(entry) for entry in manual_entries] if manual_entries else None
         )
-        result = await orchestrator(
+        result = await run_orchestrator_with_patch(
+            orchestrator,
+            dataset_entry=dataset_entry,
+            dataset_index=dataset_index,
             messages=rerun_messages,
             run_name=f"train_v3_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}",
             knowledge_config=knowledge_config,
@@ -591,14 +787,21 @@ async def run_problem(
     n_check_knowledge: int,
     final_reruns: int,
 ) -> Dict[str, Any]:
-    question = dataset_entry.get("Question", "")
-    csv_path = dataset_entry.get("CSVPath", "")
-    reference_answer = dataset_entry.get("CorrectAnswer", "")
+    problem_text = extract_problem_text(dataset_entry)
+    prompt_text = build_task_prompt(dataset_entry) or problem_text
+    if not prompt_text:
+        prompt_text = "Investigate the regression and repair the affected code paths."
+    reference_answer = extract_reference_answer(dataset_entry)
+    csv_path = str(dataset_entry.get("CSVPath") or "").strip()
+    try:
+        patch_path = PATCH_MANAGER.resolve_patch_path(dataset_entry, index)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"[sample {index}] Missing patch file: {exc}") from exc
 
     base_prompt_messages = [
         {
             "role": "user",
-            "content": f"Analyze inside {csv_path} and answer the question below:\n\n{question}",
+            "content": prompt_text,
         }
     ]
 
@@ -608,14 +811,17 @@ async def run_problem(
 
     for chunk_idx in range(knowledge_per_step):
         base_messages = randomize_system_prompt(base_prompt_messages)
-        base_result = await orchestrator(
+        base_result = await run_orchestrator_with_patch(
+            orchestrator,
+            dataset_entry=dataset_entry,
+            dataset_index=index,
             messages=[dict(msg) for msg in base_messages],
             run_name=f"train_v3_eval_sample_{index:04d}_base_seed{chunk_idx + 1}",
             knowledge_config=build_knowledge_config(),
         )
         base_run_id = normalize_result_run_id(base_result, log_dir)
         base_output = base_result.get("output", "")
-        score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
+        score_info = await score_answer(orchestrator.llm, prompt_text, reference_answer, base_output)
         base_score = score_info.get("score", 0.0) or 0.0
         base_feedback = score_info.get("feedback")
 
@@ -650,7 +856,9 @@ async def run_problem(
 
     record: Dict[str, Any] = {
         "id": entry_id,
+        "problem": problem_text,
         "csv_path": csv_path,
+        "patch_path": format_relative_path(patch_path),
         "base_inferences": base_inferences,
         "chunks": [],
         "knowledge_chunk_mean_scores": [],
@@ -925,6 +1133,9 @@ def save_eval_entries(entries: List[Dict[str, Any]], output_path: Path) -> None:
 
 
 async def run_evaluation(args: argparse.Namespace) -> None:
+    if args.batch_size != 1:
+        print("[train_v3_eval_sample] batch_size>1 detected; forcing batch_size=1 to isolate patch application.")
+        args.batch_size = 1
     dataset = json.loads(args.dataset_path.read_text(encoding="utf-8"))
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],

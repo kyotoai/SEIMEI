@@ -1,0 +1,15 @@
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+       deallocate( vb1o )
+       deallocate( vb2o )
+ 
+ !> vp-mu
+-    if ( vp_coord == 1 ) then
+-      call literm_vp ( ff, psi, dh )
+-    end if
+ !< vp-mu
+ 
+ 
+   END SUBROUTINE caldlt_linear
+*** End Patch
