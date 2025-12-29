@@ -2311,6 +2311,58 @@ copy from seimei/dataset/dpo_converter.py.
 
 
 
+- [ ] Make the dataset bigger
+    - [x] Run codex-5.2-reasoning-high with 200 dataset rows
+    -> didn't go well. Should be that LLM generates 5 ~ 10 patches for one file.
+
+```
+I wanna make seimei/eval/generate_dataset_code.py. This python file generates dataset.json, patches/ folder from designated files. 
+
+designated files are specified like
+file_config = [
+    {
+        "folder_path":"./src/"
+    },
+    {
+        "folder_path":"./run/",
+        "exclude":["backup/"]
+    },
+    {
+        "folder_path":"./lib/",
+        "exclude":["sample_bessel/", "Bessel0_Zeros.f90"]
+    },
+    {
+        "file_path":"...",
+    }
+]
+
+
+```
+
+    - [ ] Test the patches
+
+
+- [ ] Find opensource model that works for train_v3,4
+- [ ] Make web_search agent work -> make sample train_v4
+- [ ] Slide for kubota
+
+- [ ] Train AI
+
+- [ ] Make Eval Function
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
