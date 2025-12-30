@@ -19,7 +19,8 @@ def _format_tag_block(tag: str, value: Any) -> List[str]:
     if not value_str:
         return [f"<{tag}>"]
     lines = value_str.splitlines()
-    formatted: List[str] = [f"<{tag}>{lines[0]}"] if lines else [f"<{tag}>"]
+    #formatted: List[str] = [f"<{tag}>{lines[0]}"] if lines else [f"<{tag}>"]
+    formatted: List[str] = [f"{lines[0]}"] if lines else [f"<{tag}>"]
     for extra in lines[1:]:
         formatted.append(f"  {extra}")
     return formatted
@@ -332,8 +333,8 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
-        #print("\n----------")
-        #print("payload_msgs: ", payload_msgs)
+        print("\n----------")
+        print("payload_msgs: ", payload_msgs)
 
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
