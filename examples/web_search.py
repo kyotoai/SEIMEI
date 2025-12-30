@@ -11,7 +11,7 @@ async def demo_web_search():
 
     result = await orchestrator(
         messages=[
-            {"role": "system", "content": "You gather concise search summaries."},
+            {"role": "system", "content": "You gather concise search summaries. If you encounter same search outputs, try to change the query so that you can get more various output."},
             {"role": "user", "content": "Search the web for recent applications of perovskite solar cells."},
         ]
     )
