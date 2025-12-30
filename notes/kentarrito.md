@@ -2391,6 +2391,11 @@ python seimei/eval/generate_dataset_websearch.py \
 I made a successful html processing method in exp1/web_search_test.py. Implement this into seimei/agents/web_search.py so that it can correctly process result from google search api.
 ```
 
+- [x] Debug 1 exp12_websearch_small/train_v4_eval_sample.py
+```
+good job! but in train_v4_eval_sample.py, you didn't correctly keep the saving mechanism. it should save run_cache and start running the process from the end of run_cache. Refer to original python code deeply and implement that feature to the new file
+```
+
 
 
 
