@@ -2373,9 +2373,23 @@ In this file you should understand the baseline deeply and make a new train_v4_e
 ```
 
 
+```
+python seimei/eval/generate_dataset_websearch.py \
+  --n-samples-per-topic 1 \
+  --exp-dir exp12_websearch_small \
+  --prompt-path seimei/eval/data_generators/websearch.md \
+  --topics-path seimei/eval/data_generators/websearch_topics.json \
+  --model gpt-5-nano
+```
 
 
 
+## Dec 30
+
+- [x] Implement html processing in web_search agent
+```
+I made a successful html processing method in exp1/web_search_test.py. Implement this into seimei/agents/web_search.py so that it can correctly process result from google search api.
+```
 
 
 
