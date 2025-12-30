@@ -1,16 +1,17 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import os
 import re
 from html import unescape
-from typing import Any, Dict, List, Optional, Sequence, Tuple
-from urllib.parse import urljoin, urlparse
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
+from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
 import requests
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
+from seimei.knowledge.utils import get_agent_knowledge
 
 _MAX_SEARCH_RESULTS = 8
 _MAX_FETCHED_PAGES = 4
@@ -41,13 +42,22 @@ _SPECIAL_CHAR_TRANSLATION = str.maketrans(
 _GOOGLE_SEARCH_URL = "https://www.googleapis.com/customsearch/v1"
 _GOOGLE_API_KEY_ENV = "GOOGLE_CSE_API_KEY"
 _GOOGLE_CX_ENV = "GOOGLE_CSE_CX"
+_TRACKING_QUERY_KEYS = {
+    "fbclid",
+    "gclid",
+    "mc_cid",
+    "mc_eid",
+    "ref",
+    "ref_src",
+    "source",
+}
 
 
 @register
 class web_search(Agent):
-    """Search the web and summarize results."""
+    """Search the web and return results."""
 
-    description = "Perform web search and return concise findings with sources."
+    description = "Perform web search and return results with sources."
 
     async def inference(self, messages: List[Dict[str, Any]], shared_ctx: Dict[str, Any], **kwargs: Any) -> Dict[str, Any]:
         query = _extract_last_user_query(messages)
@@ -58,8 +68,8 @@ class web_search(Agent):
         llm = shared_ctx.get("llm")
         refined_query = query
         refinement_note: Optional[str] = None
-        if knowledge_entries and llm:
-            refined_query, refinement_note = await _refine_query(llm, query, knowledge_entries)
+        if llm:
+            refined_query, refinement_note = await _refine_query(llm, messages, query, knowledge_entries)
 
         results, search_meta = await _perform_search(refined_query, _MAX_SEARCH_RESULTS)
         if search_meta.get("unavailable"):
@@ -75,8 +85,10 @@ class web_search(Agent):
                     "search_attempts": search_meta.get("attempts", []),
                 },
             }
-        pages = await _fetch_top_pages(results, _MAX_FETCHED_PAGES)
-        synthesis = await _summarize_pages(llm, refined_query, pages, knowledge_entries)
+        url_history = _get_url_history(shared_ctx)
+        content_history = _get_content_history(shared_ctx)
+        results, skipped_results = _filter_results_by_history(results, url_history)
+        pages = await _fetch_top_pages(results, _MAX_FETCHED_PAGES, url_history, content_history)
 
         backend_label = search_meta.get("backend")
         lines = [f"Query attempted: {refined_query}"]
@@ -85,21 +97,19 @@ class web_search(Agent):
         lines.append("Results:")
         for i, r in enumerate(results[: _MAX_SEARCH_RESULTS], 1):
             title = r.get("title", "").strip()
-            href = r.get("href", "").strip()
+            href = _extract_result_url(r)
             body = (r.get("body", "") or "").strip()
             lines.append(f"{i}. {title or '[untitled]'} — {href}")
             if body:
                 lines.append(f"   {body[:160]}...")
+        if skipped_results:
+            lines.append(f"Skipped {skipped_results} result(s) already visited in this run.")
         if pages:
             lines.append("")
             lines.append("Fetched content excerpts:")
             for page in pages:
                 excerpt = page["content"][:320].replace("\n", " ")
                 lines.append(f"- {page['title'] or page['url']}: {excerpt}...")
-        if synthesis:
-            lines.append("")
-            lines.append("LLM synthesis:")
-            lines.extend(f"  {line}" for line in synthesis.splitlines() if line)
         knowledge_payload = knowledge_entries[:6]
         knowledge_texts = [item.get("text") for item in knowledge_payload if item.get("text")]
         knowledge_ids = [item.get("id") for item in knowledge_payload if item.get("id") is not None]
@@ -120,7 +130,9 @@ class web_search(Agent):
             lines.append("Backend notes:")
             lines.extend(f"- {msg}" for msg in attempt_errors)
 
-        if not results:
+        if not results and skipped_results:
+            lines.append("All search results were already visited; try generating different query than one attempted before.")
+        elif not results:
             lines.append("No results returned; consider adjusting the keywords or broadening the query.")
         payload: Dict[str, Any] = {
             "content": "\n".join(lines),
@@ -130,7 +142,7 @@ class web_search(Agent):
                 "results": results,
                 "pages": [{**page, "content": page["content"][:1000]} for page in pages],
                 "refinement_note": refinement_note,
-                "synthesis": synthesis,
+                "skipped_results": skipped_results,
                 "search_backend": backend_label,
                 "search_attempts": search_meta.get("attempts"),
             },
@@ -151,25 +163,94 @@ def _extract_last_user_query(messages: List[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-async def _refine_query(llm: Any, query: str, knowledge_entries: Sequence[Dict[str, Any]]) -> Tuple[str, Optional[str]]:
-    knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:6])
-    prompt = (
-        "Use the following knowledge heuristics to refine a web search query.\n"
-        f"Knowledge:\n{knowledge_block}\n\n"
-        f"Original query:\n{query}\n\n"
-        "Return an improved query as a single line. If no improvement is needed, repeat the original."
+def _get_url_history(shared_ctx: Dict[str, Any]) -> Set[str]:
+    history = shared_ctx.get("web_search_url_history")
+    if isinstance(history, set):
+        return history
+    if isinstance(history, list):
+        history_set = {item for item in history if isinstance(item, str)}
+        shared_ctx["web_search_url_history"] = history_set
+        return history_set
+    history_set: Set[str] = set()
+    shared_ctx["web_search_url_history"] = history_set
+    return history_set
+
+
+def _get_content_history(shared_ctx: Dict[str, Any]) -> Set[str]:
+    history = shared_ctx.get("web_search_content_history")
+    if isinstance(history, set):
+        return history
+    if isinstance(history, list):
+        history_set = {item for item in history if isinstance(item, str)}
+        shared_ctx["web_search_content_history"] = history_set
+        return history_set
+    history_set: Set[str] = set()
+    shared_ctx["web_search_content_history"] = history_set
+    return history_set
+
+
+def _extract_result_url(result: Dict[str, Any]) -> str:
+    for key in ("href", "url", "link"):
+        value = result.get(key)
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return ""
+
+
+def _filter_results_by_history(
+    results: List[Dict[str, Any]],
+    visited_urls: Optional[Set[str]],
+) -> Tuple[List[Dict[str, Any]], int]:
+    if not visited_urls:
+        return results, 0
+    filtered: List[Dict[str, Any]] = []
+    skipped = 0
+    seen: Set[str] = set()
+    for result in results:
+        url = _extract_result_url(result)
+        if not url:
+            continue
+        normalized = _normalize_url_for_history(url) or url
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        if normalized in visited_urls:
+            skipped += 1
+            continue
+        filtered.append(result)
+    return filtered, skipped
+
+
+async def _refine_query(
+    llm: Any,
+    messages: List[Dict[str, Any]],
+    query: str,
+    knowledge_entries: Sequence[Dict[str, Any]],
+) -> Tuple[str, Optional[str]]:
+    knowledge_block = "\n".join(
+        f"- {item['text']}" for item in knowledge_entries[:6] if item.get("text")
     )
+    system_lines = [
+        "You refine the user's latest request into a focused web search query.",
+        "Return a single-line search query and nothing else.",
+        "Preserve key entities, time ranges, and constraints from the request.",
+        "If no improvement is needed, repeat the original query verbatim.",
+    ]
+    if knowledge_block:
+        system_lines.append("Relevant knowledge:\n" + knowledge_block)
     try:
         refined_query_text, _ = await llm.chat(
-            messages=[{"role": "user", "content": prompt}],
-            system="You polish search queries using provided heuristics.",
+            messages=messages,
+            system="\n\n".join(system_lines),
         )
         candidate = refined_query_text.strip()
         if candidate:
+            note = None
             if candidate != query:
-                note = f"Query refined using knowledge heuristics: {candidate}"
-            else:
-                note = None
+                if knowledge_block:
+                    note = f"Query refined using knowledge heuristics: {candidate}"
+                else:
+                    note = f"Query refined: {candidate}"
             return candidate, note
     except Exception as exc:
         return query, f"Query refinement failed: {exc}"
@@ -281,21 +362,45 @@ async def _perform_duckduckgo_search(query: str, max_results: int) -> Tuple[List
     return results, (f"DuckDuckGo search failed: {error}" if error else None), True
 
 
-async def _fetch_top_pages(results: List[Dict[str, Any]], max_pages: int) -> List[Dict[str, str]]:
+async def _fetch_top_pages(
+    results: List[Dict[str, Any]],
+    max_pages: int,
+    visited_urls: Optional[Set[str]] = None,
+    content_history: Optional[Set[str]] = None,
+) -> List[Dict[str, str]]:
     pages: List[Dict[str, str]] = []
+    seen_urls: Set[str] = set()
+
     for result in results:
         if len(pages) >= max_pages:
             break
-        url = (result.get("href") or "").strip()
+        url = _extract_result_url(result)
         if not url:
             continue
-        text = await _fetch_page_text(url)
+        normalized_url = _normalize_url_for_history(url) or url
+        if normalized_url in seen_urls:
+            continue
+        if visited_urls is not None and normalized_url in visited_urls:
+            continue
+        seen_urls.add(normalized_url)
+        if visited_urls is not None:
+            visited_urls.add(normalized_url)
+        text, final_url = await _fetch_page_text(url)
         if not text:
             continue
         title = result.get("title", "").strip()
+        final_url = final_url or url
+        final_normalized = _normalize_url_for_history(final_url) or normalized_url
+        if visited_urls is not None:
+            visited_urls.add(final_normalized)
+        content_sig = _content_signature(text)
+        if content_history is not None:
+            if content_sig in content_history:
+                continue
+            content_history.add(content_sig)
         pages.append(
             {
-                "url": url,
+                "url": final_url,
                 "title": title,
                 "content": text[:_MAX_CONTENT_CHARS],
             }
@@ -303,7 +408,7 @@ async def _fetch_top_pages(results: List[Dict[str, Any]], max_pages: int) -> Lis
     return pages
 
 
-async def _fetch_page_text(url: str) -> str:
+async def _fetch_page_text(url: str) -> Tuple[str, str]:
     loop = asyncio.get_event_loop()
 
     def _run() -> Tuple[str, str]:
@@ -314,15 +419,15 @@ async def _fetch_page_text(url: str) -> str:
                 timeout=_FETCH_TIMEOUT,
             )
             if resp.status_code >= 400:
-                return "", url
+                return "", resp.url or url
             return resp.text, resp.url or url
         except requests.RequestException:
             return "", url
 
     html, base_url = await loop.run_in_executor(None, _run)
     if not html:
-        return ""
-    return _html_to_text(html, base_url)
+        return "", base_url
+    return _html_to_text(html, base_url), base_url
 
 
 def _get_domain(url: str) -> str:
@@ -331,6 +436,48 @@ def _get_domain(url: str) -> str:
     if "http" not in url:
         url = "http://" + url
     return urlparse(url).netloc
+
+
+def _normalize_url_for_history(url: str) -> str:
+    if not url:
+        return ""
+    try:
+        parts = urlsplit(url)
+    except Exception:
+        return url.strip()
+    if not parts.netloc:
+        return url.strip()
+    scheme = parts.scheme.lower() if parts.scheme else "http"
+    if scheme in {"http", "https"}:
+        scheme = "https"
+    netloc = parts.netloc.lower()
+    if netloc.startswith("www."):
+        netloc = netloc[4:]
+    path = parts.path or ""
+    if path != "/":
+        path = path.rstrip("/")
+    query = _strip_tracking_query(parts.query)
+    return urlunsplit((scheme, netloc, path, query, ""))
+
+
+def _strip_tracking_query(query: str) -> str:
+    if not query:
+        return ""
+    filtered = []
+    for key, value in parse_qsl(query, keep_blank_values=True):
+        lowered = key.lower()
+        if lowered.startswith("utm_"):
+            continue
+        if lowered in _TRACKING_QUERY_KEYS:
+            continue
+        filtered.append((key, value))
+    return urlencode(filtered, doseq=True)
+
+
+def _content_signature(text: str) -> str:
+    compact = _WHITESPACE_RE.sub(" ", text).strip()
+    sample = compact[:2000]
+    return hashlib.sha256(sample.encode("utf-8")).hexdigest()
 
 
 def _merge_whitespace(text: str) -> str:
@@ -500,38 +647,3 @@ def _html_to_text(html: str, url: str = "") -> str:
     text = _EMPTY_LINE_RE.sub("", text)
     text = _EXTRA_NEWLINE_RE.sub("\n\n", text)
     return text.strip()
-
-
-async def _summarize_pages(
-    llm: Any,
-    query: str,
-    pages: List[Dict[str, str]],
-    knowledge_entries: Sequence[Dict[str, Any]],
-) -> Optional[str]:
-    if llm is None or not pages:
-        return None
-    context_parts = []
-    for page in pages:
-        context_parts.append(
-            f"Source: {page['title'] or page['url']}\nURL: {page['url']}\nExcerpt:\n{page['content']}\n"
-        )
-    knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:6])
-    user_prompt = (
-        f"User query: {query}\n\n"
-        "You have access to the following page excerpts:\n"
-        + "\n\n".join(context_parts)
-        + "\n\nSummarize the most relevant findings and cite the supporting URLs."
-    )
-    system_prompt = (
-        "You synthesize web research snippets into concise bullet points with explicit citations."
-    )
-    if knowledge_block:
-        system_prompt += "\nRelevant heuristics:\n" + knowledge_block
-    try:
-        summary, _ = await llm.chat(
-            messages=[{"role": "user", "content": user_prompt}],
-            system=system_prompt,
-        )
-        return summary.strip()
-    except Exception:
-        return None

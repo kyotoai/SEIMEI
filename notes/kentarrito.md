@@ -2396,7 +2396,18 @@ I made a successful html processing method in exp1/web_search_test.py. Implement
 good job! but in train_v4_eval_sample.py, you didn't correctly keep the saving mechanism. it should save run_cache and start running the process from the end of run_cache. Refer to original python code deeply and implement that feature to the new file
 ```
 
+- [x] Debug 1 web_search agent
+```
+Now the web_search agent is a bit collapsed. Modify the following errors
 
+1. now refine query function is done only when knowledge is given. But query should be refined whether or not knowledge is []. If knowledge is [], you should exclude instructions about knowledge like code_act agent does.
+
+2. you should put past agent output to prompt in refine query function. You can do it by passing all chat history so far to llm.chat. Refer to code_act agent.
+
+3. delete summarize function for now. just put search output to content to return.
+
+4. try to hold history of url you investigate in the past and don't use the same url page in different steps in a seimei __call__.
+```
 
 
 
