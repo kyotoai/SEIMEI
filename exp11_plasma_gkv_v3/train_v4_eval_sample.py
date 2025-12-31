@@ -24,6 +24,8 @@ REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
 DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results2.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://v5710arnysphb8-8000.proxy.runpod.net/v1"  # Set None if you use openai model
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
@@ -529,7 +531,7 @@ def _build_orchestrator(args: argparse.Namespace, workspace: Path):
         return seimei(
             # agent_config=[{"file_path": "seimei/agents/code_act.py"}],
             agent_config=[{"name": "code_act"}],
-            llm_kwargs={"model": "gpt-5-nano"},
+            llm_kwargs={"base_url": args.llm_url, "model":args.llm_model_name},
             rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
             allow_code_exec=True,
             agent_log_head_lines=1,
@@ -625,6 +627,16 @@ def parse_args() -> argparse.Namespace:
         type=Path,
         default=DEFAULT_RESULT_PATH,
         help="Where to store evaluation traces and scores.",
+    )
+    parser.add_argument(
+        "--llm-model-name",
+        default=DEFAULT_LLM_MODEL_NAME,
+        help="Name of model in LLM endpoint.",
+    )
+    parser.add_argument(
+        "--llm-url",
+        default=DEFAULT_LLM_URL,
+        help="LLM endpoint passed to the orchestrator.",
     )
     parser.add_argument(
         "--rm-url",
