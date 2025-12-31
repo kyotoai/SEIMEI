@@ -23,7 +23,7 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results2.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results4.json"
 DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
 DEFAULT_LLM_URL = "https://v5710arnysphb8-8000.proxy.runpod.net/v1"  # Set None if you use openai model
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
@@ -382,11 +382,15 @@ def build_problem_prompt(problem: str, expected_difference: str) -> str:
     ]
     if problem:
         lines.append(f"Problem statement:\n{problem}")
+
+    '''
     if expected_difference:
         lines.append(
             "Expected simulation behavior after applying a correct fix:\n"
             f"{expected_difference}"
         )
+    '''
+
     lines.append(
         "Apply minimal, precise code edits to resolve the issue. Reference the exact files and routines you touch, "
         "and explain why the fix restores the intended physics before concluding."
