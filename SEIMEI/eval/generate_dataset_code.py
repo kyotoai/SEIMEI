@@ -61,7 +61,6 @@ SYSTEM_PROMPT = textwrap.dedent(
     Each patches item must contain exactly the keys:
       - problem (string)
       - answer (string)
-      - expected_simulation_result_difference (string)
       - patch (string)
 
     Do not wrap the JSON in markdown fences.
@@ -227,38 +226,18 @@ def build_prompt(
     }
     template = textwrap.dedent(
         """
-        {base_prompt}
+        Target file content (verbatim):
+        <file>
+        {file_content}
+        </file>
 
-        You are generating patches for a single file only.
+        {base_prompt}
 
         CONFIG:
         TARGET_FILE = "{file_path}"
         PATCH_COUNT = {patch_count}
 
-        Hard constraints
-        - Modify ONLY the TARGET_FILE shown above.
-        - If the base prompt mentions other allowed paths, ignore it; TARGET_FILE is the only file you may edit.
-        - Keep the code syntactically valid and runnable, but intentionally drop or disable a meaningful feature.
-        - Use the apply_patch format shown below.
-        - Provide 3 to 10 lines of context above and below each change.
-
-        Patch file format (must follow)
-        *** Begin Patch
-        *** Update File: {file_path}
-        @@
-        -<old line(s)>
-        +<new line(s)>
-        *** End Patch
-
-        Dataset fields per patch
-        - problem
-        - answer
-        - expected_simulation_result_difference
-
-        Target file content (verbatim)
-        <file>
-        {file_content}
-        </file>
+        Now return the output thinking step by step.
         """
     ).strip()
     return template.format_map(_SafeFormatDict(values))
@@ -309,7 +288,6 @@ def _validate_patch_text(patch_text: str, expected_file_path: str) -> None:
 class PatchEntry:
     problem: str
     answer: str
-    expected_simulation_result_difference: str
     patch: str
 
 
@@ -349,14 +327,11 @@ def normalize_patch_bundle(
             raise ValueError(f"patches[{idx}] must be an object.")
         problem = str(raw.get("problem") or "").strip()
         answer = str(raw.get("answer") or "").strip()
-        expected_diff = str(raw.get("expected_simulation_result_difference") or "").strip()
         patch_text = str(raw.get("patch") or "").strip()
         if not problem:
             raise ValueError(f"patches[{idx}] problem is empty.")
         if not answer:
             raise ValueError(f"patches[{idx}] answer is empty.")
-        if not expected_diff:
-            raise ValueError(f"patches[{idx}] expected_simulation_result_difference is empty.")
         if not patch_text:
             raise ValueError(f"patches[{idx}] patch is empty.")
         _validate_patch_text(patch_text, expected_file_path)
@@ -364,7 +339,6 @@ def normalize_patch_bundle(
             PatchEntry(
                 problem=problem,
                 answer=answer,
-                expected_simulation_result_difference=expected_diff,
                 patch=patch_text,
             )
         )
@@ -413,7 +387,7 @@ async def request_valid_bundle(
     while attempt < max_attempts:
         attempt += 1
         print(f"[{spec.file_path}] LLM attempt {attempt}/{max_attempts}")
-        response_text, _ = await llm.chat(messages=messages, system=SYSTEM_PROMPT)
+        response_text, _ = await llm.chat(messages=messages) #, system=SYSTEM_PROMPT)
         messages.append({"role": "assistant", "content": response_text})
 
         try:
@@ -443,7 +417,7 @@ async def request_bundle_once(
     llm: LLMClient,
     spec: FileSpec,
 ) -> FilePatchBundle:
-    response_text, _ = await llm.chat(messages=[{"role": "user", "content": spec.prompt}], system=SYSTEM_PROMPT)
+    response_text, _ = await llm.chat(messages=[{"role": "user", "content": spec.prompt}]) #, system=SYSTEM_PROMPT)
     payload = extract_json_object(response_text)
     return normalize_patch_bundle(
         payload,
@@ -602,7 +576,6 @@ async def generate_dataset(args: argparse.Namespace) -> List[Dict[str, Any]]:
                     {
                         "problem": patch.problem,
                         "answer": patch.answer,
-                        "expected_simulation_result_difference": patch.expected_simulation_result_difference,
                         "patch_file": patch_path.name,
                         "source_file": spec.file_path,
                         "source_patch_index": local_index,

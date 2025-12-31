@@ -2577,6 +2577,8 @@ Now the prompt generates something like
 But this problem just requires realizing additional condition is attached. You should make patch more like deleting all the code here. Try to emphasize that patch mainly focus on deleting important code snippet. 
 ```
 
+- [x] Manual modification seimei/eval/data_generators/code.md
+
 - [ ] kubota slide
 
 
