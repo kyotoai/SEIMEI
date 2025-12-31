@@ -11,6 +11,8 @@ Inputs you will receive
 Hard constraints
 - Modify ONLY the TARGET_FILE shown in the prompt. Ignore any other path rules.
 - Each patch must keep the code syntactically valid and runnable, but disable or remove a meaningful feature.
+- Do NOT leave hints or self-referential comments in the modified file (e.g., "disabled", "intentionally broken", or commented-out copies of the removed code).
+- Prefer actual deletion or bypass (early return, conditional skip) over commenting-out the original block.
 - Avoid log spam across MPI ranks (gate logs with `if (rankg == 0)` if you add output).
 - No new dependencies.
 
@@ -26,8 +28,10 @@ Patch format (must follow)
   *** Begin Patch
   *** Update File: <TARGET_FILE>
   @@
+  <context line(s)>
   -<old line(s)>
   +<new line(s)>
+  <context line(s)>
   *** End Patch
 
 Rules for patches
@@ -35,6 +39,7 @@ Rules for patches
 - The path must exactly match TARGET_FILE.
 - Include 3 to 10 lines of context above and below each change.
 - Keep changes small and localized (toggle logic, bypass a call, change a conditional, return early, simplify a computation).
+- Avoid inserting any explanatory text into the code; changes should look like normal edits without revealing the missing feature.
 
 Dataset fields per patch
 - problem: clear task asking the learner to restore the missing feature.

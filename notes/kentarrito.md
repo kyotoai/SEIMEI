@@ -2516,8 +2516,37 @@ DATASET_NAME = "dataset.json"
 and other part related to entire structure of output files because that's done in generate_dataset_code.py automatically. Focus on how to generate problems, answers and patches.
 ```
 
-    - [ ] Generate exp11_plasma_gkv_v5/dataset.json
-    - [ ] 
+    - [x] Generate exp11_plasma_gkv_v5/dataset.json
+
+    - [x] Debug 1 seimei/eval/data_generators/code.md
+
+```
+Good job! But seemingly output patch includes something like
+
+*** Begin Patch
+*** Update File: src/gkvp_colliimp_SoA.f90
+@@
+-      !- Boundary condition -
+-      do ivb = 1, nvb
+-        ff(1-ivb,:,:) = (0._DP, 0._DP)
+-        ff(2*global_nv+ivb,:,:) = (0._DP, 0._DP)
+-        ff(:,global_nm+ivb,:) = (0._DP, 0._DP)
+-        ff(:,-ivb,:) = ff(:,ivb,:)
+-      end do
+-      !-
++      ! Boundary condition disabled (intentionally broken)
++      !- Boundary condition -
++      !      do ivb = 1, nvb
++      !        ff(1-ivb,:,:) = (0._DP, 0._DP)
++      !        ff(2*global_nv+ivb,:,:) = (0._DP, 0._DP)
++      !        ff(:,global_nm+ivb,:) = (0._DP, 0._DP)
++      !        ff(:,-ivb,:) = ff(:,ivb,:)
++      !      end do
++      !-
+*** End Patch
+
+In this case, it commented out the original code snippet but the patch-modified directory includes some hint (or answer in this case). Modify seimei/eval/data_generators/code.md so that model will just delete important function leaving no clude that the deleted part used to be there.
+```
 
 - [ ] kubota slide
 
