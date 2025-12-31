@@ -2413,7 +2413,9 @@ Now the web_search agent is a bit collapsed. Modify the following errors
 ## Dec 31
 
 - [x] make runpod doc for juan
-- [ ] test gpt-oss train_v4.py
+- [x] Implement llm_endpoint system in exp11_plasma_gkv_v3_small/trainv3,4
+- [x] test gpt-oss train_v4.py
+    -> train_v4_eval_sample_results3.json
 - [ ] generate gpt-oss
 - [ ] kubota slide
 
