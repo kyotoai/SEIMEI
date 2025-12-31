@@ -2416,7 +2416,109 @@ Now the web_search agent is a bit collapsed. Modify the following errors
 - [x] Implement llm_endpoint system in exp11_plasma_gkv_v3_small/trainv3,4
 - [x] test gpt-oss train_v4.py
     -> train_v4_eval_sample_results3.json
-- [ ] generate gpt-oss
+
+- [ ] Generate more dataset with gpt-5
+    - [x] Make seimei/eval/generate_dataset_code.py
+```
+I wanna make seimei/eval/generate_dataset_code.py. This python file generates dataset.json, patches/ folder from designated files.
+
+designated files are specified by
+DEFAULT_FILE_CONFIG = [
+    {
+        "folder_path":"./src/"
+    },
+    {
+        "folder_path":"./run/",
+        "exclude":["backup/"]
+    },
+    {
+        "folder_path":"./lib/",
+        "exclude":["sample_bessel/", "Bessel0_Zeros.f90"]
+    },
+    {
+        "file_paths":["...", ...],
+    }
+]
+
+from each file, generate_dataset_code.py generates 3 ~ 10 problems (depending on the length of the file) and patch_files. patch(problem_number).txt file looks like
+
+```
+*** Begin Patch
+*** Update File: src/gkvp_advnc.f90
+@@
+                                            call clock_sta(14)
+                                          ! call fapp_start("nlterm",14,1)
+     !%%% Nonlinear term %%%
+-      call exb_NL_term( hh, psi, chi, ef )
+                                          ! call fapp_stop("nlterm",14,1)
+                                            call clock_end(14)
+ 
+     !%%% dh/dt = (Linear collisionless) + (Collision) - (Nonlinear) %%%
+-      if ( trim(colliflag) == "collisional" ) then
+-!$OMP parallel
+-        do im = 0, nm
+-!$OMP do
+-          do iv = 1, 2*nv
+-            do iz = -nz, nz-1
+-              !do my = 0, ny
+-              do my = ist_y, iend_y
+-                do mx = -nx, nx
+-                  dh(mx,my,iz,iv,im) = dh(mx,my,iz,iv,im) &
+-                                     + cf(mx,my,iz,iv,im) &
+-                                     - ef(mx,my,iz,iv,im)
+-                end do
+-              end do
+-            end do
+-          end do
+-!$OMP end do nowait
+-        end do
+-!$OMP end parallel
+-      else if ( trim(colliflag) == "collisionless" ) then
+-!$OMP parallel
+-        do im = 0, nm
+-!$OMP do
+-          do iv = 1, 2*nv
+-            do iz = -nz, nz-1
+-              !do my = 0, ny
+-              do my = ist_y, iend_y
+-                do mx = -nx, nx
+-                  dh(mx,my,iz,iv,im) = dh(mx,my,iz,iv,im) &
+-                                     - ef(mx,my,iz,iv,im)
+-                end do
+-              end do
+-            end do
+-          end do
+-!$OMP end do nowait
+-        end do
+-!$OMP end parallel
+-      end if
+                                            call clock_sta(15)
+                                          ! call fapp_start("zfilter",15,1)
+      if ( trim(z_filt) == "on" ) then
+        call zfilter( dh )
+      end if                                
+*** End Patch
+```
+
+Here, you should give 3 ~ 10 lines above and below the lines you modify so that patch file collectly identifys one part in a file.
+
+Follow notes/prompt.md for making prompt to generate problem and patch file. But this is the version which LLM generates all the patch files at once. On the other hand, in this time, LLM generates problems and patch files only for one file out of all the files designated by file_config. This is one loop and you should iterate it over all the file_config files. You should refer to algorithm of seimei/eval/generate_dataset_excel.py.
+
+For overall structure of code, you should read whole seimei/eval/generate_dataset_excel.py, deeply understand it, and refer to it.
+```
+
+```
+You should remake the prompt into seimei/eval/data_generators/code.md. As I said, you need to modify notes/prompt.md a bit more. You should describe how to generate problems, answers and patches from only one file. So you should delete 
+EXP_DIR = "./exp11_plasma_gkv/"
+PATCH_COUNT = 10
+PATCH_DIR = "patch_files/"
+DATASET_NAME = "dataset.json"
+and other part related to entire structure of output files because that's done in generate_dataset_code.py automatically. Focus on how to generate problems, answers and patches.
+```
+
+    - [ ] Generate exp11_plasma_gkv_v5/dataset.json
+    - [ ] 
+
 - [ ] kubota slide
 
 
