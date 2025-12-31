@@ -2548,6 +2548,35 @@ Good job! But seemingly output patch includes something like
 In this case, it commented out the original code snippet but the patch-modified directory includes some hint (or answer in this case). Modify seimei/eval/data_generators/code.md so that model will just delete important function leaving no clude that the deleted part used to be there.
 ```
 
+- [x] Debug 2 seimei/eval/data_generators/code.md
+```
+Now the prompt generates something like
+'''
+*** Begin Patch
+*** Update File: src/gkvp_fft_fftw.f90
+@@
+-     call dfftw_plan_dft_1d( plan_x_forward,      &
+-                             (2*nxw),             &
+-                             wk2_x_z,             &   ! complex in
+-                             wk1_x_z,             &   ! complex out
+-                             FFTW_FORWARD,        &
+-                             FFTW_MEASURE )
+-                             !! FFTW_ESTIMATE )
++if (.false.) then
++     call dfftw_plan_dft_1d( plan_x_forward,      &
++                             (2*nxw),             &
++                             wk2_x_z,             &   ! complex in
++                             wk1_x_z,             &   ! complex out
++                             FFTW_FORWARD,        &
++                             FFTW_MEASURE )
++                             !! FFTW_ESTIMATE )
++end if
+*** End Patch
+'''
+
+But this problem just requires realizing additional condition is attached. You should make patch more like deleting all the code here. Try to emphasize that patch mainly focus on deleting important code snippet. 
+```
+
 - [ ] kubota slide
 
 

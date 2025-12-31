@@ -5,7 +5,7 @@ Example Usage:
 python seimei/eval/generate_dataset_code.py \
     --repo-root /Users/multivac/Documents/github_project/gkvp/ \
     --exp-dir exp11_plasma_gkv_v5 \
-    --model gpt-5-nano
+    --model gpt-5-mini
 ```
 
 ```
