@@ -2410,6 +2410,14 @@ Now the web_search agent is a bit collapsed. Modify the following errors
 ```
 
 
+## Dec 31
+
+- [x] make runpod doc for juan
+- [ ] test gpt-oss train_v4.py
+- [ ] generate gpt-oss
+- [ ] kubota slide
+
+
 
 
 
