@@ -2578,8 +2578,22 @@ But this problem just requires realizing additional condition is attached. You s
 ```
 
 - [x] Manual modification seimei/eval/data_generators/code.md
-
 - [ ] kubota slide
+
+## Jan 2
+
+- [x] Make seimei/eval/debug_patch.py
+```
+I made exp11_plasma_gkv_v5 by running seimei/eval/generate_dataset_code.py. but the patch generated is not necessaryly valid. I want you to make a seimei/eval/debug_patch.py to debug the patches. it should work like this
+1. copy files designated by DEFAULT_FILE_CONFIG to some directory
+2. apply patches to the copied directory (you should restore the file everytime you finish applying). Refer to seimei/eval/test_patch_files.py for how to apply patch.
+3. If it gets error, make llm modify the patch from the current patch and entire content of the file. Also there is a case that the patch file is identical (applying it doesn't change anything of the original code). You should modify those patch files too so that it generates some modification depending on the question and answer. Make another prompt for those cases than simple debugging prompt and you should include answer and question from dataset.json row additinally.
+4. you should repeat 2, 3 for DEFAULT_N_DEBUG_LOOP(=3)
+5. finally you should remove patch files and corresponding dataset rows you couldn't remove error from. 
+
+Here, please retain original patches/ folder and dataset.json by copying them to old_patches/ and old_dataset.json first.
+```
+
 
 
 
