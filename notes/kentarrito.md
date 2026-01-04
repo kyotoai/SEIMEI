@@ -2615,17 +2615,18 @@ Here, please retain original patches/ folder and dataset.json by copying them to
 - [x] Debug seimei/eval/debug_patch.py
     - put default variables
 
-- [ ] Debug 2 seimei/eval/debug_patch.py
+- [x] Debug 2 seimei/eval/debug_patch.py
     - save
     - LLM_Request batch process
-    - 
+    - overwrite
+```
+Refering to exp10_csv_small_gpt4/train_v4_eval_sample2.py, implement LLM_Request class in seimei/eval/debug_patch.py. Here you have to implement batch processing at the same time. Carefully read all the files for both of the files.
 ```
 
-
-
+- [ ] Implement LLM_Request in exp11_plasma_gkv_v5/train_v3_eval_sample.py and exp11_plasma_gkv_v5/train_v4_eval_sample.py
 ```
 
-- [ ] 
+```
 
 
 

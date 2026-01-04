@@ -8,7 +8,7 @@ import shutil
 import textwrap
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
 from seimei.llm import LLMClient
@@ -23,6 +23,7 @@ from seimei.eval.generate_dataset_code import (
 
 DEFAULT_N_DEBUG_LOOP = 3
 DEFAULT_WORKSPACE_NAME = "debug_workspace"
+DEFAULT_BATCH_SIZE = 10
 
 DEFAULT_REPO_ROOT = "/Users/multivac/Documents/github_project/gkvp/"
 DEFAULT_EXP_DIR = "exp11_plasma_gkv_v5"
@@ -116,6 +117,76 @@ class PatchCheckResult:
     no_op: bool = False
 
 
+class LLM_Request:
+    def __init__(self, batch_size: int) -> None:
+        self.batch_size = max(int(batch_size), 1)
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self._workers: List[asyncio.Task] = []
+        self._closed = False
+
+    async def start(self) -> None:
+        if self._workers:
+            return
+        self._workers = [
+            asyncio.create_task(self._worker(worker_id))
+            for worker_id in range(self.batch_size)
+        ]
+
+    async def request(
+        self,
+        func: Callable[..., Awaitable[Any]],
+        *args: Any,
+        **kwargs: Any,
+    ) -> Any:
+        if self._closed:
+            raise RuntimeError("LLM_Request is closed.")
+        loop = asyncio.get_running_loop()
+        future: asyncio.Future = loop.create_future()
+        await self.queue.put((func, args, kwargs, future))
+        return await future
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        for _ in self._workers:
+            await self.queue.put(None)
+        if self._workers:
+            await asyncio.gather(*self._workers, return_exceptions=True)
+
+    async def _worker(self, _worker_id: int) -> None:
+        while True:
+            item = await self.queue.get()
+            if item is None:
+                self.queue.task_done()
+                return
+            func, args, kwargs, future = item
+            if future.cancelled():
+                self.queue.task_done()
+                continue
+            try:
+                result = await func(*args, **kwargs)
+            except Exception as exc:
+                if not future.done():
+                    future.set_exception(exc)
+            else:
+                if not future.done():
+                    future.set_result(result)
+            finally:
+                self.queue.task_done()
+
+
+async def _run_llm_request(
+    llm_request: Optional[LLM_Request],
+    func: Callable[..., Awaitable[Any]],
+    *args: Any,
+    **kwargs: Any,
+) -> Any:
+    if llm_request is None:
+        return await func(*args, **kwargs)
+    return await llm_request.request(func, *args, **kwargs)
+
+
 def _read_json_list(path: Path) -> List[Dict[str, Any]]:
     with path.open("r", encoding="utf-8") as fp:
         payload = json.load(fp)
@@ -140,7 +211,8 @@ def _write_patch(path: Path, text: str) -> None:
 def _copy_tree(src: Path, dst: Path, *, overwrite: bool) -> None:
     if dst.exists():
         if not overwrite:
-            raise FileExistsError(f"Backup destination already exists: {dst}")
+            print(f"Backup destination already exists: {dst}")
+            #raise FileExistsError(f"Backup destination already exists: {dst}")
         if dst.is_file():
             dst.unlink()
         else:
@@ -306,6 +378,99 @@ def _build_noop_prompt(
     )
 
 
+async def _debug_single_record(
+    *,
+    record_index: int,
+    record: Dict[str, Any],
+    patch_dir: Path,
+    workspace_root: Path,
+    llm: LLMClient,
+    llm_request: Optional[LLM_Request],
+    file_locks: Dict[str, asyncio.Lock],
+) -> Tuple[int, Optional[Dict[str, Any]], Optional[str]]:
+    log_index = record_index + 1
+    patch_file = str(record.get("patch_file") or "").strip()
+    source_file = str(record.get("source_file") or "").strip()
+    if not patch_file or not source_file:
+        logger.warning("[%d] Missing patch_file/source_file; dropping record.", log_index)
+        return record_index, None, patch_file
+
+    patch_path = patch_dir / patch_file
+    if not patch_path.is_file():
+        logger.warning("[%d] Patch file missing: %s", log_index, patch_path)
+        return record_index, None, patch_file
+
+    workspace_file = workspace_root / source_file
+    if not workspace_file.is_file():
+        logger.warning("[%d] Source file missing in workspace: %s", log_index, workspace_file)
+        return record_index, None, patch_file
+
+    lock = file_locks.setdefault(source_file, asyncio.Lock())
+    try:
+        async with lock:
+            try:
+                file_content = workspace_file.read_text(encoding="utf-8")
+            except UnicodeDecodeError:
+                file_content = workspace_file.read_text(encoding="utf-8", errors="replace")
+    except Exception as exc:
+        logger.warning("[%d] Failed to read workspace file: %s", log_index, exc)
+        return record_index, None, patch_file
+
+    patch_text = patch_path.read_text(encoding="utf-8").strip()
+    success = False
+
+    for loop_index in range(DEFAULT_N_DEBUG_LOOP):
+        async with lock:
+            result = _apply_patch_and_check(
+                patch_text,
+                workspace=workspace_root,
+                expected_file_path=source_file,
+            )
+        if result.ok:
+            success = True
+            break
+
+        if result.no_op:
+            prompt = _build_noop_prompt(
+                file_path=source_file,
+                file_content=file_content,
+                patch_text=patch_text,
+                problem=str(record.get("problem") or "").strip(),
+                answer=str(record.get("answer") or "").strip(),
+            )
+        else:
+            prompt = _build_debug_prompt(
+                file_path=source_file,
+                file_content=file_content,
+                patch_text=patch_text,
+                error=result.error or "Unknown error",
+            )
+
+        logger.info(
+            "[%d] Debugging %s (%d/%d)",
+            log_index,
+            patch_file,
+            loop_index + 1,
+            DEFAULT_N_DEBUG_LOOP,
+        )
+        response_text, _ = await _run_llm_request(
+            llm_request,
+            llm.chat,
+            messages=[{"role": "user", "content": prompt}],
+        )
+        extracted = _extract_patch_text(response_text)
+        if extracted:
+            patch_text = extracted
+        else:
+            patch_text = response_text.strip()
+        if patch_text:
+            _write_patch(patch_path, patch_text)
+
+    if success:
+        return record_index, record, None
+    return record_index, None, patch_file
+
+
 async def _debug_patch_files(args: argparse.Namespace) -> None:
     exp_dir = Path(DEFAULT_EXP_DIR)
     patch_dir = Path(args.patch_dir).resolve() if args.patch_dir else exp_dir / "patch_files"
@@ -344,83 +509,41 @@ async def _debug_patch_files(args: argparse.Namespace) -> None:
     llm_kwargs = {"model": args.model, **args.llm_kwargs}
     llm = LLMClient(**llm_kwargs)
 
-    kept_records: List[Dict[str, Any]] = []
+    llm_request = LLM_Request(args.batch_size)
+    await llm_request.start()
+
+    kept_records: List[Optional[Dict[str, Any]]] = [None] * len(records)
     failed_patch_files: List[str] = []
+    file_locks: Dict[str, asyncio.Lock] = {}
 
-    for index, record in enumerate(records, start=1):
-        patch_file = str(record.get("patch_file") or "").strip()
-        source_file = str(record.get("source_file") or "").strip()
-        if not patch_file or not source_file:
-            logger.warning("[%d] Missing patch_file/source_file; dropping record.", index)
-            failed_patch_files.append(patch_file)
-            continue
-
-        patch_path = patch_dir / patch_file
-        if not patch_path.is_file():
-            logger.warning("[%d] Patch file missing: %s", index, patch_path)
-            failed_patch_files.append(patch_file)
-            continue
-
-        workspace_file = workspace_root / source_file
-        if not workspace_file.is_file():
-            logger.warning("[%d] Source file missing in workspace: %s", index, workspace_file)
-            failed_patch_files.append(patch_file)
-            continue
-
-        try:
-            file_content = workspace_file.read_text(encoding="utf-8")
-        except UnicodeDecodeError:
-            file_content = workspace_file.read_text(encoding="utf-8", errors="replace")
-
-        patch_text = patch_path.read_text(encoding="utf-8").strip()
-        success = False
-
-        for loop_index in range(DEFAULT_N_DEBUG_LOOP):
-            result = _apply_patch_and_check(
-                patch_text,
-                workspace=workspace_root,
-                expected_file_path=source_file,
-            )
-            if result.ok:
-                success = True
-                break
-
-            if result.no_op:
-                prompt = _build_noop_prompt(
-                    file_path=source_file,
-                    file_content=file_content,
-                    patch_text=patch_text,
-                    problem=str(record.get("problem") or "").strip(),
-                    answer=str(record.get("answer") or "").strip(),
+    try:
+        tasks: List[asyncio.Task] = []
+        for index, record in enumerate(records):
+            task = asyncio.create_task(
+                _debug_single_record(
+                    record_index=index,
+                    record=record,
+                    patch_dir=patch_dir,
+                    workspace_root=workspace_root,
+                    llm=llm,
+                    llm_request=llm_request,
+                    file_locks=file_locks,
                 )
-            else:
-                prompt = _build_debug_prompt(
-                    file_path=source_file,
-                    file_content=file_content,
-                    patch_text=patch_text,
-                    error=result.error or "Unknown error",
-                )
-
-            logger.info(
-                "[%d] Debugging %s (%d/%d)",
-                index,
-                patch_file,
-                loop_index + 1,
-                DEFAULT_N_DEBUG_LOOP,
             )
-            response_text, _ = await llm.chat(messages=[{"role": "user", "content": prompt}])
-            extracted = _extract_patch_text(response_text)
-            if extracted:
-                patch_text = extracted
-            else:
-                patch_text = response_text.strip()
-            if patch_text:
-                _write_patch(patch_path, patch_text)
+            tasks.append(task)
 
-        if success:
-            kept_records.append(record)
-        else:
-            failed_patch_files.append(patch_file)
+        for task in asyncio.as_completed(tasks):
+            try:
+                record_index, kept_record, failed_patch_file = await task
+            except Exception as exc:  # pragma: no cover - runtime guard
+                logger.warning("Patch debug task failed: %s", exc)
+                continue
+            if kept_record is not None:
+                kept_records[record_index] = kept_record
+            else:
+                failed_patch_files.append(failed_patch_file or "")
+    finally:
+        await llm_request.close()
 
     for patch_file in failed_patch_files:
         if not patch_file:
@@ -429,15 +552,18 @@ async def _debug_patch_files(args: argparse.Namespace) -> None:
         if patch_path.exists():
             patch_path.unlink()
 
+    final_records = [record for record in kept_records if record is not None]
     if failed_patch_files:
         failed_set = {name for name in failed_patch_files if name}
-        kept_records = [record for record in kept_records if record.get("patch_file") not in failed_set]
+        final_records = [
+            record for record in final_records if record.get("patch_file") not in failed_set
+        ]
 
-    _write_json_list(dataset_path, kept_records)
+    _write_json_list(dataset_path, final_records)
 
     logger.info(
         "Debugging complete. Kept %d/%d records. Removed %d patch files.",
-        len(kept_records),
+        len(final_records),
         len(records),
         len({name for name in failed_patch_files if name}),
     )
@@ -475,8 +601,13 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--overwrite-backup",
         action="store_true",
-        default=True,
         help="Overwrite old_patches/old_dataset.json if they already exist.",
+    )
+    parser.add_argument(
+        "--batch-size",
+        type=int,
+        default=DEFAULT_BATCH_SIZE,
+        help="Maximum number of concurrent LLM requests.",
     )
     parser.add_argument(
         "--llm-kw",
