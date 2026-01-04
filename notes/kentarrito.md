@@ -2350,6 +2350,17 @@ file_config = [
 
 - [ ] Make Eval Function
 
+## Jan 2
+
+- [ ] Make
+```
+In exp10_csv_small_gpt4/train_v4_eval_sample2.py, batch_size designates the number of run_problem run at the same time. But running batch_size run_problem functions with asyncio.gather has some problems. 
+1.  Even after some of the processes in a batch finish, they need to wait until other processes to finish. 
+2. run_problem is a long process so it's better to make batches with LLM request (smaller unit)
+
+To solve these issues, make LLM_Request class and control all the llm requests by the class. In this class, all the llm requests are put in a queue and single_request retrieves and processes request from the queue until queue becomes empty. The rough structure is asyncio.gather([single_request for _ in range(batch_size)]). In this way, the number of llm processes are kept batch_size so it solves the problem 1.
+```
+
 
 
 ## Dec 29
