@@ -13,8 +13,6 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
 from seimei.llm import LLMClient
 from seimei.eval.generate_dataset_code import (
-    DEFAULT_EXP_DIR,
-    DEFAULT_FILE_CONFIG,
     _validate_patch_text,
     collect_target_files,
     load_file_config,
@@ -25,6 +23,26 @@ from seimei.eval.generate_dataset_code import (
 
 DEFAULT_N_DEBUG_LOOP = 3
 DEFAULT_WORKSPACE_NAME = "debug_workspace"
+
+DEFAULT_REPO_ROOT = "/Users/multivac/Documents/github_project/gkvp/"
+DEFAULT_EXP_DIR = "exp11_plasma_gkv_v5"
+DEFAULT_MODEL_NAME = "gpt-5-mini"
+DEFAULT_FILE_CONFIG: List[Dict[str, Any]] = [
+    {
+        "folder_path": "./src/",
+    },
+    {
+        "folder_path": "./run/",
+        "exclude": ["backup/"],
+    },
+    {
+        "folder_path": "./lib/",
+        "exclude": ["sample_bessel/", "Bessel0_Zeros.f90"],
+    },
+    {
+        "file_paths": [],
+    },
+]
 
 DEBUG_PROMPT_TEMPLATE = textwrap.dedent(
     """
@@ -289,7 +307,7 @@ def _build_noop_prompt(
 
 
 async def _debug_patch_files(args: argparse.Namespace) -> None:
-    exp_dir = Path(args.exp_dir).resolve()
+    exp_dir = Path(DEFAULT_EXP_DIR)
     patch_dir = Path(args.patch_dir).resolve() if args.patch_dir else exp_dir / "patch_files"
     dataset_path = Path(args.dataset_path).resolve() if args.dataset_path else exp_dir / "dataset.json"
 
@@ -427,7 +445,7 @@ async def _debug_patch_files(args: argparse.Namespace) -> None:
 
 def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Debug and repair patch files with an LLM.")
-    parser.add_argument("--model", default="gpt-5", help="Model name for LLM calls.")
+    parser.add_argument("--model", default=DEFAULT_MODEL_NAME, help="Model name for LLM calls.")
     parser.add_argument(
         "--exp-dir",
         default=DEFAULT_EXP_DIR,
@@ -435,7 +453,7 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--repo-root",
-        default=".",
+        default=DEFAULT_REPO_ROOT,
         help="Repository root used to resolve file_config paths.",
     )
     parser.add_argument(
@@ -457,6 +475,7 @@ def parse_arguments(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument(
         "--overwrite-backup",
         action="store_true",
+        default=True,
         help="Overwrite old_patches/old_dataset.json if they already exist.",
     )
     parser.add_argument(

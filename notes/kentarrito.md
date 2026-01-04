@@ -2599,6 +2599,24 @@ Here, please retain original patches/ folder and dataset.json by copying them to
 
 - [x] Debug dpo_converter2.py
 
+## Jan 4
+
+- [x] Debug seimei/eval/debug_patch.py
+    - put default variables
+
+- [ ] Debug 2 seimei/eval/debug_patch.py
+    - save
+    - LLM_Request batch process
+    - 
+```
+
+
+
+```
+
+- [ ] 
+
+
 
 
 
