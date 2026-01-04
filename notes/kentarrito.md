@@ -2623,18 +2623,20 @@ Here, please retain original patches/ folder and dataset.json by copying them to
 Refering to exp10_csv_small_gpt4/train_v4_eval_sample2.py, implement LLM_Request class in seimei/eval/debug_patch.py. Here you have to implement batch processing at the same time. Carefully read all the files for both of the files.
 ```
 
-- [ ] Implement LLM_Request in exp11_plasma_gkv_v5/train_v3_eval_sample.py and exp11_plasma_gkv_v5/train_v4_eval_sample.py
+- [x] Run seimei/eval/debug_patch.py on exp11_plasma_gkv_v5
+    * 2026-01-04 12:49:30,444 [INFO] Debugging complete. Kept 141/155 records. Removed 12 patch files.
+
+- [x] Implement LLM_Request in exp11_plasma_gkv_v5/train_v3_eval_sample.py and exp11_plasma_gkv_v5/train_v4_eval_sample.py
+```
+Refering to exp10_csv_small_gpt4/train_v4_eval_sample2.py, implement LLM_Request class in exp11_plasma_gkv_v5/train_v3_eval_sample.py and exp11_plasma_gkv_v5/train_v4_eval_sample.py. Carefully read all the content of the files.
 ```
 
+- [x] Make detailed log system in train_v3_eval_sample.py and train_v4_eval_sample.py
 ```
-
-
-
-
-
-
-
-
+Make detailed log system in train_v3_eval_sample.py and train_v4_eval_sample.py in exp11_plasma_gkv_v5 folder. I have the following problems now
+1. I don't know how many run_problem and percentages of the entire processes has been finished so try to print out it often.
+2. I want the log infomation stored in some files if I run nohop command or set save_log = True.
+```
 
 
 
