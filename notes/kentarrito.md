@@ -2638,6 +2638,12 @@ Make detailed log system in train_v3_eval_sample.py and train_v4_eval_sample.py 
 2. I want the log infomation stored in some files if I run nohop command or set save_log = True.
 ```
 
+- [x] Make the detailed log system
+
+
+## Jan 5
+
+- [x] Add dpo_converter to exp11_plasma_gkv_v5
 
 
 
