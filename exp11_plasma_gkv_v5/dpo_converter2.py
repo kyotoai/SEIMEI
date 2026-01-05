@@ -3,11 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
-import numbers
 import random
-from copy import deepcopy
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Sequence, Tuple
 
 DEFAULT_INPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_dpo2.json")
 DEFAULT_OUTPUT_PATH_TRAIN = Path("exp11_plasma_gkv_v3/dataset_list_train.json")
@@ -77,17 +75,6 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=2,
         help="Indentation level for the generated dataset_list file.",
-    )
-    parser.add_argument(
-        "--more-dpo-pairs",
-        action="store_true",
-        help="If provided, add all possible DPO pairs derived from the score ordering.",
-    )
-    parser.add_argument(
-        "--n-sample-other-knowledge",
-        type=int,
-        default=0,
-        help="Number of knowledge entries sampled from other ids to append as score-0 negatives.",
     )
     parser.add_argument(
         "--test-ratio",
@@ -365,139 +352,21 @@ def _coerce_comparisons(
     return pairs
 
 
-def _coerce_score_value(value: Any) -> Optional[float]:
-    if isinstance(value, numbers.Real):
-        return float(value)
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _prepare_score_vector(
-    raw_scores: Any,
-    num_base_entries: int,
-    num_extra_entries: int,
-    *,
-    extra_score_value: float = 0.0,
-) -> List[Optional[float]]:
-    base_scores: List[Optional[float]] = []
-    if isinstance(raw_scores, Sequence) and not isinstance(raw_scores, (str, bytes, bytearray)):
-        for value in list(raw_scores)[:num_base_entries]:
-            base_scores.append(_coerce_score_value(value))
-    if len(base_scores) < num_base_entries:
-        base_scores.extend([None] * (num_base_entries - len(base_scores)))
-    elif len(base_scores) > num_base_entries:
-        base_scores = base_scores[:num_base_entries]
-    if num_extra_entries > 0:
-        base_scores.extend([float(extra_score_value)] * num_extra_entries)
-    return base_scores
-
-
-def _generate_pairs_from_scores(
-    scores: Sequence[Optional[float]],
-    batch_size: int,
-    existing_pairs: Sequence[Sequence[int]],
-) -> List[List[int]]:
-    extra_pairs: List[List[int]] = []
-    if not scores:
-        return extra_pairs
-    existing_set = {
-        (int(pair[0]), int(pair[1]))
-        for pair in existing_pairs
-        if isinstance(pair, Sequence)
-        and len(pair) == 2
-        and all(isinstance(idx, int) for idx in pair)
-    }
-    limit = min(len(scores), batch_size)
-    for i in range(limit):
-        score_i = scores[i]
-        if score_i is None:
-            continue
-        for j in range(i + 1, limit):
-            score_j = scores[j]
-            if score_j is None or score_i == score_j:
-                continue
-            chosen, rejected = (i, j) if score_i > score_j else (j, i)
-            key = (chosen, rejected)
-            if key in existing_set:
-                continue
-            existing_set.add(key)
-            extra_pairs.append([chosen, rejected])
-    return extra_pairs
-
-
-def _entry_identifier(entry: Dict[str, Any], fallback_index: int) -> str:
-    entry_id = entry.get("id")
-    if entry_id is None:
-        return f"__entry_{fallback_index}"
-    return str(entry_id)
-
-
-def _collect_knowledge_pool(
-    entries: Sequence[Any],
-) -> List[Tuple[str, Dict[str, Any]]]:
-    pool: List[Tuple[str, Dict[str, Any]]] = []
-    for idx, entry in enumerate(entries):
-        if not isinstance(entry, dict):
-            continue
-        source_id = _entry_identifier(entry, idx)
-        for knowledge_entry in entry.get("knowledge") or []:
-            if isinstance(knowledge_entry, dict):
-                pool.append((source_id, knowledge_entry))
-    return pool
-
-
-def _sample_other_knowledge(
-    pool: Sequence[Tuple[str, Dict[str, Any]]],
-    current_source_id: str,
-    sample_size: int,
-) -> List[Dict[str, Any]]:
-    if sample_size <= 0:
-        return []
-    candidates = [item for src, item in pool if src != current_source_id]
-    if not candidates:
-        return []
-    size = min(sample_size, len(candidates))
-    sampled = random.sample(candidates, size)
-    extras: List[Dict[str, Any]] = []
-    for knowledge_entry in sampled:
-        cloned = deepcopy(knowledge_entry)
-        cloned["score"] = 0.0
-        extras.append(cloned)
-    return extras
-
-
 def convert_entry(
     entry: Dict[str, Any],
     *,
     query_kwargs: Dict[str, Any],
-    extra_knowledge: Sequence[Dict[str, Any]] | None = None,
-    more_dpo_pairs: bool = False,
 ) -> Dict[str, Any]:
     messages = entry.get("message") or []
     trimmed_messages = _strip_last_agent(messages)
     query_block = _build_query_block(trimmed_messages, **query_kwargs)
     knowledge_entries = [k for k in (entry.get("knowledge") or []) if isinstance(k, dict)]
-    extra_entries = [k for k in (extra_knowledge or []) if isinstance(k, dict)]
-    combined_entries = knowledge_entries + extra_entries
     batch: List[Dict[str, Any]] = []
-    for knowledge_entry in combined_entries:
+    for knowledge_entry in knowledge_entries:
         key_text = _format_key_text(knowledge_entry)
         prompt = _format_prompt(query_block, key_text)
         batch.append(_build_batch_entry(prompt))
-    score_vector = _prepare_score_vector(
-        entry.get("scores"),
-        len(knowledge_entries),
-        len(extra_entries),
-    )
-    if len(score_vector) < len(batch):
-        score_vector.extend([None] * (len(batch) - len(score_vector)))
     dpo_pairs = _coerce_comparisons(entry.get("comparison") or [], len(batch))
-    if more_dpo_pairs and batch:
-        additional_pairs = _generate_pairs_from_scores(score_vector, len(batch), dpo_pairs)
-        if additional_pairs:
-            dpo_pairs = dpo_pairs + additional_pairs
     return {"batch": batch, "dpo_pairs": dpo_pairs}
 
 
@@ -505,11 +374,8 @@ def main() -> None:
     args = parse_args()
     if not args.input_path.exists():
         raise FileNotFoundError(f"Input file not found: {args.input_path}")
-    if args.n_sample_other_knowledge < 0:
-        raise ValueError("n-sample-other-knowledge must be non-negative.")
 
     raw_data = json.loads(args.input_path.read_text(encoding="utf-8"))
-    print(raw_data)
     if not isinstance(raw_data, list):
         raise ValueError("Input JSON must be a list of tracker entries.")
 
@@ -522,24 +388,13 @@ def main() -> None:
         "max_knowledge_chars": max(args.max_knowledge_chars, 1),
     }
 
-    knowledge_pool = _collect_knowledge_pool(raw_data)
     dataset_list: List[Dict[str, Any]] = []
-    for idx, entry in enumerate(raw_data):
+    for entry in raw_data:
         if not isinstance(entry, dict):
             continue
-        extras: List[Dict[str, Any]] = []
-        if args.n_sample_other_knowledge:
-            source_id = _entry_identifier(entry, idx)
-            extras = _sample_other_knowledge(
-                knowledge_pool,
-                source_id,
-                args.n_sample_other_knowledge,
-            )
         converted = convert_entry(
             entry,
             query_kwargs=query_kwargs,
-            extra_knowledge=extras,
-            more_dpo_pairs=args.more_dpo_pairs,
         )
         if converted["batch"]:
             dataset_list.append(converted)
