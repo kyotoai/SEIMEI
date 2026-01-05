@@ -2645,6 +2645,12 @@ Make detailed log system in train_v3_eval_sample.py and train_v4_eval_sample.py 
 
 - [x] Add dpo_converter to exp11_plasma_gkv_v5
 
+- [x] Modify dpo_converter2.py
+```
+Now exp11_plasma_gkv_v5/dpo_converter2.py is adding extra knowledge from other rows but I don't need this anymore. I want you to delete variables and code relevant to it. Also, now it's deriving dpo_pairs from scores in the input file, but I added "comparison" at the same level of message, knowledge or scores in the input file, so just copy it to make "dpo_pairs"
+
+To do this modification, read all content of exp11_plasma_gkv_v5/dpo_converter1.py and exp11_plasma_gkv_v5/dpo_converter2.py carefully and modify dpo_converter2.py
+```
 
 
 
