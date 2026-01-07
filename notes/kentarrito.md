@@ -2719,7 +2719,7 @@ result = await orchestrator(
 )
 ```
 
-- [ ] Implement "load_knowledge_steps" in knowledge_config in seimei __call__
+- [x] Implement "load_knowledge_steps" in knowledge_config in seimei __call__
 ```
 Read seimei.py and related files very carefully, and implement "load_knowledge_steps" in knowledge_config. It's used like
 
@@ -2733,8 +2733,7 @@ result = await orchestrator(
     },
 )
 
-and the steps designate in which step knowledge augments agent. 
-
+and the steps designate in which step knowledge augments agent. so If load_knowledge_steps is put, in every step, check if step number is in load_knowledge_steps -> use rmsearch to get top knowledge. 
 ```
 
 

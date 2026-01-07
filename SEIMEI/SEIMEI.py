@@ -307,6 +307,17 @@ class seimei:
         load_path_provided = "load_knowledge_path" in cfg
         load_value = cfg.get("load_knowledge_path")
         normalized_load_path = self._coerce_path_string(load_value)
+        load_steps = None
+        if "load_knowledge_steps" in cfg:
+            raw_steps = cfg.get("load_knowledge_steps")
+            deduped: List[int] = []
+            seen: Set[int] = set()
+            for step in self._coerce_step_targets(raw_steps):
+                if step in seen:
+                    continue
+                seen.add(step)
+                deduped.append(step)
+            load_steps = deduped
 
         save_value = cfg.get("save_knowledge_path")
         save_path = Path(save_value).expanduser() if save_value not in (None, "") else None
@@ -320,6 +331,7 @@ class seimei:
             "knowledge_prompt_path": prompt_path,
             "load_knowledge_path": normalized_load_path,
             "load_path_provided": load_path_provided,
+            "load_knowledge_steps": load_steps,
             "manual_entries": manual_entries,
             "manual_stores": manual_stores,
             "manual_store_sources": manual_store_sources,
@@ -1254,6 +1266,9 @@ class seimei:
             "generate_knowledge": bool(normalized_knowledge_config.get("generate_knowledge")),
             "load_path": normalized_knowledge_config.get("load_knowledge_path"),
             "load_path_provided": bool(normalized_knowledge_config.get("load_path_provided")),
+            "load_knowledge_steps": self._prepare_metadata_value(
+                normalized_knowledge_config.get("load_knowledge_steps")
+            ),
             "save_path": str(normalized_knowledge_config.get("save_knowledge_path"))
             if normalized_knowledge_config.get("save_knowledge_path")
             else None,
@@ -1374,6 +1389,10 @@ class seimei:
         manual_entry_map = normalized_config["manual_entries"]
         manual_store_map = normalized_config["manual_stores"]
         manual_agent_routes = normalized_config["manual_agent_routes"]
+        load_knowledge_steps = normalized_config.get("load_knowledge_steps")
+        load_knowledge_step_set: Optional[Set[int]] = None
+        if load_knowledge_steps is not None:
+            load_knowledge_step_set = set(load_knowledge_steps)
         config_load_path = normalized_config["load_knowledge_path"]
         if normalized_config["load_path_provided"]:
             self.load_knowledge_path = config_load_path
@@ -1430,8 +1449,12 @@ class seimei:
             run_shared_ctx.pop("workspace", None)
 
         def _update_run_knowledge(step: Optional[int]) -> None:
+            allow_loaded_store = True
+            if load_knowledge_step_set is not None:
+                allow_loaded_store = step in load_knowledge_step_set if step is not None else False
+            base_store = self.knowledge_store if allow_loaded_store else {}
             run_shared_ctx["knowledge"] = self._compose_step_knowledge(
-                base_store=self.knowledge_store,
+                base_store=base_store,
                 manual_entries=manual_entry_map,
                 manual_stores=manual_store_map,
                 step=step,
