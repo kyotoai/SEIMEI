@@ -2652,5 +2652,95 @@ Now exp11_plasma_gkv_v5/dpo_converter2.py is adding extra knowledge from other r
 To do this modification, read all content of exp11_plasma_gkv_v5/dpo_converter1.py and exp11_plasma_gkv_v5/dpo_converter2.py carefully and modify dpo_converter2.py
 ```
 
+- [x] Run training rmsearch
 
+* go to prakhar folder with 1 gpu
+* Run
+```
+pip install -e RMSearch/
+
+export WANDB_API_KEY=""
+wandb login
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp11_plasma_gkv_v5/dataset_list_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/dataset_list_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model1 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model1 \
+  > ./train.log 2>&1 &
+```
+
+-> overfitting problem
+
+
+## Jan 7
+
+- [x] Make eval_v4.py
+```
+Make exp11_plasma_gkv_v5/eval_v4.py. In this file, it extracts random DEFAULT_N_PROBLEMS (like 10) problems from dataset.json, make dataset_eval.json, and runs run_full_problem_trials in exp11_plasma_gkv_v5/train_v4_eval_sample.py for 3 conditions:
+1. Run without knowledge (same as base trial)
+2. Run with radomly extracted knowledge (each step, knowledge is randomly extracted from knowledge pool)
+3. Run with knowledge extracted by rmsearch
+
+to do 3, you must make csv file with the knowledge pool and put the path like
+```
+result = await orchestrator(
+    messages=[
+        {"role": "user", "content": "..."},
+    ],
+    knowledge_config={
+        "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
+    },
+)
+```
+
+You should read all the content of exp11_plasma_gkv_v5/train_v4_eval_sample.py very carefully and make the eval_v4.py. You should get all the necessary functions from train_v4_eval_sample.py. Keep important parts like saving run_cache. In the output file, you should put "mean_score_improvement_from_base", "mean_score_improvement_from_random", "overall_base_mean", "overall_random_klg_mean", "overall_rmsearch_klg_mean", "base_vs_random_vs_rmsearch" in summary field.
+```
+
+```
+Good job, but you didn't implement the following features.
+
+DEFAULT_N_KNOWLEDGE_STEPS = 3
+DEFAULT_N_RUNS = 7
+
+for all the conditions, you have to run inference for DEFAULT_N_RUNS times and take average score of them. Also, for DEFAULT_N_KNOWLEDGE_STEPS, you can implement it by
+
+result = await orchestrator(
+    messages=[
+        {"role": "user", "content": "..."},
+    ],
+    knowledge_config={
+        "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
+        "load_knowledge_steps":[1,2,3] # 1 ~ DEFAULT_N_KNOWLEDGE_STEPS
+    },
+)
+```
+
+- [ ] Implement "load_knowledge_steps" in knowledge_config in seimei __call__
+```
+Read seimei.py and related files very carefully, and implement "load_knowledge_steps" in knowledge_config. It's used like
+
+result = await orchestrator(
+    messages=[
+        {"role": "user", "content": "..."},
+    ],
+    knowledge_config={
+        "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
+        "load_knowledge_steps":[1,2,3] # 1 ~ DEFAULT_N_KNOWLEDGE_STEPS
+    },
+)
+
+and the steps designate in which step knowledge augments agent. 
+
+```
+
+
+* To improve system
+    1. add more codes and manuals related to plasma
+    2. improve baseline inference (it's sometime answering directly, or command output is often not given)
+    3. improve knowledge sampling mechanism (add random extract)
+    4. add more knowledge (concreate knowledge of what file should be related. add answer and think agent too. for think, "hmmm, it should change more )
 
