@@ -22,7 +22,7 @@ DEFAULT_RESULT_PATH = EXP_DIR / "eval_v4_results.json"
 DEFAULT_N_PROBLEMS = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_N_RUNS = 7
-DEFAULT_KNOWLEDGE_CSV_PATH = REPO_ROOT / "seimei_knowledge" / "knwoledge.csv"
+DEFAULT_KNOWLEDGE_CSV_PATH = REPO_ROOT / "exp11_plasma_gkv_v5" / "knowledge_v4.csv"
 
 _MISSING = object()
 

@@ -2736,6 +2736,79 @@ result = await orchestrator(
 and the steps designate in which step knowledge augments agent. so If load_knowledge_steps is put, in every step, check if step number is in load_knowledge_steps -> use rmsearch to get top knowledge. 
 ```
 
+- [x] Convert model
+```
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/Prakhar/exp11_plasma_gkv_v5/model1/checkpoint-360 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path /workspace/qwen4b-reward-exp11-model1-360
+```
+
+- [x] Host model
+```
+CUDA_VISIBLE_DEVICES=0 nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 \
+  > ./server.log 2>&1 &
+
+RMSEARCH_DEVICE_IDS=1 nohup uvicorn rmsearch:app \
+  --host 0.0.0.0 --port 8001 \
+  > server2.log 2>&1 &
+```
+-> this didn't work with the error
+```
+nohup: ignoring input
+INFO:     Started server process [8453]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+ERROR:    [Errno 98] error while attempting to bind on address ('0.0.0.0', 8001): address already in use
+INFO:     Waiting for application shutdown.
+```
+-> I will just host 2 pods and solve this issue.
+
+Pod1
+```
+nohup uvicorn rmsearch:app \
+  --host 0.0.0.0 --port 8000 \
+  > server-rmsearch.log 2>&1 &
+```
+Pod2
+```
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 \
+  > ./server-gptoss.log 2>&1 &
+```
+
+- [x] Run eval_v4.py
+```
+Make exp11_plasma_gkv_v5/knowledge_v4.csv from default knowledge pool in exp11_plasma_gkv_v5/train_v4_eval_sample.py. Try to refer to another knowledge csv files in seimei_knowledge folder
+```
+
+curl -X POST https://oyl94a4yv16q5y-8000.proxy.runpod.net/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{
+        "queries": ["How to tune a reward model?", "What is LLM?"],
+        "keys": ["Reward models score sequences.", "LLM is large language model"],
+        "k": 2
+      }'
+
+```
+python exp11_plasma_gkv_v5/eval_v4.py
+```
+
+-> I got good result!!
+
+"summary": {
+    "total_problems": 9,
+    "mean_score_improvement_from_base": 0.3522,
+    "mean_score_improvement_from_random": 1.2111,
+    "overall_base_mean": 5.32,
+    "overall_random_klg_mean": 4.4611,
+    "overall_rmsearch_klg_mean": 5.6722,
+}
+
+I still need to improve a lot, but I think it's a great first step.
+
 
 * To improve system
     1. add more codes and manuals related to plasma
