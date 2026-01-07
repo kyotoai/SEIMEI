@@ -60,10 +60,66 @@ exp9_mobile_data_small/csv.zip
 exp9_mobile_data_small.zip
 exp11_plasma_gkv_v2/
 exp11_plasma_gkv_v3/train*.json
+exp10_csv_small_OLD/*.json
+exp10_csv_small_gpt4/*.json
+exp10_csv_small_gpt5/*.json
+exp10_csv_small_deepseek1.3/*.json
+exp10_csv_small_OLD/
+exp10_csv_small_gpt5/
+exp12_telecom_gpt5_v1/*.json
 
 # files created as seimei runs
 seimei_runs*
 seimei_knowledge
 
 #
-exp10*
+/exp10_csv_small_OLD/csv/
+/exp10_csv_small_OLD/python/
+/exp10_csv_small_OLD/meta/
+/exp10_csv_small_gpt4/csv/
+/exp10_csv_small_gpt4/python/
+/exp10_csv_small_gpt4/meta/
+/exp10_csv_small_gpt5/csv/
+/exp10_csv_small_gpt5/python/
+/exp10_csv_small_gpt5/meta/
+/exp10_csv_small_gpt4/python/
+/exp10_csv_small_gpt4/meta/
+/exp10_csv_small_deepseek1.3/csv/
+/exp10_csv_small_deepseek1.3/meta/
+/exp10_csv_small_gpt4/_workspace_copies/
+exp12_telecom_gpt5_v1/csv/
+exp12_telecom_gpt5_v1/meta/
+exp12_telecom_gpt5_v1/python/
+
+# local docs/images
+Juan_NTT*.md
+Juan_NTT.pdf
+data_set.png
+knowledge.png
+TODO.md
+
+# local scripts/tests
+examples/overpass.py
+test_apertus.py
+exp10_csv_small_gpt4/run_sample_and_adaptive.sh
+exp10_csv_small_gpt4/test_rpod_oss.py
+exp10_csv_small_gpt4/train_v3_eval_sample.py
+exp9_mobile_data_small/run_eval_and_adaptive.sh
+exp9_mobile_data_small/run_sample_and_adaptive.sh
+exp9_mobile_data_small/train_v3_eval_sample_adaptive.py
+exp9_mobile_data_small/bar_sample_baseline.png
+exp9_mobile_data_small/.mplcache/
+exp10_csv_small_gpt5/run_sample_and_adaptive.sh
+exp10_csv_small_deepseek1.3/run_sample_and_adaptive.sh
+exp8_csv_small/*
+exp8_csv_small/*.py
+
+exp9_mobile_data_small/*
+seimei/eval/data_generators/*.json
+
+done.txt
+done.*
+all.*
+todo.txt
+todo.*
+

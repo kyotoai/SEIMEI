@@ -11,6 +11,7 @@ from seimei import load_run_messages
 
 DEFAULT_INPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_results2.json")
 DEFAULT_OUTPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_dpo2.json")
+# MODIFY...
 DEFAULT_RUNS_DIR = Path("seimei_runs")
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3

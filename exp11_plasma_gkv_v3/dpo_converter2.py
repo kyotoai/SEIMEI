@@ -10,6 +10,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 
+DEFAULT_INPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_results2.json")
+DEFAULT_OUTPUT_PATH_TRAIN = Path("exp11_plasma_gkv_v3/dataset_list_train.json")
+DEFAULT_OUTPUT_PATH_TEST = Path("exp11_plasma_gkv_v3/dataset_list_test.json")
+MAX_AGENT_CHARS = 3000
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert train_v3 DPO runs into dataset_list format."
@@ -17,19 +22,19 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--input-path",
         type=Path,
-        default=Path("exp8_csv_small/train_v3_dpo_3.json"),
+        default=DEFAULT_INPUT_PATH,
         help="Path to the input JSON produced by exp8_csv_small/train_v3.py",
     )
     parser.add_argument(
         "--output-path-train",
         type=Path,
-        default=Path("exp8_csv_small/dataset_list_train.json"),
+        default=DEFAULT_OUTPUT_PATH_TRAIN,
         help="Where to write the training dataset_list payload.",
     )
     parser.add_argument(
         "--output-path-test",
         type=Path,
-        default=Path("exp8_csv_small/dataset_list_test.json"),
+        default=DEFAULT_OUTPUT_PATH_TEST,
         help="Where to write the test dataset_list payload.",
     )
     parser.add_argument(
@@ -53,7 +58,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--max-agent-chars",
         type=int,
-        default=800,
+        default=MAX_AGENT_CHARS,
         help="Maximum characters for each agent step that appears in the rmsearch query block.",
     )
     parser.add_argument(

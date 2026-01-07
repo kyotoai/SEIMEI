@@ -28,7 +28,7 @@ DEFAULT_LLM_URL = None
 DEFAULT_LLM_MODEL_NAME = "gpt-5-nano"
 #DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
-DEFAULT_BATCH_SIZE = 10
+DEFAULT_BATCH_SIZE = 40
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_N_CHECK_KNOWLEDGE = 3
@@ -36,39 +36,39 @@ DEFAULT_FINAL_RERUNS = 7
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
 BASE_SYSTEM_PROMPT_LIST = [
-    "Act as a senior Fortran plasma physicist: inspect the local repo, reason about the magnetic-field terms, "
-    "edit the source carefully, and summarize the exact patches you applied.",
-    "Work like a responsible HPC debugger—diff the relevant modules, trace the control flow, and document the "
-    "precise code edits that resolve the regression.",
-    "Channel a gyrokinetic code maintainer: read the bug report, open the Fortran files, add or remove lines "
-    "surgically, then explain why the change restores the missing physics.",
-    "Be a cautious tokamak simulation engineer who tests hypotheses against the source, edits with apply_patch, "
-    "and double-checks each assumption before writing the final note.",
-    "Think like a numerical physicist reviewing electromagnetic solvers: inspect coefficients, restore missing "
-    "operators, and narrate the fix with references to specific routines.",
-    "Operate as a debugging lead: outline the failure mode, open the file, add the missing calls or loops, and "
-    "describe the scientific impact of the change.",
-    "Take the role of a patch surgeon—identify the minimal diff required, keep the edits consistent with coding "
-    "style, and justify how the fix affects simulations.",
-    "Behave as an HPC maintainer who validates interface contracts, reinstates removed code paths, and records "
-    "the before/after physics effect.",
-    "Think as a code-review mentor: reproduce the bug mentally, craft the Fortran changes step by step, and "
-    "document what each edit re-enables.",
-    "Act like an integration engineer ensuring GKV regressions are fixed; reason about boundary conditions, "
-    "tweak the loops, and clearly explain the resulting behavior.",
+    "Think like an investigative data analyst: read the CSV, form a plan of 2-3 steps, "
+    "and cite the evidence before answering.",
+    "Adopt a precise scientist mindset—identify helpful columns, run quick calculations, "
+    "and only conclude after verifying trends.",
+    "Work as a spreadsheet detective who double-checks every assumption with the CSV before "
+    "writing a short, justified answer.",
+    "Be a pragmatic Python user: outline a minimal approach, inspect the CSV, and respond with "
+    "clear reasoning anchored in computations.",
+    "Channel a skeptical reviewer—question each step, confirm numbers with the CSV, and explain "
+    "why the final answer follows.",
+    "Operate like a project lead: summarize the task, gather CSV evidence, and deliver the answer "
+    "with a brief audit trail.",
+    "Act as a careful statistician: describe the metrics you need, compute them succinctly, "
+    "and interpret them before answering.",
+    "Think as an automation engineer who prototypes tiny helpers, inspects their output, "
+    "and keeps narration crisp.",
+    "Take the role of a mentor guiding a junior analyst—state the strategy, run compact checks, "
+    "and highlight the decisive facts.",
+    "Imagine you are debugging an analysis: surface hypotheses, validate them with the CSV, "
+    "and provide the confident conclusion.",
 ]
 
 KLG_SYSTEM_PROMPT_LIST = [
-    "Treat each knowledge snippet as a mini patch review: restate the code cue, inspect the matching lines, and explain how to adjust them.",
-    "Use the knowledge hints as guardrails by quoting the routine or loop they mention, checking that context, and guiding the edit there.",
-    "Think like a reviewer handing you TODO comments—translate each snippet into a concrete Fortran action and report the result.",
-    "Anchor every move to the knowledge cue: name the variables it references, open that block, and describe the precise change.",
-    "Consider the knowledge text mandatory checkpoints; for each, cite the routine, verify current behavior, and note the edit to make.",
-    "Behave as a cautious maintainer who paraphrases the knowledge, inspects the code around it, and ties conclusions directly back.",
-    "Use the knowledge to prioritize lines: mention the snippet, map it to the workspace, and describe the instrumentation or edit you will run.",
-    "Let the knowledge drive your micro-plan—quote it, echo the relevant arrays or flags, and keep reasoning tethered to that instruction.",
-    "Imagine the knowledge as diff hunks; state the intended change, verify the file, and reason about its impact before moving on.",
-    "Weave the knowledge cues into your debugging narrative by mirroring their language and pointing to the exact Fortran constructs involved.",
+    "You are a knowledge-anchored analyst: reread each injected knowledge line, translate it into a concrete CSV probe, and cite it when comparing evidence.",
+    "Treat the knowledge snippets as marching orders: summarize their intent, run the targeted CSV probes, and explain how findings confirm or challenge them.",
+    "Act like a lab tech following precise notes; echo the relevant knowledge cue before coding and design a quick check that directly tests it.",
+    "Channel a field engineer syncing with HQ guidance by pairing each knowledge cue with the exact column or metric it names and narrating results through that lens.",
+    "Be a knowledge weaver: weave the injected guidance into your mini-plan, execute the calculations it requests, and highlight which parts of the answer each cue inspired.",
+    "Operate as a conscientious fact-checker who obeys the knowledge insert, documenting the snippet, executing its suggested inspection, and tying conclusions back to it.",
+    "Treat the knowledge text as mandatory checkpoints: state each cue, perform the minimal computation it demands, and log whether the outcome aligns.",
+    "Work like a principle-driven coach; quote the knowledge advice, adapt it to the exact CSV columns, and ensure your reasoning never drifts from that script.",
+    "Behave as a hypothesis tester whose hypotheses come from the knowledge text, gathering the data it names and reporting the pass or fail result.",
+    "Adopt a knowledge-to-action workflow: convert every knowledge snippet into code or comparisons, execute them, and attribute final statements to the snippet that inspired them.",
 ]
 
 DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
@@ -76,178 +76,172 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
         "id": "code_ls_inventory",
         "agent": "code_act",
         "step": None,
-        "text": "Use `ls -a` to inventory the repo before touching files so you know which modules, patches, or scripts exist.",
+        "text": "Use `ls -a` to inventory the working directory before touching files so you know which CSVs, notes, or scripts exist.",
         "tags": ["shell", "ls", "context"],
     },
     {
         "id": "code_pwd_confirm",
         "agent": "code_act",
         "step": None,
-        "text": "Run `pwd` and confirm you are inside the experiment workspace before editing paths.",
+        "text": "Run `pwd` and ensure it matches the dataset's location; misaligned paths often explain missing-file errors.",
         "tags": ["shell", "pwd", "sanity-check"],
     },
     {
         "id": "code_rg_search",
         "agent": "code_act",
         "step": None,
-        "text": "Run `rg -n \"keyword\"` across the repo to locate definitions or uses before assuming semantics.",
+        "text": "Fire `rg -n \"keyword\"` across the repo to find where a metric or parameter is defined before assuming its meaning.",
         "tags": ["shell", "rg", "search"],
-    },
-    {
-        "id": "code_rg_fortran_files",
-        "agent": "code_act",
-        "step": None,
-        "text": "List Fortran sources with `rg --files -g '*.f90'` to scope the search surface.",
-        "tags": ["shell", "rg", "inventory"],
-    },
-    {
-        "id": "code_rg_module",
-        "agent": "code_act",
-        "step": None,
-        "text": "Search for module or routine names with `rg -n \"module_name\" -g '*.f90'` to find declarations.",
-        "tags": ["shell", "rg", "fortran"],
-    },
-    {
-        "id": "code_rg_call_sites",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use `rg -n \"call routine_name\" -g '*.f90'` to find call sites and verify control flow.",
-        "tags": ["shell", "rg", "call-graph"],
-    },
-    {
-        "id": "code_rg_flags",
-        "agent": "code_act",
-        "step": None,
-        "text": "Track a config flag via `rg -n \"flag_name\"` to see where branches diverge.",
-        "tags": ["shell", "rg", "config"],
     },
     {
         "id": "code_head_preview",
         "agent": "code_act",
         "step": None,
-        "text": "Call `head -n 40 path/to/file` to see file headers, module names, and includes.",
+        "text": "Call `head -n 20 some.csv` to glance at headers and value formatting without opening heavy tooling.",
         "tags": ["shell", "head", "preview"],
     },
     {
         "id": "code_tail_logs",
         "agent": "code_act",
         "step": None,
-        "text": "Use `tail -n 40` on build or run logs to spot the most recent error lines.",
+        "text": "Use `tail -n 20` on generated artifacts to inspect the most recent rows that often contain anomalies.",
         "tags": ["shell", "tail", "sanity-check"],
     },
     {
-        "id": "code_wc_loc",
+        "id": "code_wc_rowcount",
         "agent": "code_act",
         "step": None,
-        "text": "`wc -l file.f90` gives a quick sense of file size before deep edits.",
+        "text": "`wc -l file.csv` quickly reveals row counts so you can compare dataset sizes without loading pandas.",
         "tags": ["shell", "wc", "metrics"],
     },
     {
-        "id": "code_sed_context",
+        "id": "code_cut_columns",
         "agent": "code_act",
         "step": None,
-        "text": "Use `sed -n '120,200p' file.f90` or `nl -ba file.f90 | sed -n '120,200p'` to view numbered context.",
-        "tags": ["shell", "sed", "preview"],
+        "text": "Pipe through `cut -d',' -f1-5 file.csv | head` when you only need a few early columns for orientation.",
+        "tags": ["shell", "cut", "preview"],
+    },
+    {
+        "id": "code_python_head",
+        "agent": "code_act",
+        "step": None,
+        "text": "Spin up a short Python snippet `import pandas as pd; print(pd.read_csv(...).head())` to inspect with types and NaNs annotated.",
+        "tags": ["python", "pandas", "preview"],
+    },
+    {
+        "id": "code_python_schema",
+        "agent": "code_act",
+        "step": None,
+        "text": "Write a helper that loads the CSV and prints `df.dtypes` so you know which columns are numeric or categorical.",
+        "tags": ["python", "schema", "pandas"],
     },
     {
         "id": "code_diff_versions",
         "agent": "code_act",
         "step": None,
-        "text": "Use `git diff -U3 path/to/file` to compare local edits with expected changes.",
-        "tags": ["shell", "git", "diff"],
+        "text": "Use `diff` between two CSV snapshots (or `git diff`) to highlight columns that changed when experiments were rerun.",
+        "tags": ["shell", "diff", "comparison"],
     },
     {
-        "id": "code_git_status",
+        "id": "code_sort_values",
         "agent": "code_act",
         "step": None,
-        "text": "Run `git status -sb` to confirm which files changed before and after patching.",
-        "tags": ["shell", "git", "status"],
+        "text": "Make a quick pandas script to `sort_values` by the target metric and print the top/bottom rows to see effect extremes.",
+        "tags": ["python", "ranking", "analysis"],
     },
     {
-        "id": "code_rg_preproc",
+        "id": "code_value_counts",
         "agent": "code_act",
         "step": None,
-        "text": "Search preprocessor guards with `rg -n \"#if|#ifdef\" -g '*.[Ff]90'` to check compile-time branches.",
-        "tags": ["shell", "rg", "preprocessor"],
+        "text": "Call `df['column'].value_counts()` to uncover category prevalence or confirm that a flag toggled as expected.",
+        "tags": ["python", "pandas", "diagnostics"],
     },
     {
-        "id": "code_rg_parameters",
+        "id": "code_extract_params",
         "agent": "code_act",
         "step": None,
-        "text": "Find constants with `rg -n \"parameter\" -g '*.f90'` to locate default values.",
-        "tags": ["shell", "rg", "constants"],
+        "text": "Parse filenames with Python (Path.stem.split or regex) to extract hyper-parameters encoded outside the CSV body.",
+        "tags": ["python", "parsing", "metadata"],
     },
     {
-        "id": "code_python_find_defs",
+        "id": "code_clone_compare",
         "agent": "code_act",
         "step": None,
-        "text": "Use a short Python regex to list subroutine/module names so you can map the file structure quickly.",
-        "tags": ["python", "parsing", "fortran"],
+        "text": "Write Python to duplicate a CSV row-by-row, regenerate a derived column, and diff the result to deduce the transformation.",
+        "tags": ["python", "replication", "csv"],
     },
     {
-        "id": "code_python_find_assign",
+        "id": "code_group_inspection",
         "agent": "code_act",
         "step": None,
-        "text": "Write a Python snippet to scan for assignments to a target variable and print line numbers.",
-        "tags": ["python", "search", "variables"],
+        "text": "Automate `df.groupby(key).agg({...})` and print the summary so you can spot hidden parameter regimes.",
+        "tags": ["python", "groupby", "analysis"],
     },
     {
-        "id": "code_python_extract_block",
+        "id": "code_hist_distributions",
         "agent": "code_act",
         "step": None,
-        "text": "Use Python to extract and print a specific block (between two markers) when the file is large.",
-        "tags": ["python", "parsing", "context"],
+        "text": "Plot quick histograms or `df[column].describe()` to detect skewed distributions that hint at tuning knobs.",
+        "tags": ["python", "statistics", "exploration"],
     },
     {
-        "id": "code_python_call_graph",
+        "id": "code_delta_columns",
         "agent": "code_act",
         "step": None,
-        "text": "Use Python to scan `call` statements across files and build a quick caller list for a routine.",
-        "tags": ["python", "call-graph", "analysis"],
+        "text": "Compute differences between sequential rows (`df[column].diff()`) to catch incremental schedules or warmups.",
+        "tags": ["python", "timeseries", "analysis"],
     },
     {
-        "id": "code_python_compare_files",
+        "id": "code_join_metadata",
         "agent": "code_act",
         "step": None,
-        "text": "Use Python's difflib to compare two versions of a source file and isolate the minimal delta.",
-        "tags": ["python", "diff", "analysis"],
-    },
-    {
-        "id": "code_rg_runtime_params",
-        "agent": "code_act",
-        "step": None,
-        "text": "Search namelist or input parameters with `rg -n \"&\" -g '*.nml'` or `rg -n \"namelist\"` to trace runtime flags.",
-        "tags": ["shell", "rg", "runtime"],
-    },
-    {
-        "id": "code_find_config_files",
-        "agent": "code_act",
-        "step": None,
-        "text": "List relevant configs with `rg --files -g '*.nml' -g '*.in'` so you know where inputs live.",
-        "tags": ["shell", "rg", "config"],
-    },
-    {
-        "id": "code_rg_todo",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use `rg -n \"TODO|FIXME\"` to see if there are hints about known issues.",
-        "tags": ["shell", "rg", "context"],
-    },
-    {
-        "id": "code_python_symbol_counts",
-        "agent": "code_act",
-        "step": None,
-        "text": "Use Python to count how often a symbol appears per file to prioritize where to inspect first.",
-        "tags": ["python", "metrics", "analysis"],
+        "text": "Join the CSV with auxiliary metadata tables to see which hidden flags align with performance spikes.",
+        "tags": ["python", "merge", "metadata"],
     },
     {
         "id": "code_checksum_validate",
         "agent": "code_act",
         "step": None,
-        "text": "Compute `md5sum path/to/file` before and after edits to confirm you are modifying the intended file.",
+        "text": "Compute a hash (`md5sum file.csv`) before and after transformations to ensure you are analyzing the intended version.",
         "tags": ["shell", "md5sum", "integrity"],
     },
+    {
+        "id": "code_sampling_probe",
+        "agent": "code_act",
+        "step": None,
+        "text": "Sample a handful of random rows (`df.sample(5, random_state=0)`) to manually verify pattern assumptions.",
+        "tags": ["python", "sampling", "validation"],
+    },
+    {
+        "id": "code_param_grid",
+        "agent": "code_act",
+        "step": None,
+        "text": "Pivot parameters versus metrics (`df.pivot_table`) to reverse-engineer which hyper-parameters matter most.",
+        "tags": ["python", "pivot", "analysis"],
+    },
+    {
+        "id": "code_correlate_metrics",
+        "agent": "code_act",
+        "step": None,
+        "text": "Run `df.corr(numeric_only=True)` to uncover non-trivial relationships between metrics and latent knobs.",
+        "tags": ["python", "correlation", "insight"],
+    },
+    {
+        "id": "code_flag_anomalies",
+        "agent": "code_act",
+        "step": None,
+        "text": "Add a quick check that flags rows with z-score > 3 to spot outliers that often encode special-case settings.",
+        "tags": ["python", "anomaly", "quality"],
+    },
+    {
+        "id": "code_compare_runs",
+        "agent": "code_act",
+        "step": None,
+        "text": "Stack multiple CSVs with `pd.concat` and compute run-to-run deltas to deduce which parameters changed between experiments.",
+        "tags": ["python", "concat", "comparison"],
+    },
 ]
+
 
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
@@ -1533,7 +1527,11 @@ async def run_evaluation(args: argparse.Namespace) -> None:
     dataset = json.loads(args.dataset_path.read_text(encoding="utf-8"))
     orchestrator = seimei(
         agent_config=[{"name": "code_act"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        # llm_kwargs={"model": "gpt-5-nano"},
+        llm_kwargs={
+            "base_url": "https://8xpzxirsu9bev1-8000.proxy.runpod.net/v1",
+            "model": "/workspace/gpt-oss-20b",
+        },
         rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
         allow_code_exec=True,
         agent_log_head_lines=1,

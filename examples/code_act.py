@@ -4,7 +4,8 @@ from seimei import seimei
 async def demo_code_act():
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        # llm_kwargs= {"model": "gpt-5-nano"},
+        llm_kwargs={"base_url":"https://w583mk6lecamu0-8000.proxy.runpod.net/generate"},
         allow_code_exec=True,
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
