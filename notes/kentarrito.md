@@ -2810,6 +2810,14 @@ python exp11_plasma_gkv_v5/eval_v4.py
 I still need to improve a lot, but I think it's a great first step.
 
 
+## Jan 8
+
+- [x] Improve eval_v4.py
+    - put default valuables inside the file (not from base)
+    - add inference-type argument (default ["base","random","rmsearch"]). If the value is like ["base","rmsearch], you should skip inference for random knowledge extraction.
+
+
+
 * To improve system
     1. add more codes and manuals related to plasma
     2. improve baseline inference (it's sometime answering directly, or command output is often not given)
