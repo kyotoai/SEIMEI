@@ -16,12 +16,17 @@ if str(EXP_DIR) not in sys.path:
 import train_v4_eval_sample as base
 
 REPO_ROOT = EXP_DIR.parent
-DEFAULT_DATASET_PATH = base.DEFAULT_DATASET_PATH
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
 DEFAULT_DATASET_EVAL_PATH = EXP_DIR / "dataset_eval.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "eval_v4_results.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "eval_v4_results_qwen4b.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://8xpzxirsu9bev1-8000.proxy.runpod.net/v1"
+DEFAULT_RM_URL = "https://j53gw0lhe24j2c-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 40
 DEFAULT_N_PROBLEMS = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_N_RUNS = 7
+DEAFULT_INFERENCE_TYPES = ["base", "rmsearch"]
 DEFAULT_KNOWLEDGE_CSV_PATH = REPO_ROOT / "exp11_plasma_gkv_v5" / "knowledge_v4.csv"
 
 _MISSING = object()
@@ -145,29 +150,38 @@ def _build_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
             "base_vs_random_vs_rmsearch": [],
         }
 
-    base_scores: List[float] = []
-    random_scores: List[float] = []
-    rmsearch_scores: List[float] = []
-    base_vs_random_vs_rmsearch: List[List[float]] = []
-    improvements_from_base: List[float] = []
-    improvements_from_random: List[float] = []
+    def _mean(values: Sequence[Optional[float]]) -> float:
+        filtered = [float(val) for val in values if isinstance(val, (int, float))]
+        return round(sum(filtered) / len(filtered), 4) if filtered else 0.0
+
+    base_scores: List[Optional[float]] = []
+    random_scores: List[Optional[float]] = []
+    rmsearch_scores: List[Optional[float]] = []
+    base_vs_random_vs_rmsearch: List[List[Optional[float]]] = []
+    improvements_from_base: List[Optional[float]] = []
+    improvements_from_random: List[Optional[float]] = []
 
     for entry in entries:
-        base_val = round(float(entry.get("base_mean_score", 0.0) or 0.0), 4)
-        random_val = round(float(entry.get("random_klg_mean_score", 0.0) or 0.0), 4)
-        rmsearch_val = round(float(entry.get("rmsearch_klg_mean_score", 0.0) or 0.0), 4)
+        base_raw = entry.get("base_mean_score")
+        random_raw = entry.get("random_klg_mean_score")
+        rmsearch_raw = entry.get("rmsearch_klg_mean_score")
+        base_val = round(float(base_raw), 4) if isinstance(base_raw, (int, float)) else None
+        random_val = round(float(random_raw), 4) if isinstance(random_raw, (int, float)) else None
+        rmsearch_val = round(float(rmsearch_raw), 4) if isinstance(rmsearch_raw, (int, float)) else None
         base_scores.append(base_val)
         random_scores.append(random_val)
         rmsearch_scores.append(rmsearch_val)
         base_vs_random_vs_rmsearch.append([base_val, random_val, rmsearch_val])
-        improvements_from_base.append(rmsearch_val - base_val)
-        improvements_from_random.append(rmsearch_val - random_val)
+        if base_val is not None and rmsearch_val is not None:
+            improvements_from_base.append(rmsearch_val - base_val)
+        if random_val is not None and rmsearch_val is not None:
+            improvements_from_random.append(rmsearch_val - random_val)
 
-    overall_base_mean = round(sum(base_scores) / total, 4)
-    overall_random_klg_mean = round(sum(random_scores) / total, 4)
-    overall_rmsearch_klg_mean = round(sum(rmsearch_scores) / total, 4)
-    mean_from_base = round(sum(improvements_from_base) / total, 4)
-    mean_from_random = round(sum(improvements_from_random) / total, 4)
+    overall_base_mean = _mean(base_scores)
+    overall_random_klg_mean = _mean(random_scores)
+    overall_rmsearch_klg_mean = _mean(rmsearch_scores)
+    mean_from_base = _mean(improvements_from_base)
+    mean_from_random = _mean(improvements_from_random)
 
     return {
         "total_problems": total,
@@ -336,6 +350,7 @@ async def run_problem_eval(
     n_runs: int,
     knowledge_csv_path: Path,
     checkpoint: EvalCheckpoint,
+    inference_types: Set[str],
     llm_request: Optional[base.LLM_Request] = None,
     rng: Optional[random.Random] = None,
 ) -> Dict[str, Any]:
@@ -348,61 +363,87 @@ async def run_problem_eval(
 
     base_prompt_messages = [{"role": "user", "content": prompt_text}]
     knowledge_cfg_clear = _build_manual_knowledge_config(load_knowledge_path=None)
-    random_rng = rng or random.Random()
-    random_entries = _random_manual_entries(
-        n_steps=n_knowledge_steps,
-        rng=random_rng,
-    )
+    base_trials: List[Dict[str, Any]] = []
+    random_trials: List[Dict[str, Any]] = []
+    rmsearch_trials: List[Dict[str, Any]] = []
+    base_mean: Optional[float] = None
+    random_mean: Optional[float] = None
+    rmsearch_mean: Optional[float] = None
+    random_entries: List[Dict[str, Any]] = []
 
-    base_trials, base_mean = await run_scored_trials(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        base_prompt_messages=base_prompt_messages,
-        trials=n_runs,
-        dataset_index=index,
-        label="base",
-        knowledge_config=knowledge_cfg_clear,
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        llm_request=llm_request,
-        use_knowledge_prompt=False,
-    )
-    random_trials, random_mean = await run_scored_trials(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        base_prompt_messages=base_prompt_messages,
-        trials=n_runs,
-        dataset_index=index,
-        label="random_klg",
-        knowledge_config=_build_manual_knowledge_config(
-            random_entries,
-            load_knowledge_path=None,
-        ),
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        llm_request=llm_request,
-        use_knowledge_prompt=True,
-    )
+    if "base" in inference_types:
+        base_trials, base_mean = await run_scored_trials(
+            orchestrator,
+            patch_manager,
+            dataset_entry=dataset_entry,
+            base_prompt_messages=base_prompt_messages,
+            trials=n_runs,
+            dataset_index=index,
+            label="base",
+            knowledge_config=knowledge_cfg_clear,
+            checkpoint=checkpoint,
+            entry_id=entry_id,
+            llm_request=llm_request,
+            use_knowledge_prompt=False,
+        )
+    if "random" in inference_types:
+        random_rng = rng or random.Random()
+        random_entries = _random_manual_entries(
+            n_steps=n_knowledge_steps,
+            rng=random_rng,
+        )
+        random_trials, random_mean = await run_scored_trials(
+            orchestrator,
+            patch_manager,
+            dataset_entry=dataset_entry,
+            base_prompt_messages=base_prompt_messages,
+            trials=n_runs,
+            dataset_index=index,
+            label="random_klg",
+            knowledge_config=_build_manual_knowledge_config(
+                random_entries,
+                load_knowledge_path=None,
+            ),
+            checkpoint=checkpoint,
+            entry_id=entry_id,
+            llm_request=llm_request,
+            use_knowledge_prompt=True,
+        )
     rmsearch_path = _knowledge_path_for_config(knowledge_csv_path)
     load_steps = list(range(1, n_knowledge_steps + 1))
-    rmsearch_trials, rmsearch_mean = await run_scored_trials(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        base_prompt_messages=base_prompt_messages,
-        trials=n_runs,
-        dataset_index=index,
-        label="rmsearch_klg",
-        knowledge_config=_build_manual_knowledge_config(
-            load_knowledge_path=rmsearch_path,
-            load_knowledge_steps=load_steps,
-        ),
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        llm_request=llm_request,
-        use_knowledge_prompt=True,
+    if "rmsearch" in inference_types:
+        rmsearch_trials, rmsearch_mean = await run_scored_trials(
+            orchestrator,
+            patch_manager,
+            dataset_entry=dataset_entry,
+            base_prompt_messages=base_prompt_messages,
+            trials=n_runs,
+            dataset_index=index,
+            label="rmsearch_klg",
+            knowledge_config=_build_manual_knowledge_config(
+                load_knowledge_path=rmsearch_path,
+                load_knowledge_steps=load_steps,
+            ),
+            checkpoint=checkpoint,
+            entry_id=entry_id,
+            llm_request=llm_request,
+            use_knowledge_prompt=True,
+        )
+
+    random_improvement_from_base = (
+        round(random_mean - base_mean, 2)
+        if random_mean is not None and base_mean is not None
+        else None
+    )
+    score_improvement_from_base = (
+        round(rmsearch_mean - base_mean, 2)
+        if rmsearch_mean is not None and base_mean is not None
+        else None
+    )
+    score_improvement_from_random = (
+        round(rmsearch_mean - random_mean, 2)
+        if rmsearch_mean is not None and random_mean is not None
+        else None
     )
 
     return {
@@ -419,9 +460,9 @@ async def run_problem_eval(
         "base_mean_score": base_mean,
         "random_klg_mean_score": random_mean,
         "rmsearch_klg_mean_score": rmsearch_mean,
-        "random_improvement_from_base": round(random_mean - base_mean, 2),
-        "score_improvement_from_base": round(rmsearch_mean - base_mean, 2),
-        "score_improvement_from_random": round(rmsearch_mean - random_mean, 2),
+        "random_improvement_from_base": random_improvement_from_base,
+        "score_improvement_from_base": score_improvement_from_base,
+        "score_improvement_from_random": score_improvement_from_random,
     }
 
 
@@ -477,23 +518,23 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--llm-model-name",
-        default=base.DEFAULT_LLM_MODEL_NAME,
+        default=DEFAULT_LLM_MODEL_NAME,
         help="Name of model in LLM endpoint.",
     )
     parser.add_argument(
         "--llm-url",
-        default=base.DEFAULT_LLM_URL,
+        default=DEFAULT_LLM_URL,
         help="LLM endpoint passed to the orchestrator.",
     )
     parser.add_argument(
         "--rm-url",
-        default=base.DEFAULT_RM_URL,
+        default=DEFAULT_RM_URL,
         help="Reward model search endpoint passed to the orchestrator.",
     )
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=base.DEFAULT_BATCH_SIZE,
+        default=DEFAULT_BATCH_SIZE,
         help="Number of problems to process concurrently.",
     )
     parser.add_argument(
@@ -514,6 +555,12 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=DEFAULT_N_RUNS,
         help="Deprecated alias for --n-runs.",
+    )
+    parser.add_argument(
+        "--inference-type",
+        nargs="+",
+        default=DEAFULT_INFERENCE_TYPES,  #["base", "random", "rmsearch"],
+        help="Subset of inference modes to run: base, random, rmsearch.",
     )
     parser.add_argument(
         "--save-log",
@@ -541,6 +588,21 @@ async def run_evaluation(args: argparse.Namespace) -> None:
             raise ValueError("--n-problems must be >= 1")
         random.seed(args.seed)
         dataset = _prepare_eval_dataset(args)
+        raw_types = args.inference_type or []
+        normalized_types: List[str] = []
+        for raw in raw_types:
+            for part in str(raw).split(","):
+                cleaned = part.strip()
+                if cleaned:
+                    cleaned = cleaned.strip("[]").strip().strip("\"'")
+                text = cleaned.lower()
+                if text:
+                    normalized_types.append(text)
+        inference_types = set(normalized_types or ["base", "random", "rmsearch"])
+        allowed = {"base", "random", "rmsearch"}
+        unknown = sorted(inference_types - allowed)
+        if unknown:
+            raise ValueError(f"Unknown inference types: {unknown}")
         _write_knowledge_pool_csv(
             args.knowledge_csv_path,
             base.DEFAULT_KNOWLEDGE_POOL,
@@ -622,6 +684,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                             n_runs=args.n_runs,
                             knowledge_csv_path=args.knowledge_csv_path,
                             checkpoint=checkpoint,
+                            inference_types=inference_types,
                             llm_request=llm_request,
                             rng=rng,
                         )
