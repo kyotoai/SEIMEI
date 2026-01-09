@@ -886,7 +886,8 @@ class seimei:
         reason_hint = context.get("reason_hint", "")
         numbered = "\n".join(f"{idx}. {item['key']}" for idx, item in enumerate(candidates, 1))
         history_messages, _, focus_text = self._prepare_query_input(query)
-        conversation_messages = self._convert_history_to_llm(history_messages)
+        #conversation_messages = self._convert_history_to_llm(history_messages)
+
         step_note = ""
         current_step = context.get("current_step")
         total_steps = context.get("max_steps") or self.max_steps
@@ -901,19 +902,30 @@ class seimei:
         if step_number is not None:
             if total_number and total_number >= step_number:
                 step_note = (
-                    f"\nCurrent agent step: {step_number} of {total_number}. "
-                    "Choose the agent whose skills progress this specific step."
+                    f"\nCurrent agent step: {step_number} / {total_number}. "
+                    #"Choose the agent whose skills progress this specific step."
                 )
             else:
                 step_note = (
                     f"\nCurrent agent step: {step_number}. "
-                    "Choose the agent whose skills progress this specific step."
+                    #"Choose the agent whose skills progress this specific step."
                 )
+        ''' performs bad with gpt-oss
         system_prompt = (
             "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
             "Return a JSON array, each element containing: "
             '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
             "Only return up to the requested number of entries. Respond with JSON only.\n\n"
+            f"Candidates:\n{numbered}\n"
+            f"Select up to {k} candidates most relevant to the conversation."
+        )
+        '''
+
+        system_prompt = (
+            "Select one of candidate agents to be acted according to user system and the recent conversation among the user, assistants, and agents. You should carefully read them and think what agent (next action) should be done in next step. "
+            "Return a JSON array, each element containing: "
+            '{"reason": short string, "index": <1-based index of the candidate>, "score": optional float between 0 and 1}. '
+            "Only return up to the requested number of entries. Respond with JSON only.\n"
             f"Candidates:\n{numbered}\n"
             f"Select up to {k} candidates most relevant to the conversation."
         )
@@ -929,7 +941,7 @@ class seimei:
             user_prompt = f"{qualifier}.\n{user_prompt}"
 
         try:
-            routing_messages = conversation_messages if conversation_messages else [
+            routing_messages = history_messages if history_messages else [
                 {"role": "user", "content": user_prompt}
             ]
             reply, _usage = await run_llm.chat(
@@ -945,24 +957,48 @@ class seimei:
 
         data = self._parse_llm_ranking(reply)
         selected: List[Dict[str, Any]] = []
-        for entry in data:
+
+        if type(data)== dict:
             try:
-                idx = int(entry.get("index", 0))
+                idx = int(data.get("index", 0))
             except (TypeError, ValueError):
-                continue
+                raise Exception(f"llm_routing output was not formattable. {reply}")
+            
             if idx < 1 or idx > len(candidates):
-                continue
+                raise Exception(f"llm_routing output was not formattable. {reply}")
+            
             candidate = candidates[idx - 1]
             result = {
                 "key": candidate["key"],
                 "payload": candidate,
-                "score": entry.get("score"),
-                "reason": entry.get("reason"),
+                "score": data.get("score"),
+                "reason": data.get("reason"),
                 "source": "llm-routing",
             }
             selected.append(result)
-            if len(selected) >= k:
-                break
+                
+            
+        elif type(data)== list:
+            for entry in data:
+                try:
+                    idx = int(entry.get("index", 0))
+                except (TypeError, ValueError):
+                    continue
+                if idx < 1 or idx > len(candidates):
+                    continue
+                candidate = candidates[idx - 1]
+                result = {
+                    "key": candidate["key"],
+                    "payload": candidate,
+                    "score": entry.get("score"),
+                    "reason": entry.get("reason"),
+                    "source": "llm-routing",
+                }
+                selected.append(result)
+                if len(selected) >= k:
+                    break
+        else:
+            raise Exception(f"llm_routing output was not formattable. {reply}")
 
         if not selected:
             return [
@@ -1046,6 +1082,10 @@ class seimei:
                     k=1,
                     context=context,
                 )
+
+                print("\n--- ranked ---")
+                print(ranked)
+
                 if ranked:
                     agent_name = ranked[0].get("payload", {}).get("agent_name")
                     if agent_name and agent_name in candidate_name_set:
