@@ -2824,3 +2824,110 @@ I still need to improve a lot, but I think it's a great first step.
     3. improve knowledge sampling mechanism (add random extract)
     4. add more knowledge (concreate knowledge of what file should be related. add answer and think agent too. for think, "hmmm, it should change more )
 
+
+## Jan 9
+
+- [ ] Improve baseline inference
+    - [ ] the problem is almost telling the answer. it shouldn't tell any answer
+    - [ ] knowledge is not selected even in the code_act agent. So the experiment result doesn't mean anything
+    - [ ] score is calculated 3 times from one answer. And they are very varient even though it's evaluating the same answer.
+
+- [ ] Add more codes and generate dataset
+
+
+- [x] Change the format in llm.py
+```
+prepare_messages in seimei/llm.py is outdated. Remake the function following the instruction below;
+
+prepare_messages : convert message into LLM conpatible message
+
+Args:
+messages: [
+    {
+        "role":<"system" or "user" or "assistant" or "agent">,
+        "content":<content>,
+        "name"(optional):<"answer" or "code_act" or other agent name>
+    },
+    ...
+]
+drop_normal_system: False
+
+Return: 
+messages: [
+    {
+        "role":<"system" or "user" or "assistant">,
+        "content":<content (If this is the last user message in messages, agent messages after this are included in this user message.)>,
+        "name"(optional):<"answer" or "code_act" or other agent name>
+    },
+    ...
+]
+normal_system_count: Int <system message counter>
+
+
+Ex.
+Args:
+system = "z"
+messages = [
+    {
+        "role": "system",
+        "content": "a"
+    },
+    {
+        "role": "user",
+        "content": "b"
+    },
+    {
+        "role": "agent",
+        "name": "code_act",
+        "content": "c"
+    },
+    {
+        "role": "agent",
+        "name": "answer",
+        "content": "d"
+    },
+    {
+        "role": "assistant",
+        "content": "e"
+    },
+    {
+        "role": "system",
+        "content": "f"
+    },
+    {
+        "role": "user",
+        "content": "g"
+    },
+    {
+        "role": "agent",
+        "name": "code_act",
+        "content": "h"
+    },
+]
+
+->
+
+Return:
+messages = [
+    {
+        "role": "user",
+        "content": "<USER_SYSTEM>a</USER_SYSTEM>\n\n<USER>b</USER>"
+    },
+    {
+        "role": "assistant",
+        "content": "e"
+    },
+    {
+        "role": "user",
+        "content": "z \n\n\n<USER_SYSTEM>f</USER_SYSTEM>\n\n<USER>g</USER>\n\n<AGENT OUTPUT STEP 1>h</AGENT OUTPUT STEP 1>"
+    },
+]
+```
+
+
+- [x] Debug llm_routing
+    - when llm output is {"reason":"Need to inspect the invalid code to identify where to re-add math_j0 and math_j1 calls","index":2,"score":0.9}, it cannot process. (it is supposed to be list)
+
+
+
+

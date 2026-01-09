@@ -30,12 +30,14 @@ def format_agent_history(agent_messages: Sequence[Dict[str, Any]]) -> str:
     blocks: List[str] = []
     for idx, msg in enumerate(agent_messages, start=1):
         block_lines: List[str] = []
-        header = f"[AGENT OUTPUT STEP {idx}]"
+        header = f"<AGENT OUTPUT STEP {idx}>"
+        footer = f"</AGENT OUTPUT STEP {idx}>"
         content = msg.get("content")
         if content is None:
             continue
         block_lines.append(header)
         block_lines.extend(_format_tag_block("content", content))
+        block_lines.append(footer)
         blocks.append("\n".join(block_lines).rstrip())
 
     return "\n\n".join(blocks)
@@ -49,85 +51,210 @@ def _stringify_content(value: Any) -> str:
             return str(value)
     return str(value)
 
+"""
+prepare_messages : convert message into LLM conpatible message
 
+Args:
+messages: [
+    {
+        "role":<"system" or "user" or "assistant" or "agent">,
+        "content":<content>,
+        "name"(optional):<"answer" or "code_act" or other agent name>
+    },
+    ...
+]
+drop_normal_system: False
+
+Return: 
+messages: [
+    {
+        "role":<"system" or "user" or "assistant">,
+        "content":<content (If this is the last user message in messages, agent messages after this are included in this user message.)>,
+        "name"(optional):<"answer" or "code_act" or other agent name>
+    },
+    ...
+]
+normal_system_count: Int <system message counter>
+
+
+Ex.
+Args:
+system = "z"
+messages = [
+    {
+        "role": "system",
+        "content": "a"
+    },
+    {
+        "role": "user",
+        "content": "b"
+    },
+    {
+        "role": "agent",
+        "name": "code_act",
+        "content": "c"
+    },
+    {
+        "role": "agent",
+        "name": "answer",
+        "content": "d"
+    },
+    {
+        "role": "assistant",
+        "content": "e"
+    },
+    {
+        "role": "system",
+        "content": "f"
+    },
+    {
+        "role": "user",
+        "content": "g"
+    },
+    {
+        "role": "agent",
+        "name": "code_act",
+        "content": "h"
+    },
+]
+
+->
+
+messages: [
+    {
+        "role": "user",
+        "content": "<USER_SYSTEM>a</USER_SYSTEM>\n\n<USER>b</USER>"
+    },
+    {
+        "role": "assistant",
+        "content": "e"
+    },
+    {
+        "role": "user",
+        "content": "z \n\n\n<USER_SYSTEM>f</USER_SYSTEM>\n\n<USER>g</USER>\n\n<AGENT OUTPUT STEP 1>h</AGENT OUTPUT STEP 1>"
+    },
+]
+"""
 def prepare_messages(
     messages: Sequence[Dict[str, Any]],
     *,
-    drop_normal_system: bool,
+    system: str = None,
+    drop_normal_system: bool = False,
 ) -> Tuple[List[Dict[str, Any]], int]:
     prepared: List[Dict[str, Any]] = []
     normal_system_count = 0
-    agent_buffer: List[Dict[str, Any]] = []
-    last_user_idx: Optional[int] = None
 
-    def flush_agent_buffer() -> None:
-        nonlocal last_user_idx
-        if not agent_buffer:
-            return
-        history_text = format_agent_history(agent_buffer)
-        agent_buffer.clear()
-        if not history_text:
-            return
-        section = f"Here's the analysis you made so far:\n{history_text}"
-        if last_user_idx is not None:
-            existing = prepared[last_user_idx].get("content", "")
-            existing_str = _stringify_content(existing)
-            joiner = "\n\n" if existing_str else ""
-            prepared[last_user_idx]["content"] = f"{existing_str}{joiner}{section}"
-        else:
-            prepared.append({"role": "user", "content": section})
-            last_user_idx = len(prepared) - 1
-
+    normalized: List[Dict[str, Any]] = []
     for raw in messages or []:
         if not isinstance(raw, dict):
-            continue
-        role_raw = str(raw.get("role") or "user").lower()
-        content = _stringify_content(raw.get("content", ""))
-        name = raw.get("name")
+            raise Exception("messages must be list of dict but it has non dict in it.")
+        if not raw.get("role"):
+            raise Exception("dict in messages must include role.")
+        normalized.append(raw)
 
-        is_agent = role_raw == "agent" or (role_raw == "system" and bool(raw.get("agent")))
-        if is_agent:
-            agent_entry: Dict[str, Any] = {"content": content}
-            if isinstance(name, str) and name.strip():
-                agent_entry["name"] = name.strip()[:64]
-            agent_buffer.append(agent_entry)
+    def is_agent_message(msg: Dict[str, Any]) -> bool:
+        role = str(msg.get("role") or "").lower()
+        if role == "agent":
+            return True
+        if role == "system" and msg.get("agent"):
+            return True
+        return False
+
+    def wrap_tag(tag: str, content: Any) -> str:
+        text = _stringify_content(content)
+        return f"<{tag}>{text}</{tag}>"
+
+    last_user_input_idx: Optional[int] = None
+    for idx, msg in enumerate(normalized):
+        if str(msg.get("role") or "").lower() == "user":
+            last_user_input_idx = idx
+
+    agent_messages: List[Dict[str, Any]] = []
+    if last_user_input_idx is not None:
+        for msg in normalized[last_user_input_idx + 1 :]:
+            if is_agent_message(msg):
+                agent_messages.append({"content": msg.get("content")})
+
+    current_segments: List[str] = []
+    for msg in normalized:
+        if is_agent_message(msg):
             continue
 
-        flush_agent_buffer()
-
-        if role_raw == "system":
-            normal_system_count += 1
-            if not drop_normal_system:
-                entry = {"role": "system", "content": content}
-                if isinstance(name, str) and name.strip():
-                    entry["name"] = name.strip()[:64]
-                prepared.append(entry)
-            continue
+        role_raw = str(msg.get("role") or "").lower()
+        content = msg.get("content", "")
+        name = msg.get("name")
 
         if role_raw == "assistant":
-            entry = {"role": "assistant", "content": content}
+            if current_segments:
+                prepared.append({"role": "user", "content": "\n\n".join(current_segments)})
+                current_segments = []
+            entry = {"role": "assistant", "content": _stringify_content(content)}
             if isinstance(name, str) and name.strip():
                 entry["name"] = name.strip()[:64]
-            tool_calls = raw.get("tool_calls")
-            if tool_calls:
-                entry["tool_calls"] = tool_calls
-            function_call = raw.get("function_call")
-            if function_call:
-                entry["function_call"] = function_call
             prepared.append(entry)
             continue
 
-        normalized_role = "user"
-        if role_raw == "developer":
-            normalized_role = "system"
-        entry = {"role": normalized_role, "content": content}
-        if isinstance(name, str) and name.strip():
-            entry["name"] = name.strip()[:64]
-        prepared.append(entry)
-        if normalized_role == "user":
-            last_user_idx = len(prepared) - 1
+        if role_raw == "system":
+            normal_system_count += 1
+            if drop_normal_system:
+                continue
+            current_segments.append(wrap_tag("USER_SYSTEM", content))
+            continue
 
-    flush_agent_buffer()
+        if role_raw == "developer":
+            if drop_normal_system:
+                continue
+            current_segments.append(wrap_tag("USER_SYSTEM", content))
+            continue
+
+        current_segments.append(wrap_tag("USER", content))
+
+    if current_segments:
+        prepared.append({"role": "user", "content": "\n\n".join(current_segments)})
+
+    def format_agent_inline(agent_msgs: Sequence[Dict[str, Any]]) -> str:
+        blocks: List[str] = []
+        for idx, msg in enumerate(agent_msgs, start=1):
+            content = msg.get("content")
+            if content is None:
+                continue
+            content_text = _stringify_content(content)
+            blocks.append(f"<AGENT OUTPUT STEP {idx}>{content_text}</AGENT OUTPUT STEP {idx}>")
+        return "\n\n".join(blocks)
+
+    agent_history = format_agent_inline(agent_messages)
+    last_user_prepared_idx: Optional[int] = None
+    if agent_history:
+        for idx in range(len(prepared) - 1, -1, -1):
+            if prepared[idx].get("role") == "user":
+                last_user_prepared_idx = idx
+                break
+        if last_user_prepared_idx is None:
+            prepared.append({"role": "user", "content": agent_history})
+            last_user_prepared_idx = len(prepared) - 1
+        else:
+            existing = prepared[last_user_prepared_idx].get("content", "")
+            existing_text = _stringify_content(existing)
+            joiner = "\n\n" if existing_text else ""
+            prepared[last_user_prepared_idx]["content"] = f"{existing_text}{joiner}{agent_history}"
+
+    if system is not None:
+        system_text = _stringify_content(system)
+        if system_text:
+            if last_user_prepared_idx is None:
+                for idx in range(len(prepared) - 1, -1, -1):
+                    if prepared[idx].get("role") == "user":
+                        last_user_prepared_idx = idx
+                        break
+            if last_user_prepared_idx is None:
+                prepared.append({"role": "user", "content": system_text})
+            else:
+                existing = prepared[last_user_prepared_idx].get("content", "")
+                existing_text = _stringify_content(existing)
+                if existing_text:
+                    prepared[last_user_prepared_idx]["content"] = f"{system_text}\n\n\n{existing_text}"
+                else:
+                    prepared[last_user_prepared_idx]["content"] = system_text
 
     return prepared, normal_system_count
 
@@ -306,7 +433,7 @@ class LLMClient:
         token_limiter: Optional[TokenLimiter] = None,
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
-        prepared_msgs, normal_system_count = prepare_messages(messages, drop_normal_system=False) #bool(system))
+        prepared_msgs, normal_system_count = prepare_messages(messages, system=system, drop_normal_system=False) #bool(system))
         if normal_system_count > 1:
             print(
                 colorize(
@@ -325,8 +452,7 @@ class LLMClient:
             )
 
         payload_msgs: List[Dict[str, Any]] = []
-        if system:
-            payload_msgs.append({"role": "system", "content": system})
+
         for msg in prepared_msgs:
             entry = dict(msg)
             for drop_key in ("agent", "log", "code", "chosen_instructions", "knowledge", "knowledge_id"):
@@ -394,7 +520,7 @@ class LLMClient:
             self.last_response = data
             content = self._extract_content(data)
 
-            #print()
+            #print("\n----------")
             #print("content: ", content)
 
             if isinstance(data, dict):
