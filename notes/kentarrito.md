@@ -2827,10 +2827,10 @@ I still need to improve a lot, but I think it's a great first step.
 
 ## Jan 9
 
-- [ ] Improve baseline inference
-    - [ ] the problem is almost telling the answer. it shouldn't tell any answer
-    - [ ] knowledge is not selected even in the code_act agent. So the experiment result doesn't mean anything
-    - [ ] score is calculated 3 times from one answer. And they are very varient even though it's evaluating the same answer.
+- [x] improve baseline inference
+- [ ] the problem is almost telling the answer. it shouldn't tell any answer
+- [ ] knowledge is not selected even in the code_act agent. So the experiment result doesn't mean anything
+- [ ] score is calculated 3 times from one answer. And they are very varient even though it's evaluating the same answer.
 
 - [ ] Add more codes and generate dataset
 
@@ -2929,5 +2929,104 @@ messages = [
     - when llm output is {"reason":"Need to inspect the invalid code to identify where to re-add math_j0 and math_j1 calls","index":2,"score":0.9}, it cannot process. (it is supposed to be list)
 
 
+- [ ] rmsearch is not used in eval_v4.py
+    -> I realized the reason. for now, rmsearch is called only in an agent. Not in the seimei.py. If answer agent is selected by llm_routing, rmsearch is not called because there is no knowledge for answer in knowledge_v4.csv.
+    -> ! need to change seimei architecture.
 
+- [ ] Enable knowledge_agent_routing
+    * knowledge_search: true -> "agent_routing":False or "agent_routing":True or "knowledge_agent_routing":True
+    * Design: rm_config={"base_url": "https://kyotoai.net/v1/rmsearch",}
+    * Design: agent_search_mode = "llm" or "rm" or "klg",
+    or
+    agent_search_config = [{"mode":"llm or rm or klg","step":"<3"}, ...]
+    * Design: knowledge_search_mode = "llm" or "rm"
+    or
+    knowledge_search_config = [{"mode":"llm or rm","step":"<5"}, ...]
+    * Design: knowledge_config = {
+            "generate_config": {
+                "save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
+                "knowledge_generation_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
+            },
+            "load_config": [
+                {
+                    "text": "Prefer concise shell commands when drafting automation plans.",
+                    "tags": ["code_act", "heuristic"],
+                    "agent": "think",
+                },
+                {
+                    "step": ">=1,<=2",
+                    "load_knowledge_path": "seimei_knowledge/design_briefs.csv",
+                },
+                {
+                    "step": ">2",
+                    "text": "Before final answers double-check every cited number against the workspace files.",
+                    "id": 9001,
+                    "agent": ["think", "answer"],
+                },
+            ],
+        }
+    * Agent.get_agent_knowledge will substitute get_agent_knowledge in utils.
+    * when "agent_routing_mode" = "klg_llm" or "klg_rm", knowledge is selected in __select_next_agent (if knowledge for the step != []) and passes to agent_obj.knowledge. when this
+```
+Recreate seimei/seimei.py, seimei/agent.py following the instructions below
+
+* I want to modify the arguments of seimei. Now there are only llm_routing and rm_routing are available in seimei for agent routing but I wanna add "klg" mode, where knowledge is chosen first and depending on what agent the knowledge belongs to, seimei routes agents.
+
+* To implement the feature above, remake the seimei __init__, __call__ argument to
+    - __init__:
+        llm_config = {"model": , "base_url": ,} (only rename llm_kwargs -> llm_config)
+        rm_config = {"base_url": ,} (rename rm_kwargs -> rm_config, "url"-> "base_url", and remove "agent_routing" and "knowledge_search")
+
+    - __call__:
+        agent_search_mode = "llm" or "rm" or "klg",
+        agent_search_config = [{"mode":"llm or rm or klg","step":"<3"}, ...]
+        knowledge_search_mode = "llm" or "rm"
+        knowledge_search_config = [{"mode":"llm or rm","step":"<5"}, ...]
+        (here, "agent_routing" and "knowledge_search" in rm_kwards goes to the above args. mode roughly designates what to be used and config is used when they want to change mode depending on steps. in steps designated by config, mode in config should be set. Also allow step content to be str like that which is eaier for users to set. it can be integer list (list of step numbers) too.)
+
+        knowledge_load_config = [
+            {
+                "text": "Prefer concise shell commands when drafting automation plans.",
+                "tags": ["code_act", "heuristic"],
+                "agent": "think",
+            },
+            {
+                "step": ">=1,<=2",
+                "load_knowledge_path": "seimei_knowledge/design_briefs.csv",
+            },
+            {
+                "step": ">2",
+                "text": "Before final answers double-check every cited number against the workspace files.",
+                "id": 9001,
+                "agent": ["think", "answer"],
+            },
+        ]
+
+        knowledge_generate_config = {
+            "save_knowledge_path": "seimei_knowledge/knowledge.csv",
+            "knowledge_generation_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
+        }
+
+        (here, just split knowledge_config into 2 args like above.)
+
+* About new feature: agent_search_mode = "klg". If agent_search_mode="klg" is set, search knowledge in _select_next_agent. according to the chosen knowledge's agent (there is agent field in each knowledge row). if agent is a list, you should act same search method as knowledge search (rm or llm) to the agents in the list. After you get the top agent, set it to agent_obj.__agent_routing_knowledge. In get_agent_knowledge function in agent.py, you should return __agent_routing_knowledge with right format. 
+
+* Update README.md and seimei/README.md according to the modification. Delete old information.
+
+* You should read all the content of both seimei/seimei.py and seimei/agent.py first, read relevant parts in other files, think deeply how to modify the library, and modify it carefully. If you find some ambiguity in my instructions, ask me back about the point before you modify it.
+```
+
+- [ ] Agent.get_agent_knowledge
+
+
+
+- [ ] Rerun the eval_v4.py
+
+- [ ] improve dataset
+- [ ] improve scoring mechanism
+- [ ] Rerun train_v4_eval_sample.py -> eval_v4.py again
+
+- [ ] Scale dataset
+- [ ] knowledge improvement
+- [ ] (opt) 
 
