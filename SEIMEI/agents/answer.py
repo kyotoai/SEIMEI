@@ -4,7 +4,7 @@ from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
 from seimei.llm import TokenLimitExceeded
-from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
+from seimei.knowledge.utils import prepare_knowledge_payload
 
 
 def _latest_user_message(messages: List[Dict[str, Any]]) -> str:
@@ -48,7 +48,7 @@ class answer(Agent):
 
         user_question = _latest_user_message(messages)
         findings = _aggregate_agent_findings(messages)
-        knowledge_entries = get_agent_knowledge(shared_ctx, "answer")
+        knowledge_entries = await self.get_agent_knowledge()
         knowledge_subset = knowledge_entries[:8]
         knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_subset)
 

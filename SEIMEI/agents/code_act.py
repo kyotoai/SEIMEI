@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
+from seimei.knowledge.utils import prepare_knowledge_payload
 
 _SAFE_DEFAULTS = [
     "echo",
@@ -59,7 +59,8 @@ class code_act(Agent):
                 cwd = None
 
         
-        code, knowledge_used = await _generate_command(messages, shared_ctx, allowed)
+        knowledge_entries = await self.get_agent_knowledge(max_items=3)
+        code, knowledge_used = await _generate_command(messages, shared_ctx, allowed, knowledge_entries)
         knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_used)
 
         if not code:
@@ -267,9 +268,9 @@ async def _generate_command(
     messages: List[Dict[str, Any]],
     shared_ctx: Dict[str, Any],
     allowed: Optional[Sequence[str]],
+    knowledge_entries: List[Dict[str, Any]],
 ) -> Tuple[Optional[str], List[Dict[str, Any]]]:
     llm = shared_ctx.get("llm")
-    knowledge_entries = get_agent_knowledge(shared_ctx, "code_act", max_items=3)
     if llm is None:
         return None, knowledge_entries
 

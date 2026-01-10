@@ -6,6 +6,7 @@ import inspect
 import io
 import json
 import os
+import re
 import sys
 import time
 import types
@@ -61,8 +62,8 @@ class seimei:
     def __init__(
         self,
         agent_config: Optional[Sequence[Dict[str, Any]]] = None,
-        llm_kwargs: Optional[Dict[str, Any]] = None,
-        rm_kwargs: Optional[Dict[str, Any]] = None,
+        llm_config: Optional[Dict[str, Any]] = None,
+        rm_config: Optional[Dict[str, Any]] = None,
         log_dir: str = "./seimei_runs",
         max_steps: int = 8,
         allow_code_exec: bool = False,
@@ -75,18 +76,18 @@ class seimei:
         os.makedirs(self.log_dir, exist_ok=True)
 
         # LLM
-        if llm_kwargs is None:
-            raise ValueError("llm_kwargs must be provided")
-        self.llm = LLMClient(**llm_kwargs)
+        if llm_config is None:
+            raise ValueError("llm_config must be provided")
+        self.llm = LLMClient(**llm_config)
 
         # Routing
         default_rm_settings = {
-            "agent_routing": False,
-            "knowledge_search": True,
-            "url": DEFAULT_RMSEARCH_URL,
+            "base_url": DEFAULT_RMSEARCH_URL,
         }
-        provided_rm_kwargs = rm_kwargs or {}
-        self.rm_kwargs = {**default_rm_settings, **provided_rm_kwargs}
+        provided_rm_config = dict(rm_config or {})
+        if "base_url" not in provided_rm_config and "url" in provided_rm_config:
+            provided_rm_config["base_url"] = provided_rm_config.pop("url")
+        self.rm_config = {**default_rm_settings, **provided_rm_config}
         self.max_steps = max_steps
         self._rm_warned_missing_url = False
         self.max_tokens_per_question = max_tokens_per_question
@@ -115,7 +116,7 @@ class seimei:
         # Attach shared ctx visible to agents (e.g., llm, rmsearch, safety flags)
         self.shared_ctx = {
             "llm": self.llm,
-            "rm_kwargs": self.rm_kwargs,
+            "rm_config": self.rm_config,
             "rmsearch_fn": self._rmsearch,
             "allow_code_exec": self.allow_code_exec,
             "allowed_commands": self.allowed_commands,
@@ -298,40 +299,35 @@ class seimei:
             return Path(candidate).expanduser()
         return Path("seimei_knowledge") / "knowledge.csv"
 
-    def _normalize_knowledge_config(self, config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-        cfg = dict(config or {})
-        manual_entries, manual_stores, manual_store_sources, manual_agent_routes = self._normalize_manual_knowledge(
-            cfg.get("knowledge")
-        )
+    def _normalize_knowledge_config(
+        self,
+        load_config: Optional[Sequence[Dict[str, Any]]],
+        generate_config: Optional[Dict[str, Any]],
+    ) -> Dict[str, Any]:
+        (
+            manual_entries,
+            manual_stores,
+            manual_store_sources,
+            manual_agent_routes,
+            base_load_path,
+            load_path_provided,
+        ) = self._normalize_manual_knowledge(load_config)
 
-        load_path_provided = "load_knowledge_path" in cfg
-        load_value = cfg.get("load_knowledge_path")
-        normalized_load_path = self._coerce_path_string(load_value)
-        load_steps = None
-        if "load_knowledge_steps" in cfg:
-            raw_steps = cfg.get("load_knowledge_steps")
-            deduped: List[int] = []
-            seen: Set[int] = set()
-            for step in self._coerce_step_targets(raw_steps):
-                if step in seen:
-                    continue
-                seen.add(step)
-                deduped.append(step)
-            load_steps = deduped
+        normalized_load_path = self._coerce_path_string(base_load_path)
 
-        save_value = cfg.get("save_knowledge_path")
+        generate_cfg = dict(generate_config or {})
+        save_value = generate_cfg.get("save_knowledge_path")
         save_path = Path(save_value).expanduser() if save_value not in (None, "") else None
 
-        prompt_value = cfg.get("knowledge_prompt_path")
+        prompt_value = generate_cfg.get("knowledge_generation_prompt_path")
         prompt_path = Path(prompt_value).expanduser() if prompt_value not in (None, "") else None
 
         return {
-            "generate_knowledge": bool(cfg.get("generate_knowledge", False)),
+            "generate_knowledge": bool(generate_config),
             "save_knowledge_path": save_path,
-            "knowledge_prompt_path": prompt_path,
+            "knowledge_generation_prompt_path": prompt_path,
             "load_knowledge_path": normalized_load_path,
             "load_path_provided": load_path_provided,
-            "load_knowledge_steps": load_steps,
             "manual_entries": manual_entries,
             "manual_stores": manual_stores,
             "manual_store_sources": manual_store_sources,
@@ -345,17 +341,25 @@ class seimei:
         Dict[Optional[int], List[Dict[str, Any]]],
         Dict[Optional[int], List[Dict[str, Any]]],
         Dict[int, List[str]],
+        Optional[str],
+        bool,
     ]:
         entry_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         store_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         store_source_map: Dict[Optional[int], List[Dict[str, Any]]] = defaultdict(list)
         agent_route_map: Dict[int, List[str]] = defaultdict(list)
+        base_load_path: Optional[str] = None
+        load_path_provided = False
         entries = self._coerce_manual_knowledge_list(value)
         if not entries:
-            return {}, {}, {}, {}
+            return {}, {}, {}, {}, None, False
 
         for raw in entries:
-            steps = self._coerce_step_targets(raw.get("step"))
+            step_spec = raw.get("step")
+            steps = self._coerce_step_targets(step_spec)
+            step_spec_present = "step" in raw and step_spec not in (None, "")
+            if step_spec_present and not steps:
+                continue
             targets = steps or [None]
             tags = self._coerce_tags(raw.get("tags"))
             agent_values = self._coerce_agent_values(raw.get("agent"))
@@ -367,6 +371,10 @@ class seimei:
             entry_id = self._coerce_optional_int(raw.get("id"))
             load_path_value = raw.get("load_knowledge_path")
             load_path = self._coerce_path_string(load_path_value)
+            is_base_load = bool(load_path) and not step_spec_present
+            if is_base_load:
+                base_load_path = load_path
+                load_path_provided = True
 
             entry_payloads: List[Dict[str, Any]] = []
             if text:
@@ -380,7 +388,7 @@ class seimei:
 
             store_payload: Optional[Dict[str, List[Dict[str, Any]]]] = None
             store_meta: Optional[Dict[str, Any]] = None
-            if load_path:
+            if load_path and not is_base_load:
                 store_meta = {"path": load_path, "loaded": False}
                 store_payload = self._load_manual_knowledge_store(load_path)
                 if store_payload:
@@ -403,7 +411,7 @@ class seimei:
                     store_map[step].append(store_payload)
                 if store_meta:
                     store_source_map[step].append(dict(store_meta))
-                elif load_path:
+                elif load_path and not is_base_load:
                     store_source_map[step].append({"path": load_path, "loaded": False})
                 if (
                     agent_field_present
@@ -415,7 +423,14 @@ class seimei:
                         if candidate not in route:
                             route.append(candidate)
 
-        return dict(entry_map), dict(store_map), dict(store_source_map), dict(agent_route_map)
+        return (
+            dict(entry_map),
+            dict(store_map),
+            dict(store_source_map),
+            dict(agent_route_map),
+            base_load_path,
+            load_path_provided,
+        )
 
     def _coerce_manual_knowledge_list(self, raw: Any) -> List[Dict[str, Any]]:
         if raw is None:
@@ -434,19 +449,71 @@ class seimei:
             return entries
         return []
 
-    @staticmethod
-    def _coerce_step_targets(value: Any) -> List[int]:
-        if value is None:
+    def _coerce_step_targets(self, value: Any) -> List[int]:
+        matcher = self._build_step_matcher(value)
+        if matcher is None:
             return []
+        return [step for step in range(1, self.max_steps + 1) if matcher(step)]
+
+    def _build_step_matcher(self, value: Any) -> Optional[Callable[[int], bool]]:
+        if value is None:
+            return None
         if isinstance(value, (list, tuple, set)):
-            steps: List[int] = []
-            for item in value:
-                coerced = seimei._coerce_positive_int(item)
-                if coerced is not None:
-                    steps.append(coerced)
-            return steps
-        coerced = seimei._coerce_positive_int(value)
-        return [coerced] if coerced is not None else []
+            matchers = [self._build_step_matcher(item) for item in value]
+            matchers = [matcher for matcher in matchers if matcher]
+            if not matchers:
+                return None
+            return lambda step: any(matcher(step) for matcher in matchers)
+
+        if isinstance(value, (int, float, str)):
+            if isinstance(value, (int, float)):
+                number = self._coerce_positive_int(value)
+                if number is None:
+                    return None
+                return lambda step, target=number: step == target
+            text = str(value).strip()
+            if not text:
+                return None
+            if not re.search(r"[<>]=?|==|=", text):
+                numbers: List[int] = []
+                for part in text.split(","):
+                    num = self._coerce_positive_int(part.strip())
+                    if num is not None:
+                        numbers.append(num)
+                if not numbers:
+                    return None
+                number_set = set(numbers)
+                return lambda step: step in number_set
+            conditions = []
+            for part in text.split(","):
+                part = part.strip()
+                if not part:
+                    continue
+                match = re.match(r"^(<=|>=|<|>|==|=)?\s*(\d+)\s*$", part)
+                if not match:
+                    continue
+                op = match.group(1) or "=="
+                num = int(match.group(2))
+                conditions.append((op, num))
+            if not conditions:
+                return None
+
+            def _matches(step: int) -> bool:
+                for op, num in conditions:
+                    if op in ("=", "==") and step != num:
+                        return False
+                    if op == "<" and step >= num:
+                        return False
+                    if op == "<=" and step > num:
+                        return False
+                    if op == ">" and step <= num:
+                        return False
+                    if op == ">=" and step < num:
+                        return False
+                return True
+
+            return _matches
+        return None
 
     @staticmethod
     def _coerce_positive_int(value: Any) -> Optional[int]:
@@ -503,6 +570,75 @@ class seimei:
             return names
         text = str(value).strip()
         return [text] if text else []
+
+    @staticmethod
+    def _normalize_search_mode(
+        value: Any,
+        *,
+        allowed: Set[str],
+        default: str,
+        label: str,
+    ) -> str:
+        if value in (None, ""):
+            return default
+        mode = str(value).strip().lower()
+        if mode not in allowed:
+            raise ValueError(f"{label} must be one of {sorted(allowed)}")
+        return mode
+
+    @staticmethod
+    def _validate_search_mode(value: Any, *, allowed: Set[str], label: str) -> str:
+        if value in (None, ""):
+            raise ValueError(f"{label} must be one of {sorted(allowed)}")
+        mode = str(value).strip().lower()
+        if mode not in allowed:
+            raise ValueError(f"{label} must be one of {sorted(allowed)}")
+        return mode
+
+    @staticmethod
+    def _coerce_search_config_list(value: Any) -> List[Dict[str, Any]]:
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return [dict(value)]
+        if isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+            entries: List[Dict[str, Any]] = []
+            for item in value:
+                if isinstance(item, dict):
+                    entries.append(dict(item))
+            return entries
+        return []
+
+    def _normalize_search_config(
+        self,
+        config: Any,
+        *,
+        allowed: Set[str],
+        label: str,
+    ) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        for raw in self._coerce_search_config_list(config):
+            mode = self._validate_search_mode(raw.get("mode"), allowed=allowed, label=f"{label}.mode")
+            matcher = self._build_step_matcher(raw.get("step"))
+            if matcher is None:
+                raise ValueError(f"{label}.step must be set for mode '{mode}'")
+            normalized.append({"mode": mode, "matcher": matcher})
+        return normalized
+
+    @staticmethod
+    def _resolve_search_mode(
+        base_mode: str,
+        config: Sequence[Dict[str, Any]],
+        step: Optional[int],
+    ) -> str:
+        if step is None:
+            return base_mode
+        resolved = base_mode
+        for entry in config:
+            matcher = entry.get("matcher")
+            if callable(matcher) and matcher(step):
+                resolved = entry.get("mode", resolved)
+        return resolved
 
     def _compose_step_knowledge(
         self,
@@ -585,7 +721,11 @@ class seimei:
 
     # -------------------------- Shared search --------------------------
 
-    def _make_search_fn(self, run_llm: LLMClient) -> Callable[..., Any]:
+    def _make_search_fn(
+        self,
+        run_llm: LLMClient,
+        mode_getter: Optional[Callable[[], str]] = None,
+    ) -> Callable[..., Any]:
         async def _search(
             query: str,
             keys: Sequence[Dict[str, Any]],
@@ -593,11 +733,13 @@ class seimei:
             k: int = 1,
             context: Optional[Dict[str, Any]] = None,
         ) -> List[Dict[str, Any]]:
-            return await self._search_with_backends(
+            mode = mode_getter() if mode_getter else "rm"
+            return await self._search_with_mode(
                 query=query,
                 keys=keys,
                 k=k,
                 run_llm=run_llm,
+                mode=mode,
                 context=context or {},
             )
 
@@ -612,14 +754,10 @@ class seimei:
             return "agent_routing"
         return "knowledge_search"
 
-    def _should_use_rmsearch(self, purpose: str, cfg: Optional[Dict[str, Any]] = None) -> bool:
-        config = cfg or self.rm_kwargs
-        url = str(config.get("url") or "").strip()
-        if not url:
-            return False
-        if purpose == "agent_routing":
-            return bool(config.get("agent_routing", False))
-        return bool(config.get("knowledge_search", True))
+    def _should_use_rmsearch(self, cfg: Optional[Dict[str, Any]] = None) -> bool:
+        config = cfg or self.rm_config
+        url = str(config.get("base_url") or config.get("url") or "").strip()
+        return bool(url)
 
     def _rmsearch(
         self,
@@ -632,17 +770,17 @@ class seimei:
         timeout: Optional[float] = None,
         **overrides: Any,
     ) -> List[Dict[str, Any]]:
-        config = dict(self.rm_kwargs)
+        config = dict(self.rm_config)
         config.update(overrides)
         effective_purpose = self._normalize_purpose(purpose or config.get("purpose"))
 
-        if not self._should_use_rmsearch(effective_purpose, config):
+        if not self._should_use_rmsearch(config):
             return []
 
-        url = str(config.get("url") or "").strip()
+        url = str(config.get("base_url") or config.get("url") or "").strip()
         if not url:
             if not self._rm_warned_missing_url:
-                print(colorize("[seimei] rmsearch skipped: rm_kwargs['url'] not set.", ERROR_COLOR), file=sys.stderr)
+                print(colorize("[seimei] rmsearch skipped: rm_config['base_url'] not set.", ERROR_COLOR), file=sys.stderr)
                 self._rm_warned_missing_url = True
             return []
 
@@ -805,13 +943,14 @@ class seimei:
                     return records
         return records[:limit]
 
-    async def _search_with_backends(
+    async def _search_with_mode(
         self,
         query: Union[str, Sequence[Dict[str, Any]]],
         keys: Sequence[Dict[str, Any]],
         *,
         k: int,
         run_llm: Optional[LLMClient],
+        mode: str,
         context: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         if not keys:
@@ -836,21 +975,22 @@ class seimei:
                     break
         if query_override:
             rm_query = query_override
-        try:
-            rm_result = self._rmsearch(
-                query=rm_query,
-                keys=list(keys),
-                k_key=limit,
-                purpose=purpose,
-            )
-            if asyncio.iscoroutine(rm_result):
-                rm_result = await rm_result
-            results = self._attach_payloads(rm_result or [], key_map)
-            if results:
-                return results[:limit]
-        except Exception as exc:
-            print(colorize(f"[seimei] rmsearch selection failed: {exc}", ERROR_COLOR), file=sys.stderr)
-
+        normalized_mode = str(mode or "rm").strip().lower()
+        if normalized_mode == "rm":
+            try:
+                rm_result = self._rmsearch(
+                    query=rm_query,
+                    keys=list(keys),
+                    k_key=limit,
+                    purpose=purpose,
+                )
+                if asyncio.iscoroutine(rm_result):
+                    rm_result = await rm_result
+                results = self._attach_payloads(rm_result or [], key_map)
+                if results:
+                    return results[:limit]
+            except Exception as exc:
+                print(colorize(f"[seimei] rmsearch selection failed: {exc}", ERROR_COLOR), file=sys.stderr)
         return await self._llm_route_search(
             query=query,
             keys=keys,
@@ -1027,12 +1167,18 @@ class seimei:
     async def _select_next_agent(
         self,
         messages: List[Dict[str, Any]],
-        search_fn: Callable[..., Any],
+        run_llm: LLMClient,
+        shared_ctx: Dict[str, Any],
         step: Optional[int] = None,
         allowed_agent_names: Optional[Sequence[str]] = None,
+        agent_search_mode: str = "llm",
+        knowledge_search_mode: str = "rm",
     ) -> Optional[Agent]:
         if not self.agents:
             return None
+
+        for agent_obj in self.agents.values():
+            self._clear_agent_routing_knowledge(agent_obj)
 
         candidate_agent_names: List[str] = []
         if allowed_agent_names:
@@ -1061,41 +1207,35 @@ class seimei:
         if not candidate_agents:
             return None
         candidate_name_set = set(candidate_agent_names)
-        keys = [
-            {"key": f"{agent.name}: {agent.description}", "agent_name": agent.name}
-            for agent in candidate_agents
-        ]
+
         try:
             query = json.dumps(messages, ensure_ascii=False)
         except Exception:
             query = str(messages)
 
-        if search_fn and keys:
-            try:
-                context = {"purpose": "agent_routing"}
-                if step is not None:
-                    context["current_step"] = int(step)
-                    context["max_steps"] = self.max_steps
-                ranked = await search_fn(
-                    query=query,
-                    keys=keys,
-                    k=1,
-                    context=context,
-                )
+        if agent_search_mode == "klg":
+            selected = await self._select_agent_by_knowledge(
+                messages=messages,
+                run_llm=run_llm,
+                shared_ctx=shared_ctx,
+                step=step,
+                candidate_name_set=candidate_name_set,
+                knowledge_search_mode=knowledge_search_mode,
+            )
+            if selected is not None:
+                return selected
+            agent_search_mode = "llm"
 
-                #print("\n--- ranked ---")
-                #print(ranked)
-
-                if ranked:
-                    agent_name = ranked[0].get("payload", {}).get("agent_name")
-                    if agent_name and agent_name in candidate_name_set:
-                        return self.agents[agent_name]
-                    key = ranked[0].get("key", "")
-                    agent_name = key.split(":", 1)[0].strip()
-                    if agent_name in candidate_name_set:
-                        return self.agents[agent_name]
-            except Exception as exc:
-                print(colorize(f"[seimei] search-based routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+        selected = await self._select_agent_from_candidates(
+            candidates=candidate_agents,
+            candidate_name_set=candidate_name_set,
+            query=query,
+            run_llm=run_llm,
+            mode=agent_search_mode,
+            step=step,
+        )
+        if selected is not None:
+            return selected
 
         # Fallback heuristic based on the most recent user turn
         last_user = None
@@ -1119,6 +1259,192 @@ class seimei:
             if pref in candidate_name_set:
                 return self.agents[pref]
         return self.agents[candidate_agent_names[0]] if candidate_agent_names else None
+
+    async def _select_agent_from_candidates(
+        self,
+        *,
+        candidates: Sequence[Agent],
+        candidate_name_set: Set[str],
+        query: str,
+        run_llm: LLMClient,
+        mode: str,
+        step: Optional[int],
+    ) -> Optional[Agent]:
+        keys = [
+            {"key": f"{agent.name}: {agent.description}", "agent_name": agent.name}
+            for agent in candidates
+        ]
+        if not keys:
+            return None
+        context = {"purpose": "agent_routing"}
+        if step is not None:
+            context["current_step"] = int(step)
+            context["max_steps"] = self.max_steps
+        try:
+            ranked = await self._search_with_mode(
+                query=query,
+                keys=keys,
+                k=1,
+                run_llm=run_llm,
+                mode=mode,
+                context=context,
+            )
+            if ranked:
+                agent_name = ranked[0].get("payload", {}).get("agent_name")
+                if agent_name and agent_name in candidate_name_set:
+                    return self.agents[agent_name]
+                key = ranked[0].get("key", "")
+                agent_name = key.split(":", 1)[0].strip()
+                if agent_name in candidate_name_set:
+                    return self.agents[agent_name]
+        except Exception as exc:
+            print(colorize(f"[seimei] search-based routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+        return None
+
+    async def _select_agent_by_knowledge(
+        self,
+        *,
+        messages: List[Dict[str, Any]],
+        run_llm: LLMClient,
+        shared_ctx: Dict[str, Any],
+        step: Optional[int],
+        candidate_name_set: Set[str],
+        knowledge_search_mode: str,
+    ) -> Optional[Agent]:
+        knowledge_store = shared_ctx.get("knowledge")
+        if not isinstance(knowledge_store, dict):
+            return None
+
+        knowledge_candidates: List[Dict[str, Any]] = []
+        for agent_name, entries in knowledge_store.items():
+            if entries is None:
+                continue
+            for entry in self._iter_knowledge_entries(entries):
+                if not isinstance(entry, dict):
+                    continue
+                text = (
+                    entry.get("knowledge")
+                    or entry.get("text")
+                    or entry.get("content")
+                    or entry.get("value")
+                )
+                if not text:
+                    continue
+                agent_value = entry.get("agent") or agent_name
+                agent_candidates = [name for name in self._coerce_agent_values(agent_value) if name != "*"]
+                if not agent_candidates:
+                    continue
+                if candidate_name_set and agent_candidates:
+                    if not any(name in candidate_name_set for name in agent_candidates):
+                        continue
+                candidate = dict(entry)
+                candidate.setdefault("agent", agent_value)
+                knowledge_candidates.append(candidate)
+
+        if not knowledge_candidates:
+            return None
+
+        keys: List[Dict[str, Any]] = []
+        for entry in knowledge_candidates:
+            key_text = (
+                entry.get("knowledge")
+                or entry.get("text")
+                or entry.get("content")
+                or entry.get("value")
+            )
+            key_text = str(key_text).strip() if key_text is not None else ""
+            if not key_text:
+                continue
+            keys.append(
+                {
+                    "key": key_text,
+                    "knowledge": entry,
+                    "tags": self._coerce_tags(entry.get("tags")),
+                }
+            )
+        if not keys:
+            return None
+
+        context: Dict[str, Any] = {"purpose": "knowledge_search"}
+        knowledge_query = shared_ctx.get("knowledge_query")
+        if isinstance(knowledge_query, str) and knowledge_query.strip():
+            context["knowledge_query"] = knowledge_query
+        if step is not None:
+            context["current_step"] = int(step)
+            context["max_steps"] = self.max_steps
+
+        try:
+            ranked = await self._search_with_mode(
+                query=messages,
+                keys=keys,
+                k=1,
+                run_llm=run_llm,
+                mode=knowledge_search_mode,
+                context=context,
+            )
+        except Exception as exc:
+            print(colorize(f"[seimei] knowledge routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+            ranked = []
+
+        selected_entry: Optional[Dict[str, Any]] = None
+        if ranked:
+            payload = ranked[0].get("payload") or {}
+            if isinstance(payload, dict) and payload.get("knowledge"):
+                selected_entry = payload.get("knowledge")
+            elif isinstance(payload, dict):
+                selected_entry = payload
+        if selected_entry is None:
+            selected_entry = knowledge_candidates[0]
+
+        agent_values = [name for name in self._coerce_agent_values(selected_entry.get("agent")) if name != "*"]
+        if candidate_name_set:
+            agent_values = [name for name in agent_values if name in candidate_name_set]
+        if not agent_values:
+            return None
+
+        if len(agent_values) == 1:
+            agent_name = agent_values[0]
+            agent_obj = self.agents.get(agent_name)
+            if agent_obj:
+                self._set_agent_routing_knowledge(agent_obj, [selected_entry])
+                return agent_obj
+            return None
+
+        agent_candidates = [self.agents[name] for name in agent_values if name in self.agents]
+        chosen_agent = await self._select_agent_from_candidates(
+            candidates=agent_candidates,
+            candidate_name_set=set(agent_values),
+            query=json.dumps(messages, ensure_ascii=False) if messages else "",
+            run_llm=run_llm,
+            mode=knowledge_search_mode,
+            step=step,
+        )
+        if chosen_agent:
+            self._set_agent_routing_knowledge(chosen_agent, [selected_entry])
+        return chosen_agent
+
+    @staticmethod
+    def _set_agent_routing_knowledge(agent_obj: Agent, entries: Sequence[Dict[str, Any]]) -> None:
+        setattr(agent_obj, "_Agent__agent_routing_knowledge", list(entries))
+
+    @staticmethod
+    def _clear_agent_routing_knowledge(agent_obj: Agent) -> None:
+        setattr(agent_obj, "_Agent__agent_routing_knowledge", None)
+
+    @staticmethod
+    def _iter_knowledge_entries(value: Any) -> Iterable[Dict[str, Any]]:
+        if value is None:
+            return []
+        if isinstance(value, dict):
+            return [value]
+        if isinstance(value, str):
+            return [{"knowledge": value}]
+        if isinstance(value, Iterable):
+            entries: List[Dict[str, Any]] = []
+            for item in value:
+                entries.extend(seimei._iter_knowledge_entries(item))
+            return entries
+        return []
 
     # -------------------------- Logging --------------------------
 
@@ -1203,7 +1529,8 @@ class seimei:
         token_limiter: Optional[TokenLimiter],
         normalized_knowledge_config: Dict[str, Any],
         manual_store_map: Dict[Optional[int], List[Dict[str, Any]]],
-        raw_knowledge_config: Optional[Dict[str, Any]],
+        raw_knowledge_load_config: Optional[Sequence[Dict[str, Any]]],
+        raw_knowledge_generate_config: Optional[Dict[str, Any]],
         knowledge_generation_result: Optional[Dict[str, Any]],
     ) -> Dict[str, Any]:
         started_ts = float(started_at)
@@ -1306,21 +1633,21 @@ class seimei:
             "generate_knowledge": bool(normalized_knowledge_config.get("generate_knowledge")),
             "load_path": normalized_knowledge_config.get("load_knowledge_path"),
             "load_path_provided": bool(normalized_knowledge_config.get("load_path_provided")),
-            "load_knowledge_steps": self._prepare_metadata_value(
-                normalized_knowledge_config.get("load_knowledge_steps")
-            ),
             "save_path": str(normalized_knowledge_config.get("save_knowledge_path"))
             if normalized_knowledge_config.get("save_knowledge_path")
             else None,
-            "knowledge_prompt_path": str(normalized_knowledge_config.get("knowledge_prompt_path"))
-            if normalized_knowledge_config.get("knowledge_prompt_path")
+            "knowledge_generation_prompt_path": str(
+                normalized_knowledge_config.get("knowledge_generation_prompt_path")
+            )
+            if normalized_knowledge_config.get("knowledge_generation_prompt_path")
             else None,
             "manual_entry_counts": manual_entry_counts,
             "manual_store_counts": manual_store_counts,
             "manual_entries": self._prepare_metadata_value(manual_entry_map),
             "manual_store_sources": self._prepare_metadata_value(manual_store_sources),
             "manual_agent_routes": self._prepare_metadata_value(manual_agent_routes),
-            "raw_config": self._prepare_metadata_value(raw_knowledge_config or {}),
+            "raw_load_config": self._prepare_metadata_value(raw_knowledge_load_config or []),
+            "raw_generate_config": self._prepare_metadata_value(raw_knowledge_generate_config or {}),
             "knowledge_store": {
                 "path": self.load_knowledge_path,
                 "entries": knowledge_entries,
@@ -1384,7 +1711,7 @@ class seimei:
             },
             "seimei_config": self._prepare_metadata_value(seimei_config_meta),
             "llm_config": self._prepare_metadata_value(llm_meta),
-            "rmsearch_config": self._prepare_metadata_value(self.rm_kwargs),
+            "rmsearch_config": self._prepare_metadata_value(self.rm_config),
             "knowledge": knowledge_meta,
         }
         return meta
@@ -1405,7 +1732,12 @@ class seimei:
         return_usage: bool = True,
         run_name: Optional[str] = None,
         workspace: Optional[Union[str, Path]] = None,
-        knowledge_config: Optional[Dict[str, Any]] = None,
+        agent_search_mode: str = "llm",
+        agent_search_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_search_mode: str = "rm",
+        knowledge_search_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_load_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_generate_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
         msg_history: List[Dict[str, Any]] = []
@@ -1425,14 +1757,36 @@ class seimei:
         log_prefix = f"[seimei {run_label}]" if run_label else "[seimei]"
         color_enabled = supports_color()
 
-        normalized_config = self._normalize_knowledge_config(knowledge_config)
+        normalized_agent_mode = self._normalize_search_mode(
+            agent_search_mode,
+            allowed={"llm", "rm", "klg"},
+            default="llm",
+            label="agent_search_mode",
+        )
+        normalized_knowledge_mode = self._normalize_search_mode(
+            knowledge_search_mode,
+            allowed={"llm", "rm"},
+            default="rm",
+            label="knowledge_search_mode",
+        )
+        normalized_agent_search_config = self._normalize_search_config(
+            agent_search_config,
+            allowed={"llm", "rm", "klg"},
+            label="agent_search_config",
+        )
+        normalized_knowledge_search_config = self._normalize_search_config(
+            knowledge_search_config,
+            allowed={"llm", "rm"},
+            label="knowledge_search_config",
+        )
+
+        normalized_config = self._normalize_knowledge_config(
+            knowledge_load_config,
+            knowledge_generate_config,
+        )
         manual_entry_map = normalized_config["manual_entries"]
         manual_store_map = normalized_config["manual_stores"]
         manual_agent_routes = normalized_config["manual_agent_routes"]
-        load_knowledge_steps = normalized_config.get("load_knowledge_steps")
-        load_knowledge_step_set: Optional[Set[int]] = None
-        if load_knowledge_steps is not None:
-            load_knowledge_step_set = set(load_knowledge_steps)
         config_load_path = normalized_config["load_knowledge_path"]
         if normalized_config["load_path_provided"]:
             self.load_knowledge_path = config_load_path
@@ -1476,8 +1830,10 @@ class seimei:
         token_limiter: Optional[TokenLimiter] = None
         run_generate_knowledge: bool = normalized_config["generate_knowledge"]
         run_save_path = normalized_config["save_knowledge_path"]
-        run_prompt_path = normalized_config["knowledge_prompt_path"]
+        run_prompt_path = normalized_config["knowledge_generation_prompt_path"]
         run_shared_ctx = dict(self.shared_ctx)
+        run_shared_ctx["agent_search_mode"] = normalized_agent_mode
+        run_shared_ctx["knowledge_search_mode"] = normalized_knowledge_mode
         if workspace not in (None, ""):
             try:
                 workspace_path = Path(workspace).expanduser()
@@ -1489,10 +1845,7 @@ class seimei:
             run_shared_ctx.pop("workspace", None)
 
         def _update_run_knowledge(step: Optional[int]) -> None:
-            allow_loaded_store = True
-            if load_knowledge_step_set is not None:
-                allow_loaded_store = step in load_knowledge_step_set if step is not None else False
-            base_store = self.knowledge_store if allow_loaded_store else {}
+            base_store = self.knowledge_store
             run_shared_ctx["knowledge"] = self._compose_step_knowledge(
                 base_store=base_store,
                 manual_entries=manual_entry_map,
@@ -1508,7 +1861,10 @@ class seimei:
         else:
             run_llm = self.llm
         run_shared_ctx["llm"] = run_llm
-        search_fn = self._make_search_fn(run_llm)
+        search_fn = self._make_search_fn(
+            run_llm,
+            mode_getter=lambda: run_shared_ctx.get("knowledge_search_mode", normalized_knowledge_mode),
+        )
         run_shared_ctx["search"] = search_fn
         self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
@@ -1539,6 +1895,18 @@ class seimei:
             step_idx += 1
 
             run_shared_ctx["current_step"] = step_idx
+            current_agent_mode = self._resolve_search_mode(
+                normalized_agent_mode,
+                normalized_agent_search_config,
+                step_idx,
+            )
+            current_knowledge_mode = self._resolve_search_mode(
+                normalized_knowledge_mode,
+                normalized_knowledge_search_config,
+                step_idx,
+            )
+            run_shared_ctx["agent_search_mode"] = current_agent_mode
+            run_shared_ctx["knowledge_search_mode"] = current_knowledge_mode
             _update_run_knowledge(step_idx)
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
@@ -1546,9 +1914,12 @@ class seimei:
             allowed_agents = manual_agent_routes.get(step_idx)
             agent_obj = await self._select_next_agent(
                 msg_history,
-                search_fn,
+                run_llm,
+                run_shared_ctx,
                 step_idx,
                 allowed_agent_names=allowed_agents,
+                agent_search_mode=current_agent_mode,
+                knowledge_search_mode=current_knowledge_mode,
             )
             if agent_obj is None:
                 if stop_reason is None:
@@ -1772,7 +2143,8 @@ class seimei:
                 token_limiter=token_limiter,
                 normalized_knowledge_config=normalized_config,
                 manual_store_map=manual_store_map,
-                raw_knowledge_config=knowledge_config,
+                raw_knowledge_load_config=knowledge_load_config,
+                raw_knowledge_generate_config=knowledge_generate_config,
                 knowledge_generation_result=knowledge_generation_result,
             )
             self._write_run_metadata(run_dir, payload)

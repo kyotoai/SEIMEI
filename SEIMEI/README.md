@@ -61,8 +61,8 @@ from seimei import seimei  # class name is `seimei` (lowercase) for convenience
 
 async def demo_code_act():
     orchestrator = seimei(
-        llm_kwargs={"model": "gpt-5-nano"},
-        rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
+        llm_config={"model": "gpt-5-nano"},
+        rm_config={"base_url": "https://kyotoai.net/v1/rmsearch"},
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=30000,
@@ -72,9 +72,9 @@ async def demo_code_act():
         messages=[
             {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
-        knowledge_config={
-            "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
-        },
+        knowledge_load_config=[
+            {"load_knowledge_path": "seimei_knowledge/knowledge.csv"},
+        ],
     )
 
 asyncio.run(demo_code_act())
@@ -92,7 +92,7 @@ asyncio.run(demo_code_act())
     ...
   ],
   "usage": {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...},
-  "knowledge_result": {...},        # present when knowledge_config["generate_knowledge"] is true
+  "knowledge_result": {...},        # present when knowledge_generate_config is provided
   "generated_knowledge": [...],     # direct list of newly generated knowledge entries
 }
 ```
@@ -167,7 +167,7 @@ Each saved run folder keeps everything you need to replay or audit the workflow:
 - `messages.json` — the entire conversation transcript, including inserted `role="agent"` blocks.
 - `steps.jsonl` — streaming log where each line records `{step, agent, result, time, knowledge}` for debugging or analytics.
 - `output.txt` — the exact final assistant reply that was returned to the caller.
-- `meta.json` — a rich summary covering model usage, stop reason, orchestrator flags (code execution, allowed commands, approval callback), rmsearch + LLM configuration, agent roster/run order, and the full `knowledge_config` (paths, manual entries, manual store sources, generate flags, and any knowledge generation result snapshots).
+- `meta.json` — a rich summary covering model usage, stop reason, orchestrator flags (code execution, allowed commands, approval callback), rmsearch + LLM configuration, agent roster/run order, and the full knowledge load/generate configs (paths, manual entries, manual store sources, and any knowledge generation result snapshots).
 - `dataset.jsonl` (in the parent directory) — append-only dataset rows that mirror `meta.json` fields plus the full steps list for offline training/eval.
 
 Each JSON record in `dataset.jsonl` has fields:
@@ -211,8 +211,8 @@ result = await orchestrator(messages=messages)
 
 **Arguments**
 - `agent_config: list[dict]` — A list of entries like `{"dir_path": "path/to/agents"}`, `{"file_path": "path/to/agent.py"}`, or `{"name": "code_act"}` to pick from already-registered agents.
-- `llm_kwargs: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url` and options like `max_concurrent_requests` for throttling.
-- `rm_kwargs: dict` — Optional; forwarded to `rmsearch` if you use it.
+- `llm_config: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url` and options like `max_concurrent_requests` for throttling.
+- `rm_config: dict` — Optional; forwarded to `rmsearch` if you use it (use `base_url` to point at the RMSearch endpoint).
 - `log_dir: str` — Directory to store dataset logs. Default: `./seimei_runs`.
 - `max_steps: int` — Hard cap on agent steps per call. Default: 8.
 - `allow_code_exec: bool` — If `True`, enables `code_act` to actually run whitelisted commands.
@@ -238,6 +238,12 @@ result = await orchestrator(messages=messages)
 - `stop_when: Optional[Callable[[list[dict]], bool]]` — Optional predicate to terminate early based on `messages`.
 - `return_usage: bool` — If `True`, returns token usage if available.
 - `run_name: Optional[str]` — Optional label shown in terminal logs (e.g., `[seimei question-1]`) and persisted to `meta.json` / `dataset.jsonl`.
+- `agent_search_mode: str` — `"llm"`, `"rm"`, or `"klg"` to control agent routing.
+- `agent_search_config: list[dict]` — Step overrides for agent routing mode (e.g., `{"mode": "rm", "step": "<3"}`).
+- `knowledge_search_mode: str` — `"llm"` or `"rm"` for knowledge selection.
+- `knowledge_search_config: list[dict]` — Step overrides for knowledge search mode.
+- `knowledge_load_config: list[dict]` — Inline knowledge snippets or load directives per step.
+- `knowledge_generate_config: dict` — Configuration for saving generated knowledge from runs.
 - The orchestrator prints agent start/finish markers to stdout so you can follow progress in real time.
 
 **Outputs**

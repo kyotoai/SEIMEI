@@ -44,6 +44,7 @@ class Agent:
         cls_desc = getattr(cls, "description", "")
         setattr(cls, "description", cls_desc)
         self.description = cls_desc
+        self.__agent_routing_knowledge: Optional[List[Dict[str, Any]]] = None
 
     async def __call__(
         self,
@@ -78,19 +79,32 @@ class Agent:
         raise NotImplementedError
     
 
-    def get_agent_knowledge(
+    async def get_agent_knowledge(
         self,
         max_items: Optional[int] = 3,
     ) -> List[Dict[str, Any]]:
         """Fetch normalized knowledge entries for an agent (including wildcard entries)."""
 
-        shared_ctx = self.__shared_ctx
+        shared_ctx = self.__shared_ctx or {}
         agent_name = self.name
 
-        if : # if rm_kwargs={"agent_routing_mode" = "klg_llm" or "klg_rm"}, self.__agent_routing_knowledge is designated before get_agent_knowledge 
-            # in this case, klg is already determined, so just return it with right format conversion. 
-        
-        knowledge = shared_ctx["knowledge"]
+        routing_knowledge = getattr(self, "_Agent__agent_routing_knowledge", None)
+        if routing_knowledge:
+            routed: List[Dict[str, Any]] = []
+            for raw_entry in _iter_entries(routing_knowledge):
+                normalized = _normalize_entry(raw_entry)
+                if not normalized:
+                    continue
+                if not normalized.get("id"):
+                    normalized["id"] = len(routed) + 1
+                routed.append(normalized)
+            if routed:
+                limit = _sanitize_limit(max_items, default=3)
+                if limit >= len(routed):
+                    return list(routed)
+                return list(routed[:limit])
+
+        knowledge = shared_ctx.get("knowledge")
 
         if not isinstance(knowledge, dict):
             return []
@@ -111,17 +125,64 @@ class Agent:
             return []
 
         limit = _sanitize_limit(max_items, default=3)
-        rm_kwargs = dict(shared_ctx.get("rm_kwargs") or {})
-        rmsearch_fn = shared_ctx.get("rmsearch_fn")
+        search_fn = shared_ctx.get("search")
+        if callable(search_fn):
+            keys: List[Dict[str, Any]] = []
+            for entry in collected:
+                text = entry.get("text") or ""
+                if not text:
+                    continue
+                key_entry = {
+                    "key": text,
+                    "knowledge": entry,
+                    "knowledge_id": entry.get("id"),
+                    "tags": entry.get("tags", []),
+                }
+                keys.append(key_entry)
+            if keys:
+                query = _build_knowledge_query(shared_ctx, agent_name)
+                try:
+                    ranked = await search_fn(
+                        query=query,
+                        keys=list(keys),
+                        k=min(limit, len(keys)),
+                        context={
+                            "purpose": "knowledge_search",
+                            "query_override": shared_ctx.get("knowledge_query"),
+                        },
+                    )
+                except Exception:
+                    ranked = []
+                ranked_entries: List[Dict[str, Any]] = []
+                if isinstance(ranked, list):
+                    key_map = {item.get("key"): item.get("knowledge") for item in keys if item.get("key")}
+                    for item in ranked:
+                        if not isinstance(item, dict):
+                            continue
+                        payload = item.get("payload")
+                        entry: Optional[Dict[str, Any]] = None
+                        if isinstance(payload, dict) and payload.get("knowledge"):
+                            entry = payload.get("knowledge")
+                        elif isinstance(payload, dict):
+                            entry = payload
+                        else:
+                            key = item.get("key")
+                            if key in key_map:
+                                entry = key_map[key]
+                        if entry and entry not in ranked_entries:
+                            ranked_entries.append(entry)
+                        if len(ranked_entries) >= limit:
+                            break
+                if ranked_entries:
+                    return ranked_entries
 
-        if (
-            rm_kwargs
-            and callable(rmsearch_fn)
-            and rm_kwargs.get("knowledge_search", True)
-        ):
+        knowledge_search_mode = str(shared_ctx.get("knowledge_search_mode") or "rm").strip().lower()
+        rm_config = dict(shared_ctx.get("rm_config") or {})
+        rmsearch_fn = shared_ctx.get("rmsearch_fn")
+        if knowledge_search_mode == "rm" and rm_config and callable(rmsearch_fn):
             ranked = _rank_with_rmsearch(
                 rmsearch_fn=rmsearch_fn,
-                rm_kwargs=rm_kwargs,
+                rm_config=rm_config,
                 agent_name=agent_name,
                 candidates=collected,
                 limit=limit,
@@ -412,7 +473,7 @@ def _sanitize_limit(max_items: Optional[int], default: int) -> int:
 
 def _rank_with_rmsearch(
     rmsearch_fn: Any,
-    rm_kwargs: Dict[str, Any],
+    rm_config: Dict[str, Any],
     agent_name: str,
     candidates: List[Dict[str, Any]],
     limit: int,
@@ -445,7 +506,7 @@ def _rank_with_rmsearch(
             keys=list(keys),
             k_key=min(limit, len(keys)),
             purpose=purpose,
-            **rm_kwargs,
+            **rm_config,
         )
     except Exception:
         return []

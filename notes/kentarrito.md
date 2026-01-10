@@ -2933,7 +2933,7 @@ messages = [
     -> I realized the reason. for now, rmsearch is called only in an agent. Not in the seimei.py. If answer agent is selected by llm_routing, rmsearch is not called because there is no knowledge for answer in knowledge_v4.csv.
     -> ! need to change seimei architecture.
 
-- [ ] Enable knowledge_agent_routing
+- [x] Enable knowledge_agent_routing
     * knowledge_search: true -> "agent_routing":False or "agent_routing":True or "knowledge_agent_routing":True
     * Design: rm_config={"base_url": "https://kyotoai.net/v1/rmsearch",}
     * Design: agent_search_mode = "llm" or "rm" or "klg",
@@ -2968,7 +2968,7 @@ messages = [
     * Agent.get_agent_knowledge will substitute get_agent_knowledge in utils.
     * when "agent_routing_mode" = "klg_llm" or "klg_rm", knowledge is selected in __select_next_agent (if knowledge for the step != []) and passes to agent_obj.knowledge. when this
 ```
-Recreate seimei/seimei.py, seimei/agent.py following the instructions below
+Modify seimei/seimei.py, seimei/agent.py following the instructions below
 
 * I want to modify the arguments of seimei. Now there are only llm_routing and rm_routing are available in seimei for agent routing but I wanna add "klg" mode, where knowledge is chosen first and depending on what agent the knowledge belongs to, seimei routes agents.
 
@@ -3016,7 +3016,7 @@ Recreate seimei/seimei.py, seimei/agent.py following the instructions below
 * You should read all the content of both seimei/seimei.py and seimei/agent.py first, read relevant parts in other files, think deeply how to modify the library, and modify it carefully. If you find some ambiguity in my instructions, ask me back about the point before you modify it.
 ```
 
-- [ ] Agent.get_agent_knowledge
+- [x] Agent.get_agent_knowledge
 
 
 

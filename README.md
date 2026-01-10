@@ -220,8 +220,8 @@ from seimei import seimei  # class name is `seimei` (lowercase) for convenience
 
 async def demo_code_act():
     orchestrator = seimei(
-        llm_kwargs={"model": "gpt-5-nano"},
-        #rm_kwargs={"url": "https://kyotoai.net/v1/rmsearch", "agent_routing":False, "knowledge_search":True},
+        llm_config={"model": "gpt-5-nano"},
+        #rm_config={"base_url": "https://kyotoai.net/v1/rmsearch"},
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=30000,
@@ -231,9 +231,9 @@ async def demo_code_act():
         messages=[
             {"role": "user", "content": "Design a single 7-day endgame plan for my turbulence surrogate project based on my past history."},
         ],
-        knowledge_config={
-            "load_knowledge_path": "seimei_knowledge/knwoledge.csv",
-        },
+        knowledge_load_config=[
+            {"load_knowledge_path": "seimei_knowledge/knowledge.csv"},
+        ],
     )
 
 asyncio.run(demo_code_act())
@@ -255,7 +255,7 @@ from seimei import seimei
 async def demo_code_act():
     orchestrator = seimei(
         agent_config=[{"name": "code_act"}],
-        llm_kwargs={"model": "gpt-4o-mini"},
+        llm_config={"model": "gpt-4o-mini"},
         allow_code_exec=True,
         allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
@@ -288,7 +288,7 @@ from seimei import seimei
 async def demo_web_search():
     orchestrator = seimei(
         agent_config=[{"name": "web_search"}],
-        llm_kwargs={"model": "gpt-4o-mini"},
+        llm_config={"model": "gpt-4o-mini"},
         agent_log_head_lines=2,
         max_tokens_per_question=4000,
     )
@@ -331,21 +331,22 @@ All defaults (model, agent file, knowledge paths, banners, limits, etc.) sit at 
 
 ### Automatic knowledge accumulation
 
-Set `knowledge_config["generate_knowledge"] = True` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
+Provide `knowledge_generate_config` when calling the orchestrator to append run retrospectives into a CSV knowledge base:
 
 ```python
 result = await orchestrator(
     messages=[{"role": "user", "content": "Find clever ways to speed up our ETL pipeline."}],
-    knowledge_config={
-        "generate_knowledge": True,
+    knowledge_generate_config={
         "save_knowledge_path": "seimei_knowledge/knowledge.csv",
-        "knowledge_prompt_path": "seimei/knowledge/prompts/generate_from_runs.md",  # or a custom prompt
-        "load_knowledge_path": "seimei_knowledge/knowledge.csv",
+        "knowledge_generation_prompt_path": "seimei/knowledge/prompts/generate_from_runs.md",
     },
+    knowledge_load_config=[
+        {"load_knowledge_path": "seimei_knowledge/knowledge.csv"},
+    ],
 )
 ```
 
-The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance. The default retrospection prompt lives at `seimei/knowledge/prompts/generate_from_runs.md`, but you can point `knowledge_prompt_path` at an alternative such as `seimei/knowledge/prompts/excel.md` for domain-specific guidance.
+The helper `seimei.knowledge.generate_from_runs` analyses the newly created run directory under `seimei_runs/` and appends JSON-normalized rows to the CSV (creating it on first use). The orchestrator reloads the knowledge store so subsequent runs benefit from the fresh guidance. The default retrospection prompt lives at `seimei/knowledge/prompts/generate_from_runs.md`, but you can point `knowledge_generation_prompt_path` at an alternative such as `seimei/knowledge/prompts/excel.md` for domain-specific guidance.
 
 Whenever the generator runs, `seimei.__call__` includes both a `knowledge_result` block (metadata, file paths, usage) and a `generated_knowledge` list that mirrors the rows added to disk:
 
@@ -357,55 +358,59 @@ if result.get("generated_knowledge"):
 
 This makes it easy to review new heuristics right in your notebook or CLI before they are reused in later runs.
 
-### Knowledge configuration reference
+### Knowledge + routing configuration reference
 
-Pass a `knowledge_config` dictionary to `seimei.__call__` to control every knowledge-related behavior for that run:
+Pass routing/knowledge options to `seimei.__call__` to control each run:
 
-- `load_knowledge_path`: CSV/JSON/JSONL file to load before the run (set to `None` to clear the current store).
-- `generate_knowledge`: Append a retrospective for the run using `seimei.knowledge.generate_from_runs`.
-- `save_knowledge_path`: Destination file for auto-generated knowledge (defaults to the last loaded path if omitted).
-- `knowledge_prompt_path`: Prompt template used during generation (defaults to `seimei/knowledge/prompts/generate_from_runs.md`).
-- `knowledge`: Inline knowledge payloads. Accepts a string, list of strings, single dict, or list of dicts. Each dict supports:
-  - `step`: int or list of ints (1-based). Limits the knowledge to specific agent steps; omitted means "all steps".
-  - `id`: Optional numeric identifier.
-  - `load_knowledge_path`: Merge an additional knowledge file only for the selected steps.
-  - `text`: Free-form knowledge snippet (stored under the `*` wildcard agent).
-  - `agent`: String or list of agent names. Scope the knowledge to those agents and, when paired with `step`, constrain routing to that agent (a list keeps LLM routing but only among the provided names).
-  - `tags`: Optional list of short labels.
+- `agent_search_mode`: `"llm"`, `"rm"`, or `"klg"` (knowledge-first routing).
+- `agent_search_config`: list of `{"mode": "...", "step": "<3"}` overrides for specific steps.
+- `knowledge_search_mode`: `"llm"` or `"rm"`.
+- `knowledge_search_config`: list of `{"mode": "...", "step": ">=1,<=2"}` overrides for specific steps.
+- `knowledge_load_config`: list of inline knowledge/load directives. Each entry supports:
+  - `step`: int list or string expression (`"<3"`, `">=1,<=2"`, `">2"`).
+  - `load_knowledge_path`: merge a CSV/JSON/JSONL file for the matching steps.
+  - `text`: free-form knowledge snippet.
+  - `agent`: string or list of agents to receive the knowledge.
+  - `tags`: optional list of labels.
+  - `id`: optional numeric identifier.
+- `knowledge_generate_config`: dict with:
+  - `save_knowledge_path`: output CSV path for generated knowledge.
+  - `knowledge_generation_prompt_path`: prompt template for retrospection.
 
 Example:
 
 ```python
-knowledge_config = {
-    "load_knowledge_path": "seimei_knowledge/yc_demo_knowledge4.csv",
-    "load_knowledge_steps": [1,2,3],
-    "generate_knowledge": True,
+knowledge_load_config = [
+    {
+        "text": "Prefer concise shell commands when drafting automation plans.",
+        "tags": ["code_act", "heuristic"],
+        "agent": "think",
+    },
+    {
+        "step": ">=1,<=2",
+        "load_knowledge_path": "seimei_knowledge/design_briefs.csv",
+    },
+    {
+        "step": ">2",
+        "text": "Before final answers double-check every cited number against the workspace files.",
+        "id": 9001,
+        "agent": ["think", "answer"],
+    },
+]
+knowledge_generate_config = {
     "save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
-    "knowledge_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
-    "knowledge": [
-        {
-            "text": "Prefer concise shell commands when drafting automation plans.",
-            "tags": ["code_act", "heuristic"],
-            "agent": "think",
-        },
-        {
-            "step": [1, 2],
-            "load_knowledge_path": "seimei_knowledge/design_briefs.csv",
-        },
-        {
-            "step": 3,
-            "text": "Before final answers double-check every cited number against the workspace files.",
-            "id": 9001,
-            "agent": ["think", "answer"],
-        },
-    ],
+    "knowledge_generation_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
 }
-result = await orchestrator(messages=dialogue, knowledge_config=knowledge_config)
+result = await orchestrator(
+    messages=dialogue,
+    agent_search_mode="klg",
+    knowledge_search_mode="rm",
+    knowledge_load_config=knowledge_load_config,
+    knowledge_generate_config=knowledge_generate_config,
+)
 ```
 
-When a manual entry defines both `step` and `agent`, SEIMEI positions that agent (or short list of agents) directly in the router for the matching step so the rerun follows the prescribed path.
-
-Step-scoped knowledge is merged into `shared_ctx["knowledge"]` right before the corresponding agent runs, so agents automatically pick it up through helpers such as `seimei.knowledge.utils.get_agent_knowledge`.
+When a knowledge entry defines both `step` and `agent`, SEIMEI constrains routing to those agents for the matching steps (or, in `"klg"` mode, routes via the selected knowledge item).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
