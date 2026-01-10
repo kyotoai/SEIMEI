@@ -1083,8 +1083,8 @@ class seimei:
                     context=context,
                 )
 
-                print("\n--- ranked ---")
-                print(ranked)
+                #print("\n--- ranked ---")
+                #print(ranked)
 
                 if ranked:
                     agent_name = ranked[0].get("payload", {}).get("agent_name")

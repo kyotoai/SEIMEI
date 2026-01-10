@@ -354,7 +354,7 @@ class LLMClient:
 
     def __init__(
         self,
-        model: str = "gpt-4o-mini",
+        model: str = "gpt-5-nano",
         api_key: Optional[str] = None,
         base_url: Optional[str] = None,
         timeout: int = 120,
@@ -434,6 +434,7 @@ class LLMClient:
         **call_kwargs: Any,
     ) -> Tuple[str, Dict[str, int]]:
         prepared_msgs, normal_system_count = prepare_messages(messages, system=system, drop_normal_system=False) #bool(system))
+        '''
         if normal_system_count > 1:
             print(
                 colorize(
@@ -450,6 +451,7 @@ class LLMClient:
                 ),
                 file=sys.stderr,
             )
+        '''
 
         payload_msgs: List[Dict[str, Any]] = []
 

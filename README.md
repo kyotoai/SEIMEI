@@ -378,6 +378,7 @@ Example:
 ```python
 knowledge_config = {
     "load_knowledge_path": "seimei_knowledge/yc_demo_knowledge4.csv",
+    "load_knowledge_steps": [1,2,3],
     "generate_knowledge": True,
     "save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
     "knowledge_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
