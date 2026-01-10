@@ -11,7 +11,6 @@ from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlu
 import requests
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge
 
 _MAX_SEARCH_RESULTS = 8
 _MAX_FETCHED_PAGES = 4
@@ -64,7 +63,7 @@ class web_search(Agent):
         if not query:
             return {"content": "No query found in the last user message."}
 
-        knowledge_entries = get_agent_knowledge(shared_ctx, "web_search")
+        knowledge_entries = await self.get_agent_knowledge()
         llm = shared_ctx.get("llm")
         refined_query = query
         refinement_note: Optional[str] = None

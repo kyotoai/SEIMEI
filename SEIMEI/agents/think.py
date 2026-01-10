@@ -4,7 +4,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from seimei.agent import Agent, register
-from seimei.knowledge.utils import get_agent_knowledge, prepare_knowledge_payload
+from seimei.knowledge.utils import prepare_knowledge_payload
 from seimei.llm import format_agent_history
 
 
@@ -61,7 +61,7 @@ class think(Agent):
         **_: Any,
     ) -> Dict[str, Any]:
         search_fn = shared_ctx.get("search")
-        knowledge_entries_raw = get_agent_knowledge(shared_ctx, "think")
+        knowledge_entries_raw = await self.get_agent_knowledge()
         knowledge_entries: Optional[List[Dict[str, Any]]] = knowledge_entries_raw or None
         knowledge_ranked = bool(knowledge_entries)
         top_k = instruction_k or shared_ctx.get("instruction_top_k") or 3
