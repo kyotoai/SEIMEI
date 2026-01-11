@@ -7,7 +7,7 @@ async def demo_overpass():
     """Minimal example that routes a single request through the Overpass agent."""
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/overpass.py"}, {"file_path": "seimei/agents/answer.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        llm_config={"model": "gpt-5-nano"},
         max_steps=3,
         max_tokens_per_question=30000,
     )

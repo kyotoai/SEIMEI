@@ -4,7 +4,7 @@ from seimei import seimei
 async def demo_code_act():
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        llm_config={"model": "gpt-5-nano"},
         allow_code_exec=True,
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
@@ -16,8 +16,7 @@ async def demo_code_act():
             {"role": "system", "content": "Get at least around 5 steps of agent outputs and make the answer."},
             {"role": "user", "content": "Analyze the files inside the current folder using python code and tell me what's SEIMEI."},
         ],
-        knowledge_config={
-            "generate_knowledge": True,
+        knowledge_generate_config={
             "save_knowledge_path": "seimei_knowledge/knowledge.csv",
         },
     )

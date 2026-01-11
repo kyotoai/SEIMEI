@@ -169,6 +169,50 @@ def build_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]] = None
     return cfg
 
 
+def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not knowledge_config:
+        return {}
+    load_config: List[Dict[str, Any]] = []
+    load_path = knowledge_config.get("load_knowledge_path")
+    load_steps = knowledge_config.get("load_knowledge_steps")
+    if load_path:
+        entry: Dict[str, Any] = {"load_knowledge_path": load_path}
+        if load_steps:
+            entry["step"] = load_steps
+        load_config.append(entry)
+    manual_entries = knowledge_config.get("knowledge")
+    if manual_entries:
+        if isinstance(manual_entries, list):
+            for item in manual_entries:
+                if isinstance(item, dict):
+                    load_config.append(dict(item))
+                elif isinstance(item, str):
+                    load_config.append({"text": item})
+        elif isinstance(manual_entries, dict):
+            load_config.append(dict(manual_entries))
+        elif isinstance(manual_entries, str):
+            load_config.append({"text": manual_entries})
+    generate_config = None
+    if (
+        knowledge_config.get("generate_knowledge")
+        or knowledge_config.get("save_knowledge_path")
+        or knowledge_config.get("knowledge_prompt_path")
+    ):
+        generate_config = {}
+        save_path = knowledge_config.get("save_knowledge_path")
+        if save_path:
+            generate_config["save_knowledge_path"] = save_path
+        prompt_path = knowledge_config.get("knowledge_prompt_path")
+        if prompt_path:
+            generate_config["knowledge_generation_prompt_path"] = prompt_path
+    payload: Dict[str, Any] = {}
+    if load_config:
+        payload["knowledge_load_config"] = load_config
+    if generate_config:
+        payload["knowledge_generate_config"] = generate_config
+    return payload
+
+
 def append_best_knowledge(entry: Dict[str, Any]) -> None:
     text = entry.get("text")
     if not text:
@@ -390,7 +434,7 @@ async def check_knowledge(
     result = await orchestrator(
         messages=[dict(msg) for msg in truncated_history],
         run_name=run_name,
-        knowledge_config=knowledge_config,
+        **split_knowledge_args(knowledge_config),
     )
     new_output = result.get("output", "")
     question = dataset_entry.get("Question", "")
@@ -444,7 +488,7 @@ async def run_problem(orchestrator, dataset_entry: Dict[str, Any], index: int) -
     base_result = await orchestrator(
         messages=[dict(msg) for msg in base_messages],
         run_name=f"train_v2_{index:04d}_base",
-        knowledge_config=build_knowledge_config(),
+        **split_knowledge_args(build_knowledge_config()),
     )
     base_output = base_result.get("output", "")
     score_info = await score_answer(orchestrator.llm, question, reference_answer, base_output)
@@ -534,8 +578,8 @@ async def run_training() -> None:
 
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
-        rm_kwargs={"url": RM_URL, "agent_routing": False, "knowledge_search": True},
+        llm_config={"model": "gpt-5-nano"},
+        rm_config={"base_url": RM_URL},
         allow_code_exec=True,
         agent_log_head_lines=1,
         max_tokens_per_question=40000,

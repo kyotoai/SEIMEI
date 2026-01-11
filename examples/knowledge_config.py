@@ -6,32 +6,31 @@ from seimei import seimei
 async def demo_knowledge_config() -> None:
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        llm_config={"model": "gpt-5-nano"},
         allow_code_exec=True,
         agent_log_head_lines=2,
         max_tokens_per_question=30000,
     )
 
-    knowledge_config = {
-        "load_knowledge_path": "seimei_knowledge/yc_demo_knowledge4.csv",
-        #"knowledge_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
-        #"save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
-        #"generate_knowledge": True,
-        "knowledge": [
-            {
-                "step": [1, 2],
-                "text": "Break automation plans into numbered steps before executing shell commands.",
-                "agent": "code_act",
-                "tags": ["code_act", "planning"],
-            },
-            {
-                "step": 3,
-                "text": "Verify every command's output before crafting the final summary.",
-                "agent": "code_act",
-                "tags": ["code_act", "planning"]
-            },
-        ],
-    }
+    knowledge_load_config = [
+        {"load_knowledge_path": "seimei_knowledge/yc_demo_knowledge4.csv"},
+        {
+            "step": [1, 2],
+            "text": "Break automation plans into numbered steps before executing shell commands.",
+            "agent": "code_act",
+            "tags": ["code_act", "planning"],
+        },
+        {
+            "step": 3,
+            "text": "Verify every command's output before crafting the final summary.",
+            "agent": "code_act",
+            "tags": ["code_act", "planning"],
+        },
+    ]
+    # knowledge_generate_config = {
+    #     "save_knowledge_path": "seimei_knowledge/yc_demo_knowledge4_output.csv",
+    #     "knowledge_generation_prompt_path": "seimei/knowledge/prompts/user_intent_alignment3.md",
+    # }
 
     result = await orchestrator(
         messages=[
@@ -44,7 +43,8 @@ async def demo_knowledge_config() -> None:
                 "content": "List the main files under the repository root and highlight any demo scripts.",
             },
         ],
-        knowledge_config=knowledge_config,
+        knowledge_load_config=knowledge_load_config,
+        # knowledge_generate_config=knowledge_generate_config,
     )
     print(result["output"])
     if result.get("knowledge_result"):
