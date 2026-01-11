@@ -12,21 +12,21 @@ agent_config = [
     {"dir_path": "./agents"},  # can be a folder or a single file path
 ]
 
-llm_kwargs = {
+llm_config = {
     "model": "gpt-5-nano",
     # "max_inference_time": 1000,
     # OR talk to a local OpenAI-compatible server:
     # "base_url": "http://localhost:7000/v1"
 }
 
-rm_kwargs = {
+rm_config = {
     "base_url": "http://localhost:7000/v1",  # optional for `rmsearch` if you use it
 }
 
 sm = seimei(
     agent_config=agent_config,
-    llm_kwargs=llm_kwargs,
-    #rm_kwargs=rm_kwargs,
+    llm_config=llm_config,
+    #rm_config=rm_config,
     log_dir="./seimei_runs",
 )
 

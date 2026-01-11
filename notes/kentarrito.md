@@ -3018,7 +3018,10 @@ Modify seimei/seimei.py, seimei/agent.py following the instructions below
 
 - [x] Agent.get_agent_knowledge
 
-
+- [x] Modify all the seimei.__init__ and seimei.__call__ related part in examples/ and exp7 ~ 12 
+```
+Modify all the seimei.__init__ and seimei.__call__ related part in examples/ and exp7 ~ 12 according to your modification
+```
 
 - [ ] Rerun the eval_v4.py
 

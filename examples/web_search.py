@@ -4,7 +4,7 @@ from seimei import seimei
 async def demo_web_search():
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/web_search.py"}],
-        llm_kwargs={"model": "gpt-5-nano"},
+        llm_config={"model": "gpt-5-nano"},
         agent_log_head_lines=2,
         max_tokens_per_question=50000,
     )

@@ -24,11 +24,11 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results4.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results.json"
 DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
-DEFAULT_LLM_URL = "https://v5710arnysphb8-8000.proxy.runpod.net/v1"  # Set None if you use openai model
-DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
-DEFAULT_BATCH_SIZE = 10
+DEFAULT_LLM_URL = "https://ln48ei7p3efg66-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_RM_URL = "https://oyl94a4yv16q5y-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 40
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_N_CHECK_KNOWLEDGE = 3
@@ -653,8 +653,8 @@ def _build_orchestrator(args: argparse.Namespace, workspace: Path):
         return seimei(
             # agent_config=[{"file_path": "seimei/agents/code_act.py"}],
             agent_config=[{"name": "code_act"}],
-            llm_kwargs={"base_url": args.llm_url, "model":args.llm_model_name},
-            rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
+            llm_config={"base_url": args.llm_url, "model":args.llm_model_name},
+            rm_config={"base_url": args.rm_url},
             allow_code_exec=True,
             agent_log_head_lines=1,
             max_tokens_per_question=80000,
@@ -716,13 +716,14 @@ async def run_orchestrator_with_patch(
                 cached["msg_history"] = cached.get("msg_history")
             return cached
 
+    knowledge_kwargs = split_knowledge_args(knowledge_config)
     with patch_manager.apply_for_problem(dataset_entry, dataset_index):
         result = await _run_llm_request(
             llm_request,
             orchestrator,
             messages=messages,
             run_name=run_name,
-            knowledge_config=knowledge_config,
+            **knowledge_kwargs,
             workspace=patch_manager.workspace,
         )
 
@@ -1098,6 +1099,50 @@ def build_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]] = None
     if manual_entries:
         cfg["knowledge"] = manual_entries
     return cfg
+
+
+def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not knowledge_config:
+        return {}
+    load_config: List[Dict[str, Any]] = []
+    load_path = knowledge_config.get("load_knowledge_path")
+    load_steps = knowledge_config.get("load_knowledge_steps")
+    if load_path:
+        entry: Dict[str, Any] = {"load_knowledge_path": load_path}
+        if load_steps:
+            entry["step"] = load_steps
+        load_config.append(entry)
+    manual_entries = knowledge_config.get("knowledge")
+    if manual_entries:
+        if isinstance(manual_entries, list):
+            for item in manual_entries:
+                if isinstance(item, dict):
+                    load_config.append(dict(item))
+                elif isinstance(item, str):
+                    load_config.append({"text": item})
+        elif isinstance(manual_entries, dict):
+            load_config.append(dict(manual_entries))
+        elif isinstance(manual_entries, str):
+            load_config.append({"text": manual_entries})
+    generate_config = None
+    if (
+        knowledge_config.get("generate_knowledge")
+        or knowledge_config.get("save_knowledge_path")
+        or knowledge_config.get("knowledge_prompt_path")
+    ):
+        generate_config = {}
+        save_path = knowledge_config.get("save_knowledge_path")
+        if save_path:
+            generate_config["save_knowledge_path"] = save_path
+        prompt_path = knowledge_config.get("knowledge_prompt_path")
+        if prompt_path:
+            generate_config["knowledge_generation_prompt_path"] = prompt_path
+    payload: Dict[str, Any] = {}
+    if load_config:
+        payload["knowledge_load_config"] = load_config
+    if generate_config:
+        payload["knowledge_generate_config"] = generate_config
+    return payload
 
 
 def get_messages_for_run(

@@ -220,6 +220,50 @@ def build_manual_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]]
     return cfg
 
 
+def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
+    if not knowledge_config:
+        return {}
+    load_config: List[Dict[str, Any]] = []
+    load_path = knowledge_config.get("load_knowledge_path")
+    load_steps = knowledge_config.get("load_knowledge_steps")
+    if load_path:
+        entry: Dict[str, Any] = {"load_knowledge_path": load_path}
+        if load_steps:
+            entry["step"] = load_steps
+        load_config.append(entry)
+    manual_entries = knowledge_config.get("knowledge")
+    if manual_entries:
+        if isinstance(manual_entries, list):
+            for item in manual_entries:
+                if isinstance(item, dict):
+                    load_config.append(dict(item))
+                elif isinstance(item, str):
+                    load_config.append({"text": item})
+        elif isinstance(manual_entries, dict):
+            load_config.append(dict(manual_entries))
+        elif isinstance(manual_entries, str):
+            load_config.append({"text": manual_entries})
+    generate_config = None
+    if (
+        knowledge_config.get("generate_knowledge")
+        or knowledge_config.get("save_knowledge_path")
+        or knowledge_config.get("knowledge_prompt_path")
+    ):
+        generate_config = {}
+        save_path = knowledge_config.get("save_knowledge_path")
+        if save_path:
+            generate_config["save_knowledge_path"] = save_path
+        prompt_path = knowledge_config.get("knowledge_prompt_path")
+        if prompt_path:
+            generate_config["knowledge_generation_prompt_path"] = prompt_path
+    payload: Dict[str, Any] = {}
+    if load_config:
+        payload["knowledge_load_config"] = load_config
+    if generate_config:
+        payload["knowledge_generate_config"] = generate_config
+    return payload
+
+
 def get_messages_for_run(
     run_result: Dict[str, Any],
     log_dir: str,
@@ -466,7 +510,7 @@ async def run_baseline_inference(
     result = await orchestrator(
         messages=[dict(msg) for msg in base_messages],
         run_name=run_name,
-        knowledge_config=build_manual_knowledge_config(),
+        **split_knowledge_args(build_manual_knowledge_config()),
     )
     normalize_result_run_id(result, orchestrator.log_dir)
     return result
@@ -575,7 +619,7 @@ async def run_knowledge_rerun(
     result = await orchestrator(
         messages=rerun_messages,
         run_name=run_name,
-        knowledge_config=build_manual_knowledge_config(manual_entries),
+        **split_knowledge_args(build_manual_knowledge_config(manual_entries)),
     )
     normalize_result_run_id(result, orchestrator.log_dir)
     return result
@@ -773,11 +817,9 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
     orchestrator = seimei(
         agent_config=[{"file_path": "seimei/agents/code_act.py"}],
-        llm_kwargs={"model": args.model},
-        rm_kwargs={
-            "url": args.rm_url or DEFAULT_RM_URL,
-            "agent_routing": False,
-            "knowledge_search": True,
+        llm_config={"model": args.model},
+        rm_config={
+            "base_url": args.rm_url or DEFAULT_RM_URL,
         },
         allow_code_exec=True,
         log_dir=args.log_dir,

@@ -9,7 +9,7 @@ This document describes the algorithm implemented in `exp5/train_v2.py`, the req
 1. **Baseline inference** – Run SEIMEI with no additional knowledge to capture the agent's natural reasoning.
 2. **Step diagnosis** – Feed the full transcript to `seimei/knowledge/prompts/gen_step.md` so an auxiliary LLM can identify the first agent step whose reasoning drifts away from the correct solution path.
 3. **Knowledge synthesis** – Using the diagnosed step, question context, and the currently best transcript, `train_v2.py` calls an internal prompt that explicitly states "this knowledge replaces agent step _k_". The prompt requests a JSON payload containing the knowledge text, agent target, tags, and rationale.
-4. **Knowledge-injected replay** – The script truncates the recorded run before the diagnosed step (leveraging the `load_run_messages` resume flow from `seimei/README.md`) and replays the run with a manual `knowledge_config` entry for that step. Knowledge generation is disabled inside SEIMEI; only the manually supplied entry guides the agent.
+4. **Knowledge-injected replay** – The script truncates the recorded run before the diagnosed step (leveraging the `load_run_messages` resume flow from `seimei/README.md`) and replays the run with a manual `knowledge_load_config` entry for that step. Knowledge generation is disabled inside SEIMEI; only the manually supplied entry guides the agent.
 5. **check_knowledge evaluation** – `check_knowledge(...)` re-runs SEIMEI, scores the new answer (0–10) via the `SCORING_SYSTEM_PROMPT`, and compares it with the best score so far. When a new score exceeds the previous best, the new run becomes the reference for the next iteration and the `[chosen, rejected]` indices are recorded for DPO comparisons.
 6. **Iterative refinement** – Steps 3–5 repeat `MAX_KNOWLEDGE_ITERATIONS` times (default: 3) so that each iteration analyzes the latest best transcript and proposes a sharper piece of knowledge for the same step.
 
@@ -62,7 +62,7 @@ The script will iterate through every dataset entry, printing status messages su
 
 - Update `MAX_KNOWLEDGE_ITERATIONS` in `train_v2.py` to explore deeper refinement loops.
 - Replace `code_act` with other agents by editing `agent_config`.
-- Swap in a different scoring model by changing `llm_kwargs["model"]` or the `SCORING_SYSTEM_PROMPT`.
+- Swap in a different scoring model by changing `llm_config["model"]` or the `SCORING_SYSTEM_PROMPT`.
 - `train_v2_dpo.json` is overwritten on each run; version it separately if you need checkpoints.
 
 With these steps, `train_v2.py` performs the requested "infer → diagnose → relaunch with knowledge → compare" cycle and produces both reusable knowledge and preference data for DPO-style training.
