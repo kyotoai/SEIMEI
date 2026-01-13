@@ -3112,13 +3112,30 @@ DEFAULT_KNOWLEDGE_PER_STEP -> DEFAULT_N_CHUNKS
 
 5. Refer to exp11_plasma_gkv_v5/train_v4_eval_sample.py for base of this code. Read all of the content first. Since this file is modified and so many important features like caching inference history or batch processing, don't lose important functions. Also, exp11_plasma_gkv_v5/eval_v4.py also has important functions so refer to it too.
 ```
-    - [ ] Add manual knowledge like "Nah, these files are not really related, let's find others"
-    - [ ] need to add answer knowledge too. (!need to think about how to put restriction on it)
-    - [ ] knowledge to investigate each concrete file.
+
+- [x] Improve knowledge pool in train_v5.py
+    - [x] Add manual knowledge like "Nah, these files are not really related, let's find others"
+    - [x] need to add answer knowledge too. (!need to think about how to put restriction on it)
+    - [x] knowledge to investigate each concrete file.
 ```
+In exp11_plasma_gkv_v5/train_v5.py, add modification following:
+
 1. Add following manual knowledge.
     I. Knowledge to deny past reasoning step like {"agent":"think", "text":"This reasoning way seems a bit off. Think about different way to solve the user's problem."}, {"agent":"code_act", "text":"The file you investigated seems unrelated. Look for other files which seem to be relevant."}. Add a several ones for this.
-    II. Add knowledge to investigate each file like {"agent":"code_act", "text":"Investigate "}.
+    II. Add knowledge to investigate each file like {"agent":"code_act", "text":"Investigate src/gkvp_advnc.f90. This file is about ..."}. Make this type of knowledge for files designated by 
+    [
+        {
+            "folder_path": "./src/",
+        },
+        {
+            "folder_path": "./run/",
+            "exclude": ["backup/"],
+        },
+        {
+            "folder_path": "./lib/",
+            "exclude": ["sample_bessel/", "Bessel0_Zeros.f90"],
+        },
+    ]
 
     III. Add knowledge about answer agent like {"agent":"answer", "text":"From the agent output obtained in previous steps, give clear answer."}
 
@@ -3137,7 +3154,6 @@ DEFAULT_KNOWLEDGE_PER_STEP -> DEFAULT_N_CHUNKS
 - [ ] Run train_v5.py -> eval_v5.py
 
 - [ ] Improve dataset
-
 
 - [ ] Scale dataset
 
