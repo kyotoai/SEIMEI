@@ -3023,13 +3023,124 @@ Modify seimei/seimei.py, seimei/agent.py following the instructions below
 Modify all the seimei.__init__ and seimei.__call__ related part in examples/ and exp7 ~ 12 according to your modification
 ```
 
-- [ ] Rerun the eval_v4.py
 
-- [ ] improve dataset
-- [ ] improve scoring mechanism
-- [ ] Rerun train_v4_eval_sample.py -> eval_v4.py again
+## Jan 12
+
+- [x] Rerun the eval_v4.py
+- [ ] Debug the new SEIMEI mode "klg"
+    - [x] a lot of "knowledge_used" is empty
+    -> maybe it's because rmsearch api is custom not vllm_serve 
+    - [ ] even if rm_url doesn't work, knowledge is extracted. random or llm_routing is being applied, which shouldn't be.
+    - [ ] random might not be working rn. the score is too high. In random, knowledge should be chosen in eval_v4.py and pass it to orchestrator as a manual knowledge.
+
+-> exp11_plasma_gkv_v5/eval_v4_results2.json, exp11_plasma_gkv_v5/eval_v4_results2_qwen4b.json
+
+-> qwen4b
+    "overall_base_mean": 5.5412,
+    "overall_random_klg_mean": 5.9988,
+    "overall_rmsearch_klg_mean": 5.8438,
+    "overall_rmsearch_klg_mean": 5.0967,
+
+
+```
+nohup vllm serve /workspace/qwen4b-reward-converted-model \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+```
+or
+```
+nohup vllm serve /workspace/qwen4b-reward-exp11-model1-360 \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+```
+
+```
+nohup uvicorn rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+```
+
+
+- [x] Make train_v5.py
+    - [x] Think about the demo for 19th (show seimei new feature like "it thinks longer", "connects more thought", etc.) -> score improvement, long term thinking, specific domain knowledge
+    - [x] Improve scoring mechanism (answer should be 2 for designating same file, 2 for coding the same part of the code and 3 for writing the same functional code. 3 for logical success in the reasoning step)
+
+    - [x] Knowledge should be modified and added through some algorithm
+    - [x] sampling should be the key
+    - [x] rmsearch should sample knowledge in train_v5 (repeating this may be able to lead to constant improvement)
+    - [x] number of steps should be more than 10
+```
+Make exp11_plasma_gkv_v5/train_v5.py implementing the following features:
+
+1. Scoring prompt should be changed. score (max 10) should be summed up from +2 for modifying the correct file, +2 for modifying the same part as the correct one, +3 for writing the same functional code as a deleted part, +3 for how directly knowledge texts contribute to the reasoning steps (+1 if knowledge figures out the correct file, +1 if knowledge correctly figures out the code snippet to be modified, and +1 if knowledge contributes the entire reasoning improvement). To derive the score, you need to additionally put patch to delete the original code, entire reasoning history message, and all steps of knowledge texts which augmented the reasoning. Also prompt should look like
+
+prompt = (
+    "(instruction1)\n\n"
+    f"<QUESTION>\n{question}\n</QUESTION>\n\n"
+    f"<DELETED ORIGINAL CODE>\n{patch}\n</DELETED ORIGINAL CODE>\n\n"
+    f"<REFERENCE ANSWER>\n{reference_answer}\n</REFERENCE ANSWER>\n\n"
+    f"<MODEL ANSWER>\n{model_answer}\n</MODEL ANSWER>\n\n"
+    "<REASONING HISTORY>\n"
+    "<STEP 1>\n<AGENT OUTPUT></AGENT OUTPUT>\n<USED KNOWLEDGE></USED KNOWLEDGE>\n</STEP 1>\n"
+    ...
+    "</REASONING HISTORY>\n\n"
+    "(instruction2)"
+)
+
+2. Auto knowledge modification. After scoring is done, modify knowledge so that code_act won't get same errors, add more information to make the knowledge better, etc. Prompt should be like
+
+prompt = (
+    "(instruction1)\n\n"
+    f"<QUESTION>\n{question}\n</QUESTION>\n\n"
+    f"<DELETED ORIGINAL CODE>\n{patch}\n</DELETED ORIGINAL CODE>\n\n"
+    f"<REFERENCE ANSWER>\n{reference_answer}\n</REFERENCE ANSWER>\n\n"
+    "<REASONING HISTORY>\n"
+    "<STEP 1>\n<AGENT OUTPUT></AGENT OUTPUT>\n<USED KNOWLEDGE></USED KNOWLEDGE>\n</STEP 1>\n"
+    ...
+    "</REASONING HISTORY>\n\n"
+    "(instruction2)"
+)
+
+After you get modify the knowledge, you should update the knowledge pool by substituting the original knowledge by the new one. Also save the final knowledge pool to DEFAULT_FINAL_KLG_POOL_SAVE_PATH (EXP_DIR / "knowledge_v5.csv") (refer to knowledge_v4.py for its format.)
+
+3. About the knowledge sampling method. In train_v5, change sampling mode depending on DEFAULT_KLG_SAMPLE_MODE ("llm" or "rm"). Now train_v4_eval_sample.py lets llm decide which knowledge to act on a agent step. But if DEFAULT_KLG_SAMPLE_MODE = "rm", use rmsearch to decide which knowedge to choose. (refer to eval_v4.py for how to activate rmsearch). Also this time sampling method works like this:
+    I. get top-DEFAULT_TOP_N_SAMPLE_KLG (like 5) knowledge texts for DEFAULT_N_STEPS steps by "llm" or "rm"
+    II. From the top knowledge texts, choose one of them for one inference following a distribution.
+    III. The distribution is determined by DEFAULT_DISTRIBUTION_DECAY_RATE (like 0.5) and DEFAULT_RANDOM_KLG_SAMPLING_RATE (like 0.5). If they are 0.5 and 0.5, and DEFAULT_TOP_N_SAMPLE_KLG is 4, random klg is selected at 50% and top-1 is selected at 50*1/(1+0.5+0.5**2+0.5**3)%, top-2 is done at 50*0.5/(1+0.5+0.5**2+0.5**3)% ...
+
+4. Change the following variable names
+DEFAULT_N_KNOWLEDGE_STEPS -> DEFAULT_N_STEPS
+DEFAULT_KNOWLEDGE_PER_STEP -> DEFAULT_N_CHUNKS
+
+5. Refer to exp11_plasma_gkv_v5/train_v4_eval_sample.py for base of this code. Read all of the content first. Since this file is modified and so many important features like caching inference history or batch processing, don't lose important functions. Also, exp11_plasma_gkv_v5/eval_v4.py also has important functions so refer to it too.
+```
+    - [ ] Add manual knowledge like "Nah, these files are not really related, let's find others"
+    - [ ] need to add answer knowledge too. (!need to think about how to put restriction on it)
+    - [ ] knowledge to investigate each concrete file.
+```
+1. Add following manual knowledge.
+    I. Knowledge to deny past reasoning step like {"agent":"think", "text":"This reasoning way seems a bit off. Think about different way to solve the user's problem."}, {"agent":"code_act", "text":"The file you investigated seems unrelated. Look for other files which seem to be relevant."}. Add a several ones for this.
+    II. Add knowledge to investigate each file like {"agent":"code_act", "text":"Investigate "}.
+
+    III. Add knowledge about answer agent like {"agent":"answer", "text":"From the agent output obtained in previous steps, give clear answer."}
+
+2. Activate think agent in agent_config in seimei __init__.
+```
+
+- [ ] other modification related to train_v5.py
+    - [ ] How knowledge is prompted should be checked (code_act.py, answer.py) 
+    - [ ] dpo_converter should be changed
+    - [ ] adpo_lora_example.py loss should be changed to loss = r_step1*r_step2*...
+    - [ ] try GRPO in adpo_lora_example.py 
+```
+
+```
+
+- [ ] Run train_v5.py -> eval_v5.py
+
+- [ ] Improve dataset
+
 
 - [ ] Scale dataset
-- [ ] knowledge improvement
-- [ ] (opt) 
+
+
+
 
