@@ -6,6 +6,7 @@ import inspect
 import io
 import json
 import os
+import random
 import re
 import sys
 import time
@@ -536,6 +537,15 @@ class seimei:
         return number
 
     @staticmethod
+    def _coerce_float(value: Any) -> Optional[float]:
+        if value in (None, ""):
+            return None
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _coerce_tags(value: Any) -> List[str]:
         if value is None:
             return []
@@ -609,12 +619,38 @@ class seimei:
             return entries
         return []
 
+    @staticmethod
+    def _coerce_sampling_distribution(value: Any, *, label: str) -> List[float]:
+        if isinstance(value, dict):
+            raise ValueError(f"{label} must be a list of non-negative numbers")
+        if isinstance(value, (list, tuple, set)):
+            items = list(value)
+        elif isinstance(value, Iterable) and not isinstance(value, (str, bytes)):
+            items = list(value)
+        else:
+            raise ValueError(f"{label} must be a list of non-negative numbers")
+        if not items:
+            raise ValueError(f"{label} must not be empty")
+        weights: List[float] = []
+        for item in items:
+            try:
+                weight = float(item)
+            except (TypeError, ValueError):
+                raise ValueError(f"{label} must be a list of non-negative numbers")
+            if weight < 0:
+                raise ValueError(f"{label} must be a list of non-negative numbers")
+            weights.append(weight)
+        if all(weight == 0 for weight in weights):
+            raise ValueError(f"{label} must include a positive weight")
+        return weights
+
     def _normalize_search_config(
         self,
         config: Any,
         *,
         allowed: Set[str],
         label: str,
+        enforce_topk: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         normalized: List[Dict[str, Any]] = []
         for raw in self._coerce_search_config_list(config):
@@ -622,7 +658,41 @@ class seimei:
             matcher = self._build_step_matcher(raw.get("step"))
             if matcher is None:
                 raise ValueError(f"{label}.step must be set for mode '{mode}'")
-            normalized.append({"mode": mode, "matcher": matcher})
+            entry: Dict[str, Any] = {"mode": mode, "matcher": matcher}
+
+            if "topk" in raw and raw.get("topk") not in (None, ""):
+                topk_value = self._coerce_positive_int(raw.get("topk"))
+                if topk_value is None:
+                    raise ValueError(f"{label}.topk must be a positive integer")
+                if enforce_topk is not None and topk_value != enforce_topk:
+                    raise ValueError(f"{label}.topk must be {enforce_topk}")
+                entry["topk"] = topk_value
+
+            if "sampling_topk" in raw and raw.get("sampling_topk") not in (None, ""):
+                sampling_topk = self._coerce_positive_int(raw.get("sampling_topk"))
+                if sampling_topk is None:
+                    raise ValueError(f"{label}.sampling_topk must be a positive integer")
+                entry["sampling_topk"] = sampling_topk
+
+            if "sampling_distribution" in raw and raw.get("sampling_distribution") not in (None, ""):
+                entry["sampling_distribution"] = self._coerce_sampling_distribution(
+                    raw.get("sampling_distribution"),
+                    label=f"{label}.sampling_distribution",
+                )
+
+            if "sampling_distribution_decay_rate" in raw and raw.get("sampling_distribution_decay_rate") not in (None, ""):
+                decay_rate = self._coerce_float(raw.get("sampling_distribution_decay_rate"))
+                if decay_rate is None or decay_rate < 0:
+                    raise ValueError(f"{label}.sampling_distribution_decay_rate must be a non-negative number")
+                entry["sampling_distribution_decay_rate"] = decay_rate
+
+            if "random_sampling_rate" in raw and raw.get("random_sampling_rate") not in (None, ""):
+                random_rate = self._coerce_float(raw.get("random_sampling_rate"))
+                if random_rate is None or random_rate < 0 or random_rate > 1:
+                    raise ValueError(f"{label}.random_sampling_rate must be between 0 and 1")
+                entry["random_sampling_rate"] = random_rate
+
+            normalized.append(entry)
         return normalized
 
     @staticmethod
@@ -639,6 +709,41 @@ class seimei:
             if callable(matcher) and matcher(step):
                 resolved = entry.get("mode", resolved)
         return resolved
+
+    @staticmethod
+    def _resolve_search_settings(
+        base_mode: str,
+        config: Sequence[Dict[str, Any]],
+        step: Optional[int],
+        *,
+        base_topk: Optional[int] = None,
+    ) -> Tuple[Dict[str, Any], Optional[Dict[str, Any]]]:
+        settings: Dict[str, Any] = {
+            "mode": base_mode,
+            "topk": base_topk,
+            "sampling_topk": None,
+            "sampling_distribution": None,
+            "sampling_distribution_decay_rate": None,
+            "random_sampling_rate": None,
+        }
+        matched_entry: Optional[Dict[str, Any]] = None
+        if step is None:
+            return settings, matched_entry
+        for entry in config:
+            matcher = entry.get("matcher")
+            if callable(matcher) and matcher(step):
+                matched_entry = entry
+                settings["mode"] = entry.get("mode", settings["mode"])
+                for key in (
+                    "topk",
+                    "sampling_topk",
+                    "sampling_distribution",
+                    "sampling_distribution_decay_rate",
+                    "random_sampling_rate",
+                ):
+                    if key in entry:
+                        settings[key] = entry.get(key)
+        return settings, matched_entry
 
     def _compose_step_knowledge(
         self,
@@ -725,6 +830,7 @@ class seimei:
         self,
         run_llm: LLMClient,
         mode_getter: Optional[Callable[[], str]] = None,
+        settings_getter: Optional[Callable[[], Optional[Dict[str, Any]]]] = None,
     ) -> Callable[..., Any]:
         async def _search(
             query: str,
@@ -734,6 +840,7 @@ class seimei:
             context: Optional[Dict[str, Any]] = None,
         ) -> List[Dict[str, Any]]:
             mode = mode_getter() if mode_getter else "rm"
+            settings = settings_getter() if settings_getter else None
             return await self._search_with_mode(
                 query=query,
                 keys=keys,
@@ -741,6 +848,7 @@ class seimei:
                 run_llm=run_llm,
                 mode=mode,
                 context=context or {},
+                search_settings=settings,
             )
 
         return _search
@@ -943,6 +1051,93 @@ class seimei:
                     return records
         return records[:limit]
 
+    @staticmethod
+    def _build_decay_weights(count: int, decay_rate: float) -> List[float]:
+        weights: List[float] = []
+        current = 1.0
+        for _ in range(max(count, 0)):
+            weights.append(current)
+            current *= decay_rate
+        return weights
+
+    @staticmethod
+    def _sample_without_replacement(
+        items: Sequence[Dict[str, Any]],
+        weights: Sequence[float],
+        k: int,
+    ) -> List[Dict[str, Any]]:
+        pool = list(items)
+        weight_pool = list(weights)
+        selected: List[Dict[str, Any]] = []
+        k = min(k, len(pool))
+        while pool and weight_pool and len(selected) < k:
+            total = sum(weight for weight in weight_pool if weight > 0)
+            if total <= 0:
+                break
+            threshold = random.random() * total
+            cumulative = 0.0
+            chosen_idx = None
+            for idx, weight in enumerate(weight_pool):
+                if weight <= 0:
+                    continue
+                cumulative += weight
+                if threshold <= cumulative:
+                    chosen_idx = idx
+                    break
+            if chosen_idx is None:
+                break
+            selected.append(pool.pop(chosen_idx))
+            weight_pool.pop(chosen_idx)
+        if len(selected) < k and pool:
+            selected.extend(pool[: k - len(selected)])
+        return selected
+
+    @staticmethod
+    def _build_random_results(
+        candidates: Sequence[Dict[str, Any]],
+        k: int,
+        *,
+        source: str,
+    ) -> List[Dict[str, Any]]:
+        if k <= 0:
+            return []
+        pool = list(candidates)
+        if not pool:
+            return []
+        if k >= len(pool):
+            chosen = pool
+        else:
+            chosen = random.sample(pool, k)
+        return [
+            {
+                "key": item.get("key"),
+                "payload": item,
+                "score": None,
+                "source": source,
+            }
+            for item in chosen
+        ]
+
+    def _apply_sampling_results(
+        self,
+        results: Sequence[Dict[str, Any]],
+        *,
+        effective_k: int,
+        sampling_topk: int,
+        distribution_weights: Sequence[float],
+    ) -> List[Dict[str, Any]]:
+        if not results or effective_k <= 0:
+            return []
+        pool = list(results[:sampling_topk])
+        if len(pool) <= effective_k:
+            return pool
+        if not distribution_weights:
+            return pool[:effective_k]
+        weights = list(distribution_weights[: len(pool)])
+        if not weights:
+            return pool[:effective_k]
+        return self._sample_without_replacement(pool, weights, effective_k)
+
     async def _search_with_mode(
         self,
         query: Union[str, Sequence[Dict[str, Any]]],
@@ -952,12 +1147,72 @@ class seimei:
         run_llm: Optional[LLMClient],
         mode: str,
         context: Optional[Dict[str, Any]] = None,
+        search_settings: Optional[Dict[str, Any]] = None,
     ) -> List[Dict[str, Any]]:
         if not keys:
             return []
 
-        limit = max(int(k), 1)
-        key_map = {item.get("key"): item for item in keys if isinstance(item, dict) and item.get("key")}
+        candidates = [item for item in keys if isinstance(item, dict) and item.get("key")]
+        if not candidates:
+            return []
+
+        requested_k = self._coerce_positive_int(k) or 1
+        settings = search_settings or {}
+        topk_override = self._coerce_positive_int(settings.get("topk")) if isinstance(settings, dict) else None
+        effective_k = topk_override or requested_k
+        candidate_count = len(candidates)
+        if effective_k > candidate_count:
+            effective_k = candidate_count
+        if effective_k <= 0:
+            return []
+
+        sampling_topk = None
+        if isinstance(settings, dict):
+            sampling_topk = self._coerce_positive_int(settings.get("sampling_topk"))
+        distribution = settings.get("sampling_distribution") if isinstance(settings, dict) else None
+        decay_rate = settings.get("sampling_distribution_decay_rate") if isinstance(settings, dict) else None
+
+        if distribution:
+            distribution_weights = list(distribution)
+            if sampling_topk is None:
+                sampling_topk = len(distribution_weights)
+            else:
+                sampling_topk = min(sampling_topk, len(distribution_weights))
+        else:
+            distribution_weights = []
+            if decay_rate is not None and sampling_topk is None:
+                sampling_topk = effective_k
+        if sampling_topk is None:
+            sampling_topk = effective_k
+        sampling_topk = min(sampling_topk, candidate_count)
+        if sampling_topk < effective_k:
+            effective_k = sampling_topk
+        if effective_k <= 0:
+            return []
+
+        if distribution_weights:
+            distribution_weights = distribution_weights[:sampling_topk]
+        elif decay_rate is not None:
+            distribution_weights = self._build_decay_weights(sampling_topk, float(decay_rate))
+
+        random_rate = None
+        if isinstance(settings, dict):
+            random_rate = settings.get("random_sampling_rate")
+        if random_rate is not None:
+            try:
+                rate_value = float(random_rate)
+            except (TypeError, ValueError):
+                rate_value = 0.0
+            if rate_value > 0 and random.random() < rate_value:
+                return self._build_random_results(
+                    candidates,
+                    effective_k,
+                    source="random_sampling",
+                )
+
+        search_limit = sampling_topk if (sampling_topk > effective_k or distribution_weights) else effective_k
+        search_limit = min(search_limit, candidate_count)
+        key_map = {item.get("key"): item for item in candidates}
         _, conversation_text, focus_text = self._prepare_query_input(query)
         rm_query = focus_text or conversation_text
         if isinstance(query, str):
@@ -980,23 +1235,34 @@ class seimei:
             try:
                 rm_result = self._rmsearch(
                     query=rm_query,
-                    keys=list(keys),
-                    k_key=limit,
+                    keys=list(candidates),
+                    k_key=search_limit,
                     purpose=purpose,
                 )
                 if asyncio.iscoroutine(rm_result):
                     rm_result = await rm_result
                 results = self._attach_payloads(rm_result or [], key_map)
                 if results:
-                    return results[:limit]
+                    return self._apply_sampling_results(
+                        results,
+                        effective_k=effective_k,
+                        sampling_topk=sampling_topk,
+                        distribution_weights=distribution_weights,
+                    )
             except Exception as exc:
                 print(colorize(f"[seimei] rmsearch selection failed: {exc}", ERROR_COLOR), file=sys.stderr)
-        return await self._llm_route_search(
+        results = await self._llm_route_search(
             query=query,
-            keys=keys,
-            k=limit,
+            keys=candidates,
+            k=search_limit,
             run_llm=run_llm or self.llm,
             context=context or {},
+        )
+        return self._apply_sampling_results(
+            results,
+            effective_k=effective_k,
+            sampling_topk=sampling_topk,
+            distribution_weights=distribution_weights,
         )
 
     @staticmethod
@@ -1173,6 +1439,9 @@ class seimei:
         allowed_agent_names: Optional[Sequence[str]] = None,
         agent_search_mode: str = "llm",
         knowledge_search_mode: str = "rm",
+        agent_search_settings: Optional[Dict[str, Any]] = None,
+        knowledge_search_settings: Optional[Dict[str, Any]] = None,
+        knowledge_settings_override: bool = False,
     ) -> Optional[Agent]:
         if not self.agents:
             return None
@@ -1208,12 +1477,28 @@ class seimei:
             return None
         candidate_name_set = set(candidate_agent_names)
 
+        sanitized_agent_settings = dict(agent_search_settings or {})
+        sanitized_agent_settings.pop("random_sampling_rate", None)
+        random_rate = None
+        if isinstance(agent_search_settings, dict):
+            random_rate = agent_search_settings.get("random_sampling_rate")
+        if random_rate is not None:
+            try:
+                rate_value = float(random_rate)
+            except (TypeError, ValueError):
+                rate_value = 0.0
+            if rate_value > 0 and random.random() < rate_value:
+                return random.choice(candidate_agents)
+
         try:
             query = json.dumps(messages, ensure_ascii=False)
         except Exception:
             query = str(messages)
 
         if agent_search_mode == "klg":
+            knowledge_settings = dict(knowledge_search_settings or {})
+            if knowledge_settings_override:
+                knowledge_settings.pop("random_sampling_rate", None)
             selected = await self._select_agent_by_knowledge(
                 messages=messages,
                 run_llm=run_llm,
@@ -1221,6 +1506,7 @@ class seimei:
                 step=step,
                 candidate_name_set=candidate_name_set,
                 knowledge_search_mode=knowledge_search_mode,
+                search_settings=knowledge_settings,
             )
             if selected is not None:
                 return selected
@@ -1233,6 +1519,7 @@ class seimei:
             run_llm=run_llm,
             mode=agent_search_mode,
             step=step,
+            search_settings=sanitized_agent_settings,
         )
         if selected is not None:
             return selected
@@ -1269,6 +1556,7 @@ class seimei:
         run_llm: LLMClient,
         mode: str,
         step: Optional[int],
+        search_settings: Optional[Dict[str, Any]] = None,
     ) -> Optional[Agent]:
         keys = [
             {"key": f"{agent.name}: {agent.description}", "agent_name": agent.name}
@@ -1288,6 +1576,7 @@ class seimei:
                 run_llm=run_llm,
                 mode=mode,
                 context=context,
+                search_settings=search_settings,
             )
             if ranked:
                 agent_name = ranked[0].get("payload", {}).get("agent_name")
@@ -1310,6 +1599,7 @@ class seimei:
         step: Optional[int],
         candidate_name_set: Set[str],
         knowledge_search_mode: str,
+        search_settings: Optional[Dict[str, Any]] = None,
     ) -> Optional[Agent]:
         knowledge_store = shared_ctx.get("knowledge")
         if not isinstance(knowledge_store, dict):
@@ -1381,22 +1671,36 @@ class seimei:
                 run_llm=run_llm,
                 mode=knowledge_search_mode,
                 context=context,
+                search_settings=search_settings,
             )
         except Exception as exc:
             print(colorize(f"[seimei] knowledge routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
             ranked = []
 
-        selected_entry: Optional[Dict[str, Any]] = None
+        selected_entries: List[Dict[str, Any]] = []
         if ranked:
-            payload = ranked[0].get("payload") or {}
-            if isinstance(payload, dict) and payload.get("knowledge"):
-                selected_entry = payload.get("knowledge")
-            elif isinstance(payload, dict):
-                selected_entry = payload
-        if selected_entry is None:
-            selected_entry = knowledge_candidates[0]
+            for entry in ranked:
+                payload = entry.get("payload") or {}
+                selected_entry: Optional[Dict[str, Any]] = None
+                if isinstance(payload, dict) and payload.get("knowledge"):
+                    selected_entry = payload.get("knowledge")
+                elif isinstance(payload, dict):
+                    selected_entry = payload
+                if isinstance(selected_entry, dict):
+                    selected_entries.append(selected_entry)
+        if not selected_entries:
+            if knowledge_candidates:
+                selected_entries = [knowledge_candidates[0]]
 
-        agent_values = [name for name in self._coerce_agent_values(selected_entry.get("agent")) if name != "*"]
+        agent_values: List[str] = []
+        seen_agents: Set[str] = set()
+        for entry in selected_entries:
+            for name in self._coerce_agent_values(entry.get("agent")):
+                if name in (None, "", "*"):
+                    continue
+                if name not in seen_agents:
+                    seen_agents.add(name)
+                    agent_values.append(name)
         if candidate_name_set:
             agent_values = [name for name in agent_values if name in candidate_name_set]
         if not agent_values:
@@ -1406,7 +1710,7 @@ class seimei:
             agent_name = agent_values[0]
             agent_obj = self.agents.get(agent_name)
             if agent_obj:
-                self._set_agent_routing_knowledge(agent_obj, [selected_entry])
+                self._set_agent_routing_knowledge(agent_obj, selected_entries)
                 return agent_obj
             return None
 
@@ -1420,7 +1724,7 @@ class seimei:
             step=step,
         )
         if chosen_agent:
-            self._set_agent_routing_knowledge(chosen_agent, [selected_entry])
+            self._set_agent_routing_knowledge(chosen_agent, selected_entries)
         return chosen_agent
 
     @staticmethod
@@ -1773,6 +2077,7 @@ class seimei:
             agent_search_config,
             allowed={"llm", "rm", "klg"},
             label="agent_search_config",
+            enforce_topk=1,
         )
         normalized_knowledge_search_config = self._normalize_search_config(
             knowledge_search_config,
@@ -1832,8 +2137,21 @@ class seimei:
         run_save_path = normalized_config["save_knowledge_path"]
         run_prompt_path = normalized_config["knowledge_generation_prompt_path"]
         run_shared_ctx = dict(self.shared_ctx)
-        run_shared_ctx["agent_search_mode"] = normalized_agent_mode
-        run_shared_ctx["knowledge_search_mode"] = normalized_knowledge_mode
+        initial_agent_settings, _ = self._resolve_search_settings(
+            normalized_agent_mode,
+            normalized_agent_search_config,
+            None,
+            base_topk=1,
+        )
+        initial_knowledge_settings, _ = self._resolve_search_settings(
+            normalized_knowledge_mode,
+            normalized_knowledge_search_config,
+            None,
+        )
+        run_shared_ctx["agent_search_settings"] = initial_agent_settings
+        run_shared_ctx["knowledge_search_settings"] = initial_knowledge_settings
+        run_shared_ctx["agent_search_mode"] = initial_agent_settings["mode"]
+        run_shared_ctx["knowledge_search_mode"] = initial_knowledge_settings["mode"]
         if workspace not in (None, ""):
             try:
                 workspace_path = Path(workspace).expanduser()
@@ -1864,6 +2182,7 @@ class seimei:
         search_fn = self._make_search_fn(
             run_llm,
             mode_getter=lambda: run_shared_ctx.get("knowledge_search_mode", normalized_knowledge_mode),
+            settings_getter=lambda: run_shared_ctx.get("knowledge_search_settings"),
         )
         run_shared_ctx["search"] = search_fn
         self._update_shared_knowledge_query(run_shared_ctx, msg_history)
@@ -1895,18 +2214,34 @@ class seimei:
             step_idx += 1
 
             run_shared_ctx["current_step"] = step_idx
-            current_agent_mode = self._resolve_search_mode(
+            current_agent_settings, agent_match = self._resolve_search_settings(
                 normalized_agent_mode,
                 normalized_agent_search_config,
                 step_idx,
+                base_topk=1,
             )
-            current_knowledge_mode = self._resolve_search_mode(
+            current_knowledge_settings, knowledge_match = self._resolve_search_settings(
                 normalized_knowledge_mode,
                 normalized_knowledge_search_config,
                 step_idx,
             )
+            knowledge_settings_override = False
+            if agent_match and agent_match.get("mode") == "klg" and knowledge_match:
+                current_knowledge_settings = {
+                    "mode": normalized_knowledge_mode,
+                    "topk": current_agent_settings.get("topk"),
+                    "sampling_topk": current_agent_settings.get("sampling_topk"),
+                    "sampling_distribution": current_agent_settings.get("sampling_distribution"),
+                    "sampling_distribution_decay_rate": current_agent_settings.get("sampling_distribution_decay_rate"),
+                    "random_sampling_rate": current_agent_settings.get("random_sampling_rate"),
+                }
+                knowledge_settings_override = True
+            current_agent_mode = current_agent_settings["mode"]
+            current_knowledge_mode = current_knowledge_settings["mode"]
             run_shared_ctx["agent_search_mode"] = current_agent_mode
             run_shared_ctx["knowledge_search_mode"] = current_knowledge_mode
+            run_shared_ctx["agent_search_settings"] = current_agent_settings
+            run_shared_ctx["knowledge_search_settings"] = current_knowledge_settings
             _update_run_knowledge(step_idx)
             self._update_shared_knowledge_query(run_shared_ctx, msg_history)
 
@@ -1920,6 +2255,9 @@ class seimei:
                 allowed_agent_names=allowed_agents,
                 agent_search_mode=current_agent_mode,
                 knowledge_search_mode=current_knowledge_mode,
+                agent_search_settings=current_agent_settings,
+                knowledge_search_settings=current_knowledge_settings,
+                knowledge_settings_override=knowledge_settings_override,
             )
             if agent_obj is None:
                 if stop_reason is None:
