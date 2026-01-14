@@ -15,30 +15,28 @@ from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Seq
 from seimei import load_run_messages, seimei
 from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
 
-# v5 notes (vs v4):
-# - Knowledge selection supports LLM or RM sampling and distribution-based picks from top-N candidates.
-# - Scoring prompt includes patch deletions, reasoning history, and knowledge usage.
-# - Knowledge pool auto-updates after scoring and is persisted to knowledge_v5.csv.
+# v6 notes (vs v5):
+# - Simplified trials: no-knowledge runs followed by knowledge-enabled runs.
+# - Knowledge selection uses seimei's built-in sampling (knowledge_search_config).
+# - Knowledge pool auto-updates after scoring and is persisted to knowledge_v6.csv.
 
 EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v5_results.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results.json"
 DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
 DEFAULT_LLM_URL = "https://94sownu2ebkgwm-8000.proxy.runpod.net/v1"  # Set None if you use openai model
 DEFAULT_RM_URL = None
 #DEFAULT_RM_URL = "https://oyl94a4yv16q5y-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 100
-DEFAULT_N_STEPS = 15
-DEFAULT_N_CHUNKS = 3
 DEFAULT_TOP_N_SAMPLE_KLG = 5
 DEFAULT_DISTRIBUTION_DECAY_RATE = 0.5
 DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.2
 DEFAULT_KLG_SAMPLE_MODE = "llm"
-DEFAULT_N_CHECK_KNOWLEDGE = 3
-DEFAULT_FINAL_RERUNS = 7
-DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v5.csv"
+DEFAULT_N_NO_KLG_TRIALS = 3
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6.csv"
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
 BASE_SYSTEM_PROMPT_LIST = [
@@ -598,6 +596,23 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     },
 ]
 
+
+def _normalize_pool_ids(pool: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    normalized: List[Dict[str, Any]] = []
+    for idx, entry in enumerate(pool, start=1):
+        new_entry = dict(entry)
+        raw_id = entry.get("id")
+        try:
+            new_id = int(raw_id)
+        except (TypeError, ValueError):
+            new_id = idx
+        new_entry["id"] = new_id
+        normalized.append(new_entry)
+    return normalized
+
+
+DEFAULT_KNOWLEDGE_POOL = _normalize_pool_ids(DEFAULT_KNOWLEDGE_POOL)
+
 SCORING_SYSTEM_PROMPT = "Return only JSON."
 
 KNOWLEDGE_SYSTEM_PROMPT = (
@@ -1043,6 +1058,8 @@ async def run_orchestrator_with_patch(
     messages: Sequence[Dict[str, Any]],
     run_name: str,
     knowledge_config: Dict[str, Any],
+    knowledge_search_config: Optional[Sequence[Dict[str, Any]]] = None,
+    knowledge_search_mode: Optional[str] = None,
     checkpoint: Optional[EvalCheckpoint] = None,
     entry_id: Optional[str] = None,
     llm_request: Optional[LLM_Request] = None,
@@ -1064,6 +1081,10 @@ async def run_orchestrator_with_patch(
             return cached
 
     knowledge_kwargs = split_knowledge_args(knowledge_config)
+    if knowledge_search_config is not None:
+        knowledge_kwargs["knowledge_search_config"] = knowledge_search_config
+    if knowledge_search_mode:
+        knowledge_kwargs["knowledge_search_mode"] = knowledge_search_mode
     try:
         with patch_manager.apply_for_problem(dataset_entry, dataset_index):
             result = await _run_llm_request(
@@ -1090,7 +1111,7 @@ async def run_orchestrator_with_patch(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Train v5 knowledge sampling by generating guidance for the first N agent steps."
+        description="Train v6 by comparing no-knowledge vs knowledge-enabled trials."
     )
     parser.add_argument(
         "--dataset-path",
@@ -1126,32 +1147,16 @@ def parse_args() -> argparse.Namespace:
         help="Number of problems to process concurrently.",
     )
     parser.add_argument(
-        "--n-steps",
-        dest="n_steps",
+        "--n-no-klg-trials",
         type=int,
-        default=DEFAULT_N_STEPS,
-        help="How many leading agent steps should receive knowledge sampling.",
+        default=DEFAULT_N_NO_KLG_TRIALS,
+        help="How many trials to run without knowledge injection.",
     )
     parser.add_argument(
-        "--n-knowledge-steps",
-        dest="n_steps",
+        "--n-klg-trials",
         type=int,
-        default=DEFAULT_N_STEPS,
-        help="Deprecated alias for --n-steps.",
-    )
-    parser.add_argument(
-        "--n-chunks",
-        dest="n_chunks",
-        type=int,
-        default=DEFAULT_N_CHUNKS,
-        help="How many base chunks (seeds) to explore per problem.",
-    )
-    parser.add_argument(
-        "--knowledge-per-step",
-        dest="n_chunks",
-        type=int,
-        default=DEFAULT_N_CHUNKS,
-        help="Deprecated alias for --n-chunks.",
+        default=DEFAULT_N_KLG_TRIALS,
+        help="How many trials to run with knowledge injection.",
     )
     parser.add_argument(
         "--top-n-sample-klg",
@@ -1176,18 +1181,6 @@ def parse_args() -> argparse.Namespace:
         choices=["llm", "rm"],
         default=DEFAULT_KLG_SAMPLE_MODE,
         help="Knowledge sampling mode: llm or rm.",
-    )
-    parser.add_argument(
-        "--n-check-knowledge",
-        type=int,
-        default=DEFAULT_N_CHECK_KNOWLEDGE,
-        help="How many reruns to execute per knowledge chunk when selecting the best chunk.",
-    )
-    parser.add_argument(
-        "--final-reruns",
-        type=int,
-        default=DEFAULT_FINAL_RERUNS,
-        help="How many reruns to execute for the base and knowledge-injected solutions when comparing final scores.",
     )
     parser.add_argument(
         "--max-problems",
@@ -1311,72 +1304,6 @@ def _parse_json_array(raw: str) -> List[Any]:
     return []
 
 
-def _normalize_step_filter(value: Any) -> Optional[Set[int]]:
-    if value in (None, "", "*"):
-        return None
-    normalized: Set[int] = set()
-    if isinstance(value, int):
-        normalized.add(value)
-        return normalized
-    if isinstance(value, (list, tuple, set)):
-        for item in value:
-            try:
-                normalized.add(int(item))
-            except (TypeError, ValueError):
-                continue
-        return normalized or None
-    try:
-        normalized.add(int(value))
-    except (TypeError, ValueError):
-        return None
-    return normalized or None
-
-
-def _normalize_pool_entry(entry: Dict[str, Any], index: int) -> Optional[Dict[str, Any]]:
-    text = str(entry.get("text") or entry.get("knowledge") or "").strip()
-    if not text:
-        return None
-    normalized: Dict[str, Any] = {
-        "id": str(entry.get("id") or f"default_pool_{index + 1}").strip(),
-        "agent": str(entry.get("agent") or "think").strip() or "think",
-        "text": text,
-        "original_text": entry.get("original_text") or text,
-        "tags": entry.get("tags") or [],
-    }
-    normalized["_step_filter"] = _normalize_step_filter(entry.get("step"))
-    return normalized
-
-
-def _format_pool_candidates(candidates: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    formatted: List[Dict[str, Any]] = []
-    for entry in candidates:
-        formatted.append(
-            {
-                "id": entry.get("id"),
-                "agent": entry.get("agent"),
-                "text": entry.get("text"),
-                "tags": entry.get("tags") or [],
-            }
-        )
-    return formatted
-
-
-def _prepare_pool_candidates(step: int, used_ids: Optional[Set[str]] = None) -> List[Dict[str, Any]]:
-    used = used_ids or set()
-    applicable: List[Dict[str, Any]] = []
-    for idx, raw_entry in enumerate(DEFAULT_KNOWLEDGE_POOL):
-        normalized = _normalize_pool_entry(raw_entry, idx)
-        if not normalized:
-            continue
-        step_filter = normalized.pop("_step_filter", None)
-        if step_filter is not None and step not in step_filter:
-            continue
-        if normalized["id"] in used:
-            continue
-        applicable.append(normalized)
-    return applicable
-
-
 def _write_knowledge_pool_csv(
     path: Path,
     pool: Sequence[Dict[str, Any]],
@@ -1439,6 +1366,15 @@ def _coerce_score(value: Any) -> float:
     if score > 10:
         return 10.0
     return round(score, 2)
+
+
+def _summarize_scores(scores: Sequence[float]) -> Tuple[float, float, float]:
+    if not scores:
+        return 0.0, 0.0, 0.0
+    mean_score = round(sum(scores) / len(scores), 2)
+    max_score = round(max(scores), 2)
+    min_score = round(min(scores), 2)
+    return mean_score, max_score, min_score
 
 
 def _is_bugged_score(score: float, feedback: Optional[str]) -> bool:
@@ -1609,34 +1545,86 @@ def _build_knowledge_update_prompt(
     return prompt
 
 
-def truncate_messages_before_step(messages: Sequence[Dict[str, Any]], step: int) -> List[Dict[str, Any]]:
-    if step <= 1:
-        truncated: List[Dict[str, Any]] = []
-        agent_seen = 0
-        for msg in messages:
-            if msg.get("role") == "agent":
-                agent_seen += 1
-                if agent_seen >= 1:
-                    break
-            truncated.append(dict(msg))
-        return truncated
-
-    truncated = []
-    agent_seen = 0
-    for msg in messages:
-        if msg.get("role") == "agent":
-            agent_seen += 1
-            if agent_seen >= step:
-                break
-        truncated.append(dict(msg))
-    return truncated
-
-
 def build_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]] = None) -> Dict[str, Any]:
     cfg: Dict[str, Any] = {"generate_knowledge": False}
     if manual_entries:
         cfg["knowledge"] = manual_entries
     return cfg
+
+
+def build_manual_knowledge_entries() -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    for entry in DEFAULT_KNOWLEDGE_POOL:
+        text = str(entry.get("text") or "").strip()
+        agent = str(entry.get("agent") or "").strip()
+        if not text or not agent:
+            continue
+        payload: Dict[str, Any] = {
+            "id": entry.get("id"),
+            "agent": agent,
+            "text": text,
+            "tags": entry.get("tags") or [],
+        }
+        step = entry.get("step")
+        if step not in (None, ""):
+            payload["step"] = step
+        entries.append(payload)
+    return entries
+
+
+def build_knowledge_search_config(
+    *,
+    top_n_sample_klg: int,
+    distribution_decay_rate: float,
+    random_klg_sampling_rate: float,
+    klg_sample_mode: str,
+) -> List[Dict[str, Any]]:
+    return [
+        {
+            "mode": str(klg_sample_mode or "rm").strip().lower(),
+            "step": ">=1",
+            "topk": 1,
+            "sampling_topk": max(int(top_n_sample_klg), 1),
+            "sampling_distribution_decay_rate": float(distribution_decay_rate),
+            "random_sampling_rate": float(random_klg_sampling_rate),
+        }
+    ]
+
+
+def extract_knowledge_entries_from_messages(
+    messages: Sequence[Dict[str, Any]],
+    orchestrator: Optional[Any] = None,
+) -> List[Dict[str, Any]]:
+    entries: List[Dict[str, Any]] = []
+    agent_messages = extract_agent_messages(messages)
+    for step_idx, msg in enumerate(agent_messages, start=1):
+        if orchestrator is not None and hasattr(orchestrator, "_extract_message_knowledge"):
+            texts, ids = orchestrator._extract_message_knowledge(msg)
+        else:
+            texts = []
+            ids = []
+            raw = msg.get("knowledge")
+            if isinstance(raw, str) and raw.strip():
+                texts.append(raw.strip())
+            elif isinstance(raw, list):
+                texts.extend(str(item).strip() for item in raw if str(item).strip())
+            kid = msg.get("knowledge_id")
+            if kid not in (None, ""):
+                ids.append(kid)
+        if not texts:
+            continue
+        if ids and len(ids) == len(texts):
+            pairs = zip(texts, ids)
+        elif ids and len(ids) == 1:
+            pairs = ((text, ids[0]) for text in texts)
+        else:
+            pairs = ((text, None) for text in texts)
+        for text, kid in pairs:
+            entry = {"step": step_idx, "text": text}
+            if kid is not None:
+                entry["id"] = kid
+            entries.append(entry)
+    return entries
 
 
 def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
@@ -1814,375 +1802,6 @@ async def update_knowledge_after_scoring(
     return updated_ids
 
 
-def _dedupe_candidates_by_id(candidates: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    seen: Set[str] = set()
-    deduped: List[Dict[str, Any]] = []
-    for entry in candidates:
-        entry_id = str(entry.get("id") or "").strip()
-        if not entry_id or entry_id in seen:
-            continue
-        deduped.append(entry)
-        seen.add(entry_id)
-    return deduped
-
-
-def _sample_ranked_candidate(
-    candidates: Sequence[Dict[str, Any]],
-    *,
-    rng: random.Random,
-    decay_rate: float,
-    random_rate: float,
-) -> Optional[Dict[str, Any]]:
-    if not candidates:
-        return None
-    random_rate = min(max(float(random_rate), 0.0), 1.0)
-    decay_rate = float(decay_rate)
-    if rng.random() < random_rate:
-        return rng.choice(list(candidates))
-    if decay_rate <= 0:
-        return dict(candidates[0])
-    weights = [decay_rate ** idx for idx in range(len(candidates))]
-    total = sum(weights)
-    if total <= 0:
-        return dict(candidates[0])
-    pick = rng.random() * total
-    cumulative = 0.0
-    for weight, entry in zip(weights, candidates):
-        cumulative += weight
-        if pick <= cumulative:
-            return dict(entry)
-    return dict(candidates[-1])
-
-
-async def _rank_candidates_with_llm(
-    llm_client,
-    *,
-    dataset_entry: Dict[str, Any],
-    messages: Sequence[Dict[str, Any]],
-    step: int,
-    top_n: int,
-    prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
-    llm_request: Optional[LLM_Request] = None,
-) -> List[Dict[str, Any]]:
-    question = build_task_prompt(dataset_entry)
-    reference = extract_reference_answer(dataset_entry)
-    transcript_json = json.dumps(messages, ensure_ascii=False, indent=2)
-    step_text = get_agent_step_text(messages, step)
-    knowledge_snapshot = [dict(entry) for entry in prior_knowledge or []]
-    knowledge_json = json.dumps(knowledge_snapshot, ensure_ascii=False, indent=2)
-    candidates = _prepare_pool_candidates(step)
-    if not candidates:
-        return []
-    candidate_json = json.dumps(_format_pool_candidates(candidates), ensure_ascii=False, indent=2)
-    prompt = (
-        f"You are ranking reusable knowledge to insert before agent step {step} "
-        "in a code-debugging workflow for the gyrokinetic plasma repository.\n\n"
-        "Evaluation summary for the run that produced this transcript:\n"
-        "- Knowledge snippets already injected (JSON array, matches this transcript exactly):\n"
-        f"{knowledge_json}\n\n"
-        f"Full message history before rerun (JSON transcript):\n{transcript_json}\n\n"
-        f"Original agent step {step} transcript:\n{step_text}\n\n"
-        f"Question:\n{question}\n\n"
-        f"Reference answer:\n{reference}\n\n"
-        "Candidate knowledge pool (JSON array):\n"
-        f"{candidate_json}\n\n"
-        f"Your task:\n"
-        f"1. Choose the top {top_n} candidates for this step (best-first).\n"
-        "2. Return only JSON with an ordered list of ids.\n\n"
-        "Output format (JSON only):\n"
-        "{\n"
-        "  \"ids\": [\"candidate_id1\", \"candidate_id2\"]\n"
-        "}\n"
-    )
-    try:
-        response, _ = await _run_llm_request(
-            llm_request,
-            llm_client.chat,
-            messages=[{"role": "user", "content": prompt}],
-            system=KNOWLEDGE_SELECTION_SYSTEM_PROMPT,
-        )
-    except Exception as exc:  # pragma: no cover - runtime guard
-        print(f"[knowledge step {step}] ranking failed: {exc}")
-        return []
-
-    parsed = _parse_json_response(response)
-    ids = parsed.get("ids") or parsed.get("top_ids") or []
-    if not isinstance(ids, list) or not ids:
-        array = _parse_json_array(response)
-        if array and isinstance(array[0], (str, int)):
-            ids = array
-        elif array and isinstance(array[0], dict):
-            ids = [item.get("id") for item in array if isinstance(item, dict)]
-    id_map = {entry["id"]: entry for entry in candidates}
-    ranked: List[Dict[str, Any]] = []
-    for raw_id in ids:
-        candidate_id = str(raw_id or "").strip()
-        if not candidate_id:
-            continue
-        entry = id_map.get(candidate_id)
-        if entry and entry not in ranked:
-            ranked.append(entry)
-        if len(ranked) >= top_n:
-            break
-    if len(ranked) < top_n:
-        remaining = [entry for entry in candidates if entry not in ranked]
-        random.shuffle(remaining)
-        ranked.extend(remaining[: max(top_n - len(ranked), 0)])
-    return _dedupe_candidates_by_id(ranked)[:top_n]
-
-
-async def _rank_candidates_with_rmsearch(
-    orchestrator,
-    *,
-    dataset_entry: Dict[str, Any],
-    messages: Sequence[Dict[str, Any]],
-    step: int,
-    top_n: int,
-    prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
-) -> List[Dict[str, Any]]:
-    candidates = _prepare_pool_candidates(step)
-    if not candidates:
-        return []
-    question = build_task_prompt(dataset_entry)
-    reference = extract_reference_answer(dataset_entry)
-    step_text = get_agent_step_text(messages, step)
-    query = (
-        "Rank knowledge for the next agent action.\n"
-        f"Question:\n{question}\n\n"
-        f"Reference answer:\n{reference}\n\n"
-        f"Agent step {step}:\n{step_text}\n"
-    )
-    keys = []
-    for entry in candidates:
-        text = entry.get("text") or ""
-        if not text:
-            continue
-        keys.append(
-            {
-                "key": text,
-                "knowledge": entry,
-                "knowledge_id": entry.get("id"),
-                "tags": entry.get("tags", []),
-            }
-        )
-    if not keys:
-        return []
-    try:
-        results = await asyncio.to_thread(
-            orchestrator._rmsearch,
-            query=query,
-            keys=list(keys),
-            k_key=min(int(top_n), len(keys)),
-            purpose="knowledge_search",
-        )
-    except Exception as exc:  # pragma: no cover - runtime guard
-        print(f"[knowledge step {step}] rmsearch failed: {exc}")
-        return []
-
-    ranked: List[Dict[str, Any]] = []
-    if isinstance(results, list):
-        for item in results:
-            if not isinstance(item, dict):
-                continue
-            payload = item.get("payload")
-            entry = None
-            if isinstance(payload, dict) and payload.get("knowledge"):
-                entry = payload.get("knowledge")
-            elif isinstance(payload, dict):
-                entry = payload
-            if entry and entry not in ranked:
-                ranked.append(entry)
-            if len(ranked) >= top_n:
-                break
-    if len(ranked) < top_n:
-        remaining = [entry for entry in candidates if entry not in ranked]
-        random.shuffle(remaining)
-        ranked.extend(remaining[: max(top_n - len(ranked), 0)])
-    return _dedupe_candidates_by_id(ranked)[:top_n]
-
-
-async def select_step_candidates(
-    orchestrator,
-    llm_client,
-    *,
-    dataset_entry: Dict[str, Any],
-    messages: Sequence[Dict[str, Any]],
-    step: int,
-    top_n: int,
-    sample_mode: str,
-    prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
-    llm_request: Optional[LLM_Request] = None,
-) -> List[Dict[str, Any]]:
-    mode = str(sample_mode or "llm").strip().lower()
-    if mode == "rm":
-        ranked = await _rank_candidates_with_rmsearch(
-            orchestrator,
-            dataset_entry=dataset_entry,
-            messages=messages,
-            step=step,
-            top_n=top_n,
-            prior_knowledge=prior_knowledge,
-        )
-        if ranked:
-            return ranked
-    return await _rank_candidates_with_llm(
-        llm_client,
-        dataset_entry=dataset_entry,
-        messages=messages,
-        step=step,
-        top_n=top_n,
-        prior_knowledge=prior_knowledge,
-        llm_request=llm_request,
-    )
-
-
-async def run_candidate_inference(
-    orchestrator,
-    patch_manager: PatchWorkspaceManager,
-    *,
-    dataset_entry: Dict[str, Any],
-    truncated_history: Sequence[Dict[str, Any]],
-    step: int,
-    knowledge_entry: Dict[str, Any],
-    dataset_index: int,
-    candidate_index: int,
-    checkpoint: Optional[EvalCheckpoint],
-    entry_id: str,
-    llm_request: Optional[LLM_Request] = None,
-) -> Dict[str, Any]:
-    rerun_messages = randomize_system_prompt(truncated_history, use_knowledge_prompt=True)
-    manual_entries = [
-        {
-            "id": knowledge_entry.get("id"),
-            "step": step,
-            "agent": knowledge_entry.get("agent") or "think",
-            "text": knowledge_entry.get("text", ""),
-            "tags": knowledge_entry.get("tags") or [],
-        }
-    ]
-    knowledge_config = build_knowledge_config(manual_entries)
-    run_name = f"train_v5_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
-    result = await run_orchestrator_with_patch(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        dataset_index=dataset_index,
-        messages=rerun_messages,
-        run_name=run_name,
-        knowledge_config=knowledge_config,
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        llm_request=llm_request,
-    )
-    new_run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
-    new_output = result.get("output", "")
-
-    candidate_info = {
-        "candidate_index": candidate_index + 1,
-        "run_name": run_name,
-        "run_id": new_run_id,
-        "output": new_output,
-        "knowledge": {
-            "id": knowledge_entry.get("id"),
-            "text": knowledge_entry.get("text"),
-            "original_text": knowledge_entry.get("original_text"),
-            "agent": knowledge_entry.get("agent"),
-            "tags": knowledge_entry.get("tags") or [],
-            "step": step,
-            "iteration": knowledge_entry.get("iteration"),
-        },
-    }
-    return {"info": candidate_info, "result": result}
-
-
-async def run_full_problem_trials(
-    orchestrator,
-    patch_manager: PatchWorkspaceManager,
-    *,
-    dataset_entry: Dict[str, Any],
-    base_prompt_messages: Sequence[Dict[str, Any]],
-    manual_entries: Optional[List[Dict[str, Any]]],
-    patch_text: str,
-    trials: int,
-    dataset_index: int,
-    label: str,
-    checkpoint: Optional[EvalCheckpoint],
-    entry_id: str,
-    update_lock: asyncio.Lock,
-    llm_request: Optional[LLM_Request] = None,
-) -> Tuple[List[Dict[str, Any]], float]:
-    if trials <= 0:
-        return [], 0.0
-    question = build_task_prompt(dataset_entry)
-    reference = extract_reference_answer(dataset_entry)
-    trial_records: List[Dict[str, Any]] = []
-    valid_scores: List[float] = []
-    for trial in range(trials):
-        rerun_messages = randomize_system_prompt(
-            base_prompt_messages, use_knowledge_prompt=bool(manual_entries)
-        )
-        knowledge_config = build_knowledge_config(
-            [dict(entry) for entry in manual_entries] if manual_entries else None
-        )
-        run_name = f"train_v5_{dataset_index:04d}_{label}_r{trial + 1}"
-        result = await run_orchestrator_with_patch(
-            orchestrator,
-            patch_manager,
-            dataset_entry=dataset_entry,
-            dataset_index=dataset_index,
-            messages=rerun_messages,
-            run_name=run_name,
-            knowledge_config=knowledge_config,
-            checkpoint=checkpoint,
-            entry_id=entry_id,
-            llm_request=llm_request,
-        )
-        run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
-        output = result.get("output", "")
-        messages = get_messages_for_run(result, Path(orchestrator.log_dir))
-        score_info = await score_answer(
-            orchestrator.llm,
-            question,
-            reference,
-            output,
-            patch=patch_text,
-            messages=messages,
-            knowledge_entries=manual_entries or [],
-            llm_request=llm_request,
-        )
-        score = score_info.get("score", 0.0) or 0.0
-        feedback = score_info.get("feedback")
-        if not _is_bugged_score(score, feedback):
-            valid_scores.append(score)
-        if manual_entries:
-            await update_knowledge_after_scoring(
-                orchestrator.llm,
-                question=question,
-                reference_answer=reference,
-                patch=patch_text,
-                messages=messages,
-                knowledge_entries=manual_entries,
-                update_lock=update_lock,
-                llm_request=llm_request,
-            )
-        trial_records.append(
-            {
-                "trial": trial + 1,
-                "run_name": run_name,
-                "run_id": run_id,
-                "score": score,
-                "score_feedback": feedback,
-                "output": output,
-            }
-        )
-    mean_score = (
-        round(sum(valid_scores) / len(valid_scores), 2)
-        if valid_scores
-        else 0.0
-    )
-    return trial_records, mean_score
-
-
 async def run_problem(
     orchestrator,
     patch_manager: PatchWorkspaceManager,
@@ -2190,14 +1809,12 @@ async def run_problem(
     index: int,
     entry_id: str,
     *,
-    n_steps: int,
-    n_chunks: int,
+    n_no_klg_trials: int,
+    n_klg_trials: int,
     top_n_sample_klg: int,
     klg_sample_mode: str,
     distribution_decay_rate: float,
     random_klg_sampling_rate: float,
-    n_check_knowledge: int,
-    final_reruns: int,
     checkpoint: Optional[EvalCheckpoint],
     update_lock: asyncio.Lock,
     llm_request: Optional[LLM_Request] = None,
@@ -2206,6 +1823,7 @@ async def run_problem(
     prompt_text = build_task_prompt(dataset_entry) or problem_text
     if not prompt_text:
         prompt_text = "Investigate the regression and repair the affected code paths."
+    question = build_task_prompt(dataset_entry) or prompt_text
     reference_answer = extract_reference_answer(dataset_entry)
     csv_path = str(dataset_entry.get("CSVPath") or "").strip()
     try:
@@ -2213,265 +1831,134 @@ async def run_problem(
     except FileNotFoundError as exc:
         raise RuntimeError(f"[sample {index}] Missing patch file: {exc}") from exc
     patch_text = patch_path.read_text(encoding="utf-8")
-    n_steps = max(int(n_steps), 0)
-    n_chunks = max(int(n_chunks), 1)
+    n_no_klg_trials = max(int(n_no_klg_trials), 0)
+    n_klg_trials = max(int(n_klg_trials), 0)
     top_n_sample_klg = max(int(top_n_sample_klg), 1)
 
     base_prompt_messages = [{"role": "user", "content": prompt_text}]
-
-    chunk_records: List[Dict[str, Any]] = []
-    base_inferences: List[Dict[str, Any]] = []
     log_dir = Path(orchestrator.log_dir)
+    knowledge_search_config = build_knowledge_search_config(
+        top_n_sample_klg=top_n_sample_klg,
+        distribution_decay_rate=distribution_decay_rate,
+        random_klg_sampling_rate=random_klg_sampling_rate,
+        klg_sample_mode=klg_sample_mode,
+    )
 
-    rng = random.Random(index + 13)
-    for chunk_idx in range(n_chunks):
-        base_messages = randomize_system_prompt(base_prompt_messages)
-        run_name = f"train_v5_{index:04d}_base_seed{chunk_idx + 1}"
-        base_result = await run_orchestrator_with_patch(
-            orchestrator,
-            patch_manager,
-            dataset_entry=dataset_entry,
-            dataset_index=index,
-            messages=[dict(msg) for msg in base_messages],
-            run_name=run_name,
-            knowledge_config=build_knowledge_config(),
-            checkpoint=checkpoint,
-            entry_id=entry_id,
-            llm_request=llm_request,
-        )
-        base_run_id = normalize_result_run_id(base_result, log_dir)
-        base_output = base_result.get("output", "")
-
-        base_run = {
-            "chunk_index": chunk_idx + 1,
-            "run_name": run_name,
-            "run_id": base_run_id,
-            "output": base_output,
-        }
-        base_inferences.append(base_run)
-        chunk_records.append(
-            {
-                "chunk_index": chunk_idx + 1,
-                "base_run": base_run,
-                "current_result": base_result,
-                "current_run_id": base_run_id,
-                "current_score": None,  # keep for compatibility
-                "current_feedback": None,
-                "manual_entries": [],
-                "knowledge_steps": [],
-                "score_history": [{"step": 0, "run_id": base_run_id, "score": None}],
+    async def _run_trials(
+        *,
+        trials: int,
+        label: str,
+        use_knowledge: bool,
+    ) -> Tuple[List[Dict[str, Any]], List[float]]:
+        if trials <= 0:
+            return [], []
+        trial_records: List[Dict[str, Any]] = []
+        valid_scores: List[float] = []
+        for trial in range(trials):
+            rerun_messages = randomize_system_prompt(
+                base_prompt_messages,
+                use_knowledge_prompt=use_knowledge,
+            )
+            manual_entries = build_manual_knowledge_entries() if use_knowledge else None
+            knowledge_config = build_knowledge_config(
+                [dict(entry) for entry in manual_entries] if manual_entries else None
+            )
+            run_name = f"train_v6_{index:04d}_{label}_r{trial + 1}"
+            result = await run_orchestrator_with_patch(
+                orchestrator,
+                patch_manager,
+                dataset_entry=dataset_entry,
+                dataset_index=index,
+                messages=rerun_messages,
+                run_name=run_name,
+                knowledge_config=knowledge_config,
+                knowledge_search_config=knowledge_search_config if use_knowledge else None,
+                knowledge_search_mode=klg_sample_mode if use_knowledge else None,
+                checkpoint=checkpoint,
+                entry_id=entry_id,
+                llm_request=llm_request,
+            )
+            run_id = normalize_result_run_id(result, log_dir)
+            output = result.get("output", "")
+            messages = get_messages_for_run(result, log_dir)
+            used_knowledge = (
+                extract_knowledge_entries_from_messages(messages, orchestrator)
+                if use_knowledge
+                else []
+            )
+            score_info = await score_answer(
+                orchestrator.llm,
+                question,
+                reference_answer,
+                output,
+                patch=patch_text,
+                messages=messages,
+                knowledge_entries=used_knowledge,
+                llm_request=llm_request,
+            )
+            score = score_info.get("score", 0.0) or 0.0
+            feedback = score_info.get("feedback")
+            if not _is_bugged_score(score, feedback):
+                valid_scores.append(score)
+            if use_knowledge:
+                await update_knowledge_after_scoring(
+                    orchestrator.llm,
+                    question=question,
+                    reference_answer=reference_answer,
+                    patch=patch_text,
+                    messages=messages,
+                    knowledge_entries=used_knowledge,
+                    update_lock=update_lock,
+                    llm_request=llm_request,
+                )
+            record = {
+                "trial": trial + 1,
+                "run_name": run_name,
+                "run_id": run_id,
+                "score": score,
+                "score_feedback": feedback,
+                "output": output,
             }
-        )
-        print(f"[sample {index}] chunk {chunk_idx + 1}")
+            if use_knowledge:
+                record["knowledge_used"] = used_knowledge
+            trial_records.append(record)
+        return trial_records, valid_scores
+
+    no_klg_trials, no_klg_valid_scores = await _run_trials(
+        trials=n_no_klg_trials,
+        label="no_klg",
+        use_knowledge=False,
+    )
+    klg_trials, klg_valid_scores = await _run_trials(
+        trials=n_klg_trials,
+        label="klg",
+        use_knowledge=True,
+    )
+
+    no_klg_mean, no_klg_max, no_klg_min = _summarize_scores(no_klg_valid_scores)
+    klg_mean, klg_max, klg_min = _summarize_scores(klg_valid_scores)
 
     record: Dict[str, Any] = {
         "id": entry_id,
         "problem": problem_text,
         "csv_path": csv_path,
         "patch_path": format_relative_path(patch_path),
-        "base_inferences": base_inferences,
-        "chunks": [],
-        "knowledge_chunk_mean_scores": [],
+        "no_klg_trials": no_klg_trials,
+        "klg_trials": klg_trials,
+        "no_klg_mean_score": no_klg_mean,
+        "klg_mean_score": klg_mean,
+        "no_klg_max_score": no_klg_max,
+        "klg_max_score": klg_max,
+        "no_klg_min_score": no_klg_min,
+        "klg_min_score": klg_min,
+        "mean_score_improvement": round(klg_mean - no_klg_mean, 2),
+        "max_score_improvement": round(klg_max - no_klg_max, 2),
+        "min_score_improvement": round(klg_min - no_klg_min, 2),
     }
-
-    for step in range(1, n_steps + 1):
-        for chunk_data in chunk_records:
-            messages = get_messages_for_run(chunk_data["current_result"], log_dir)
-            agent_messages = extract_agent_messages(messages)
-            if step > len(agent_messages):
-                print(
-                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
-                    "insufficient agent messages"
-                )
-                continue
-            truncated_history = truncate_messages_before_step(messages, step)
-            candidates = await select_step_candidates(
-                orchestrator,
-                orchestrator.llm,
-                dataset_entry=dataset_entry,
-                messages=messages,
-                step=step,
-                top_n=top_n_sample_klg,
-                sample_mode=klg_sample_mode,
-                prior_knowledge=[dict(entry) for entry in chunk_data["manual_entries"]],
-                llm_request=llm_request,
-            )
-            knowledge_entry = _sample_ranked_candidate(
-                candidates,
-                rng=rng,
-                decay_rate=distribution_decay_rate,
-                random_rate=random_klg_sampling_rate,
-            )
-            if not knowledge_entry:
-                print(
-                    f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}: "
-                    "no knowledge selected"
-                )
-                continue
-            if not knowledge_entry.get("agent"):
-                knowledge_entry["agent"] = get_agent_name_for_step(messages, step) or "think"
-            knowledge_entry.setdefault("step", step)
-            knowledge_entry.setdefault("iteration", chunk_data["chunk_index"])
-            knowledge_entry.setdefault("tags", knowledge_entry.get("tags") or [])
-            knowledge_entry.setdefault("original_text", knowledge_entry.get("text") or "")
-
-            candidate = await run_candidate_inference(
-                orchestrator,
-                patch_manager,
-                dataset_entry=dataset_entry,
-                truncated_history=truncated_history,
-                step=step,
-                knowledge_entry=knowledge_entry,
-                dataset_index=index,
-                candidate_index=chunk_data["chunk_index"] - 1,
-                checkpoint=checkpoint,
-                entry_id=entry_id,
-                llm_request=llm_request,
-            )
-            candidate_info = candidate["info"]
-            chunk_data["knowledge_steps"].append(
-                {
-                    "step": step,
-                    "knowledge": candidate_info.get("knowledge"),
-                    "run_name": candidate_info.get("run_name"),
-                    "run_id": candidate_info.get("run_id"),
-                    "output": candidate_info.get("output"),
-                }
-            )
-            chunk_data["current_result"] = candidate["result"]
-            chunk_data["current_run_id"] = candidate_info.get("run_id")
-
-            manual_entry = {
-                "id": candidate_info.get("knowledge", {}).get("id"),
-                "step": step,
-                "agent": candidate_info.get("knowledge", {}).get("agent") or "think",
-                "text": candidate_info.get("knowledge", {}).get("text", ""),
-                "tags": candidate_info.get("knowledge", {}).get("tags") or [],
-            }
-            if manual_entry["text"]:
-                chunk_data["manual_entries"].append(manual_entry)
-
-            chunk_data["score_history"].append(
-                {
-                    "step": step,
-                    "score": chunk_data.get("current_score"),
-                    "run_id": chunk_data["current_run_id"],
-                }
-            )
-            print(f"[sample {index}] chunk {chunk_data['chunk_index']} step {step}:")
-
-    for chunk_data in chunk_records:
-        chunk_data["final_single_run"] = {
-            "run_id": chunk_data["current_run_id"],
-            "score": chunk_data.get("current_score"),
-            "score_feedback": chunk_data.get("current_feedback"),
-            "output": chunk_data["current_result"].get("output", ""),
-        }
-        chunk_entry = {
-            "chunk_index": chunk_data["chunk_index"],
-            "base_run": chunk_data["base_run"],
-            "knowledge_steps": chunk_data["knowledge_steps"],
-            "selected_knowledge": [dict(entry) for entry in chunk_data["manual_entries"]],
-            "final_single_run": chunk_data["final_single_run"],
-        }
-        record["chunks"].append(chunk_entry)
-        chunk_data["record_entry"] = chunk_entry
-
-    knowledge_chunk_scores: List[float] = []
-    best_chunk_mean: Optional[float] = None
-    best_chunk_data: Optional[Dict[str, Any]] = None
-    best_chunk_manual_entries: Optional[List[Dict[str, Any]]] = None
-
-    for chunk_data in chunk_records:
-        manual_entries = chunk_data["manual_entries"]
-        label = f"chunk{chunk_data['chunk_index']}"
-        chunk_trials, chunk_mean = await run_full_problem_trials(
-            orchestrator,
-            patch_manager,
-            dataset_entry=dataset_entry,
-            base_prompt_messages=base_prompt_messages,
-            manual_entries=manual_entries if manual_entries else None,
-            patch_text=patch_text,
-            trials=n_check_knowledge,
-            dataset_index=index,
-            label=label,
-            checkpoint=checkpoint,
-            entry_id=entry_id,
-            update_lock=update_lock,
-            llm_request=llm_request,
-        )
-        chunk_mean = round(chunk_mean, 2)
-        knowledge_chunk_scores.append(chunk_mean)
-        chunk_data["record_entry"]["chunk_trials"] = chunk_trials
-        chunk_data["record_entry"]["chunk_mean_score"] = chunk_mean
-        if best_chunk_mean is None or chunk_mean > best_chunk_mean:
-            best_chunk_mean = chunk_mean
-            best_chunk_data = chunk_data
-            best_chunk_manual_entries = manual_entries if manual_entries else []
-
-    record["knowledge_chunk_mean_scores"] = knowledge_chunk_scores
-    if best_chunk_data:
-        record["best_chunk_index"] = best_chunk_data["chunk_index"]
-        record["best_chunk_mean_score"] = best_chunk_mean
-        record["selected_knowledge"] = [dict(entry) for entry in best_chunk_manual_entries or []]
-        record["final_single_run"] = best_chunk_data["final_single_run"]
-        record["final_run_id"] = best_chunk_data["current_run_id"]
-        record["final_score"] = best_chunk_data.get("current_score", 0.0) or 0.0
-        record["final_output"] = best_chunk_data["final_single_run"]["output"]
-        record["score_history"] = best_chunk_data.get("score_history", [])
-    else:
-        record["final_run_id"] = None
-        record["final_score"] = 0.0
-        record["final_output"] = ""
-        record["score_history"] = []
-        record["selected_knowledge"] = []
-        record["final_single_run"] = None
-
-    base_trials, base_mean = await run_full_problem_trials(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        base_prompt_messages=base_prompt_messages,
-        manual_entries=None,
-        patch_text=patch_text,
-        trials=final_reruns,
-        dataset_index=index,
-        label="base_final",
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        update_lock=update_lock,
-        llm_request=llm_request,
-    )
-    knowledge_trials, knowledge_mean = await run_full_problem_trials(
-        orchestrator,
-        patch_manager,
-        dataset_entry=dataset_entry,
-        base_prompt_messages=base_prompt_messages,
-        manual_entries=best_chunk_manual_entries if best_chunk_manual_entries else None,
-        patch_text=patch_text,
-        trials=final_reruns,
-        dataset_index=index,
-        label="knowledge_final",
-        checkpoint=checkpoint,
-        entry_id=entry_id,
-        update_lock=update_lock,
-        llm_request=llm_request,
-    )
-
-    record["fair_comparison"] = {
-        "trials": final_reruns,
-        "base_trials": base_trials,
-        "knowledge_trials": knowledge_trials,
-        "base_mean_score": base_mean,
-        "knowledge_mean_score": knowledge_mean,
-        "mean_improvement": round(knowledge_mean - base_mean, 2),
-    }
-    record["base_rerun_mean_score"] = base_mean
-    record["final_rerun_mean_score"] = knowledge_mean
 
     print(
-        f"[sample {index}] reruns avg base={base_mean} knowledge={knowledge_mean} "
-        f"(Δ {round(knowledge_mean - base_mean, 2)})"
+        f"[sample {index}] no_klg mean={no_klg_mean} klg mean={klg_mean} "
+        f"(Δ {round(klg_mean - no_klg_mean, 2)})"
     )
 
     return record
@@ -2498,9 +1985,9 @@ def load_existing_eval_entries(
                 entries = raw
                 needs_resave = True
             else:
-                print(f"[train_v5] Ignoring malformed cache at {output_path}")
+                print(f"[train_v6] Ignoring malformed cache at {output_path}")
         except (OSError, json.JSONDecodeError) as exc:
-            print(f"[train_v5] Failed to load cached eval entries: {exc}")
+            print(f"[train_v6] Failed to load cached eval entries: {exc}")
         for idx, entry in enumerate(entries):
             entry_id = str(entry.get("id") or "").strip()
             if not entry_id and idx < len(dataset):
@@ -2513,51 +2000,81 @@ def load_existing_eval_entries(
 
 
 def build_eval_summary(entries: List[Dict[str, Any]]) -> Dict[str, Any]:
+    empty_summary = {
+        "total_problems": 0,
+        "overall_mean_score_improvement": 0.0,
+        "max_mean_score_improvement": 0.0,
+        "min_mean_score_improvement": 0.0,
+        "no_klg_overall_mean": 0.0,
+        "klg_overall_mean": 0.0,
+        "no_klg_max_mean": 0.0,
+        "klg_max_mean": 0.0,
+        "no_klg_min_mean": 0.0,
+        "klg_min_mean": 0.0,
+        "mean_win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
+        "max_mean_win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
+        "min_mean_win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
+        "mean_no_klg_vs_mean_klg": [],
+        "max_no_klg_vs_max_klg": [],
+        "min_no_klg_vs_min_klg": [],
+    }
     if not entries:
-        return {
-            "total_problems": 0,
-            "mean_score_improvement": 0.0,
-            "base_vs_final": [],
-            "overall_base_mean": 0.0,
-            "overall_final_mean": 0.0,
-            "win_loss_tie": {"win": 0, "tie": 0, "loss": 0},
-            "knowledge_chunk_mean_scores": [],
-        }
-    base_vs_final: List[List[float]] = []
-    improvements: List[float] = []
-    chunk_score_table: List[List[float]] = []
+        return empty_summary
+
+    mean_pairs: List[List[float]] = []
+    max_pairs: List[List[float]] = []
+    min_pairs: List[List[float]] = []
+    mean_improvements: List[float] = []
+    max_improvements: List[float] = []
+    min_improvements: List[float] = []
+
     for entry in entries:
-        base_score = entry.get("base_rerun_mean_score")
-        final_score = entry.get("final_rerun_mean_score")
-        if base_score is None:
-            base_score = entry.get("base", {}).get("score", 0.0)
-        if final_score is None:
-            final_score = entry.get("final_score", 0.0)
-        base_val = round(float(base_score), 2)
-        final_val = round(float(final_score), 2)
-        base_vs_final.append([base_val, final_val])
-        improvements.append(final_val - base_val)
-        chunk_scores = entry.get("knowledge_chunk_mean_scores") or []
-        chunk_score_table.append([round(float(score), 3) for score in chunk_scores])
-    total = len(base_vs_final)
-    mean_improvement = round(sum(improvements) / total, 4) if total else 0.0
-    wins = sum(1 for diff in improvements if diff > 0)
-    ties = sum(1 for diff in improvements if diff == 0)
-    losses = total - wins - ties
-    overall_base_mean = (
-        round(sum(pair[0] for pair in base_vs_final) / total, 4) if total else 0.0
-    )
-    overall_final_mean = (
-        round(sum(pair[1] for pair in base_vs_final) / total, 4) if total else 0.0
-    )
+        no_mean = float(entry.get("no_klg_mean_score") or 0.0)
+        klg_mean = float(entry.get("klg_mean_score") or 0.0)
+        no_max = float(entry.get("no_klg_max_score") or 0.0)
+        klg_max = float(entry.get("klg_max_score") or 0.0)
+        no_min = float(entry.get("no_klg_min_score") or 0.0)
+        klg_min = float(entry.get("klg_min_score") or 0.0)
+
+        mean_pairs.append([round(no_mean, 2), round(klg_mean, 2)])
+        max_pairs.append([round(no_max, 2), round(klg_max, 2)])
+        min_pairs.append([round(no_min, 2), round(klg_min, 2)])
+        mean_improvements.append(klg_mean - no_mean)
+        max_improvements.append(klg_max - no_max)
+        min_improvements.append(klg_min - no_min)
+
+    total = len(entries)
+
+    def _count_wlt(pairs: Sequence[Sequence[float]]) -> Dict[str, int]:
+        wins = sum(1 for no, klg in pairs if klg > no)
+        ties = sum(1 for no, klg in pairs if klg == no)
+        losses = total - wins - ties
+        return {"win": wins, "tie": ties, "loss": losses}
+
+    no_klg_overall_mean = round(sum(pair[0] for pair in mean_pairs) / total, 2)
+    klg_overall_mean = round(sum(pair[1] for pair in mean_pairs) / total, 2)
+    no_klg_max_mean = round(sum(pair[0] for pair in max_pairs) / total, 2)
+    klg_max_mean = round(sum(pair[1] for pair in max_pairs) / total, 2)
+    no_klg_min_mean = round(sum(pair[0] for pair in min_pairs) / total, 2)
+    klg_min_mean = round(sum(pair[1] for pair in min_pairs) / total, 2)
+
     return {
         "total_problems": total,
-        "mean_score_improvement": mean_improvement,
-        "base_vs_final": base_vs_final,
-        "overall_base_mean": overall_base_mean,
-        "overall_final_mean": overall_final_mean,
-        "win_loss_tie": {"win": wins, "tie": ties, "loss": losses},
-        "knowledge_chunk_mean_scores": chunk_score_table,
+        "overall_mean_score_improvement": round(sum(mean_improvements) / total, 2),
+        "max_mean_score_improvement": round(sum(max_improvements) / total, 2),
+        "min_mean_score_improvement": round(sum(min_improvements) / total, 2),
+        "no_klg_overall_mean": no_klg_overall_mean,
+        "klg_overall_mean": klg_overall_mean,
+        "no_klg_max_mean": no_klg_max_mean,
+        "klg_max_mean": klg_max_mean,
+        "no_klg_min_mean": no_klg_min_mean,
+        "klg_min_mean": klg_min_mean,
+        "mean_win_loss_tie": _count_wlt(mean_pairs),
+        "max_mean_win_loss_tie": _count_wlt(max_pairs),
+        "min_mean_win_loss_tie": _count_wlt(min_pairs),
+        "mean_no_klg_vs_mean_klg": mean_pairs,
+        "max_no_klg_vs_max_klg": max_pairs,
+        "min_no_klg_vs_min_klg": min_pairs,
     }
 
 
@@ -2588,7 +2105,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
     log_state = _setup_log_output(
         save_log=args.save_log,
         log_dir=args.log_dir,
-        prefix="train_v5",
+        prefix="train_v6",
     )
     try:
         dataset = json.loads(args.dataset_path.read_text(encoding="utf-8"))
@@ -2600,7 +2117,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
             raise RuntimeError("batch_size must be >= 1 and patch_files must be non-empty.")
         if args.batch_size != workspace_count:
             print(
-                "[train_v5] Limiting concurrency to "
+                "[train_v6] Limiting concurrency to "
                 f"{workspace_count} based on patch file count."
             )
         workspace_pool = build_workspace_pool(args, workspace_count)
@@ -2618,9 +2135,9 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         if needs_resave:
             save_eval_entries(eval_entries, args.output_path, run_cache=run_cache)
         if processed_ids:
-            print(f"[train_v5] Resuming with {len(processed_ids)} cached entries")
+            print(f"[train_v6] Resuming with {len(processed_ids)} cached entries")
         if run_cache:
-            print(f"[train_v5] Loaded run_cache with {len(run_cache)} runs")
+            print(f"[train_v6] Loaded run_cache with {len(run_cache)} runs")
 
         pending: List[Tuple[int, Dict[str, Any], str]] = []
         for idx, entry in enumerate(dataset):
@@ -2633,7 +2150,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
         if not pending:
             print(
-                f"[train_v5] All {len(processed_ids)} entries already processed. "
+                f"[train_v6] All {len(processed_ids)} entries already processed. "
                 f"Results stored at {args.output_path}"
             )
             _write_knowledge_pool_csv(DEFAULT_FINAL_KLG_POOL_SAVE_PATH, DEFAULT_KNOWLEDGE_POOL)
@@ -2641,7 +2158,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
 
         total_pending = len(pending)
         print(
-            f"[train_v5] Starting {total_pending} problems with "
+            f"[train_v6] Starting {total_pending} problems with "
             f"concurrency={workspace_count} (dataset size={len(dataset)})"
         )
         completed_in_run = 0
@@ -2654,7 +2171,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                 batch_slice = pending[batch_start : batch_start + workspace_count]
                 batch_idx = batch_start // args.batch_size + 1
                 print(
-                    f"[train_v5] Starting batch {batch_idx} "
+                    f"[train_v6] Starting batch {batch_idx} "
                     f"with {len(batch_slice)} problems"
                 )
                 batch_tasks: List[asyncio.Task] = []
@@ -2667,14 +2184,12 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                             entry,
                             dataset_idx,
                             entry_id,
-                            n_steps=args.n_steps,
-                            n_chunks=args.n_chunks,
+                            n_no_klg_trials=args.n_no_klg_trials,
+                            n_klg_trials=args.n_klg_trials,
                             top_n_sample_klg=args.top_n_sample_klg,
                             klg_sample_mode=args.klg_sample_mode,
                             distribution_decay_rate=args.distribution_decay_rate,
                             random_klg_sampling_rate=args.random_klg_sampling_rate,
-                            n_check_knowledge=args.n_check_knowledge,
-                            final_reruns=args.final_reruns,
                             checkpoint=checkpoint,
                             update_lock=knowledge_update_lock,
                             llm_request=llm_request,
@@ -2689,32 +2204,38 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                     try:
                         record = await task
                     except Exception as exc:  # pragma: no cover - runtime guard
-                        print(f"[train_v5] Problem {entry_id} failed: {exc}")
+                        print(f"[train_v6] Problem {entry_id} failed: {exc}")
                     if record:
                         rid = str(record.get("id") or "").strip()
                         if rid and rid not in processed_ids:
                             eval_entries.append(record)
                             processed_ids.add(rid)
+                            async with checkpoint.lock:
+                                save_eval_entries(
+                                    eval_entries,
+                                    args.output_path,
+                                    run_cache=checkpoint.run_cache,
+                                )
                     completed_in_run += 1
                     percent = (completed_in_run / total_pending) * 100 if total_pending else 100.0
                     print(
-                        "[train_v5] Progress: "
+                        "[train_v6] Progress: "
                         f"{completed_in_run}/{total_pending} ({percent:.1f}%) problems finished; "
                         f"overall {len(processed_ids)}/{len(dataset)} stored"
                     )
 
-                # Keep existing behavior: save completed-problem detail after each batch,
-                # but now we also persist run_cache continuously from inside run_orchestrator_with_patch.
-                save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
+                # Keep batch-level saves as a safety net (run_cache is persisted per run).
+                async with checkpoint.lock:
+                    save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
                 print(
-                    f"[train_v5] Saved batch {batch_idx}: "
+                    f"[train_v6] Saved batch {batch_idx}: "
                     f"{len(processed_ids)}/{len(dataset)} problems complete"
                 )
         finally:
             await llm_request.close()
 
         _write_knowledge_pool_csv(DEFAULT_FINAL_KLG_POOL_SAVE_PATH, DEFAULT_KNOWLEDGE_POOL)
-        print(f"[train_v5] Saved evaluation dataset to {args.output_path}")
+        print(f"[train_v6] Saved evaluation dataset to {args.output_path}")
     finally:
         _close_log_output(log_state)
 

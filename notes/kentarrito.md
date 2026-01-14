@@ -3250,20 +3250,88 @@ Also, update README.md and seimei/README.md according to your modification. Add 
 ```
 Refering to exp11_plasma_gkv_v5/train_v5.py, make exp11_plasma_gkv_v5/train_v6.py following the instructions below;
 
-1. In this experiment, use the pipeline: (run_orchestrator_with_patch -> scoring -> improve_knowledge)
-2. 
+    1. In train_v6.py, I will remake train_v5 to much simpler architecture. New run_problem: (run_orchestrator_with_patch without knowledge (same as base_result in train_v5) -> score_answer)*DEFAULT_N_NO_KLG_TRIALS -> (run_orchestrator_with_patch with knowledge -> score_answer -> update_knowledge_after_scoring)*DEAFAULT_N_TRIALS. So I don't need run_full_problem_trials, generate_step_knowledge or select_step_candidates anymore. 
+    2. I modified seimei and enabled sampling mechanism in agent_search_config and knowledge_search_config in seimei.__call__. Use it in run_orchestrator_with_patch with knowledge instead of _sample_ranked_candidate. Refer to seimei/README.md & seimei/seimei.py for the seimei __call__ usage.
+    3. Final output summary should look like
+        "summary": {
+            "total_problems": 1,
+            "overall_mean_score_improvement": ,
+            "max_mean_score_improvement": ,
+            "min_mean_score_improvement": ,
+            "no_klg_overall_mean": ,
+            "klg_overall_mean": ,
+            "no_klg_max_mean": ,
+            "klg_max_mean": ,
+            "no_klg_min_mean": ,
+            "klg_min_mean": ,
+            "mean_win_loss_tie": {
+                "win": 1,
+                "tie": 0,
+                "loss": 0
+            },
+            "max_mean_win_loss_tie": {
+                "win": 1,
+                "tie": 0,
+                "loss": 0
+            },
+            "min_mean_win_loss_tie": {
+                "win": 1,
+                "tie": 0,
+                "loss": 0
+            },
+            "mean_no_klg_vs_mean_klg": [
+                [
+                    6.14,
+                    7.0
+                ],
+                ...
+            ],
+            "max_no_klg_vs_max_klg": [
+                [
+                    6.14,
+                    7.0
+                ],
+                ...
+            ],
+            "min_no_klg_vs_min_klg": [
+                [
+                    6.14,
+                    7.0
+                ],
+                ...
+            ],
+        },
+    Here, overall_mean is mean score of all mean scores of run_problem functions for no_klg or klg. max_mean (or min_mean) is mean score of all max (or min) scores of run_problem functions for no_klg or klg.
+    4. Update summary field in the output json file at the end of run_problem. I want to see the summary of finished problems' results before all problems finish.
 
-Read all the content of seimei/seimei.py very carefully, and implement the above features. Even if there is any ambiguous point in my instructions, ask me back before you do the modification.
+Note that
+    1. Abondon DEFAULT_N_STEPS, DEFAULT_N_CHUNKS, DEFAULT_N_CHECK_KNOWLEDGE and DEFAULT_FINAL_RERUNS. If this is used in train_v6.py, there is some contradiction.
+    2. Keep the run cache mechanism for saving and resuming llm inference, and LLM_Request for maximum-efficent batch process in train_v5.
+    3. In update_knowledge_after_scoring function in train_v5.py, I thought _apply_knowledge_updates might be not working properly. Since DEFAULT_KNOWLEDGE_POOL is a global variable, _apply_knowledge_updates cannot modify DEFAULT_KNOWLEDGE_POOL in my thinking. Is it true? If so, debug the function. If not, keep the function.
+
+Read all the content of train_v5.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
 ```
 
-- [ ] Improve dataset
+```
+1. DEFAULT_N_NO_KLG_TRIALS=3 and DEFAULT_N_KLG_TRIALS=7. by the way, rename DEFAULT_N_TRIALS to DEFAULT_N_KLG_TRIALS.
+2. topk=1 for knowledge_search_config.
+3. configure sampling only in knowledge_search_config
+4. you can switch the pool to numeric IDs if it solves the issue.
+5. change to v6 names
+6. both of them are okay as far as output file is updated while other run_problem is running. Choose one which is easier to code.
+```
 
-- [ ] Other modification related to train_v5.py
+- [ ] Improve dataset (exp11_plasma_gkv_v6)
+```
+Make dataset
+```
+
+- [ ] Other modification related to train_v6.py
     - [ ] dpo_converter should be changed
     - [ ] adpo_lora_example.py loss should be changed to loss = r_step1*r_step2*...
     - [ ] try GRPO in adpo_lora_example.py 
 
-- [ ] Run train_v5.py -> eval_v5.py
+- [ ] Run train_v6.py -> eval_v6.py
 
 
 
