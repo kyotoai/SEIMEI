@@ -3142,18 +3142,130 @@ In exp11_plasma_gkv_v5/train_v5.py, add modification following:
 2. Activate think agent in agent_config in seimei __init__.
 ```
 
-- [ ] other modification related to train_v5.py
+- [x] Run train_v5.py
+git clone --branch kentarrito/seimei_improvement1 https://github.com/kyotoai/SEIMEI_.git
+```
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 2 \
+  > ./server-gptoss.log 2>&1 &
+
+nohup python exp11_plasma_gkv_v5/train_v5.py > ./server-python.log 2>&1 &
+```
+
+- [ ] Debug train_v5.py
+    - [ ] base should be longer. add manual knowledge like {"agent":"code_act", "text":None}
+    - [ ] results are weird
+    - [ ] knowledge is not improved
+        - print out 
+```
+Debug exp11_plasma_gkv_v5/train_v5.py following
+
+1. base_result in run_problem function doesn't have length of args.n_steps, which causes inaccurate knowledge selection. So I wanna make the base_result have as same number of steps of inference as args.n_steps. For base_probelm, use the following seimei __call__ argument to make the inference lenth same as args.n_steps.
+
+agent_search_mode = "klg"
+knowledge_search_mode = "llm"
+knowledge_load_config = [
+    {
+        "id": "code_ls_inventory",
+        "agent": "code_act",
+        "step": f"<{args.n_steps}",
+        "text": "Use `ls -a` to inventory the repo before touching files so you know which modules, patches, or scripts exist.",
+        "tags": ["shell", "ls", "context"],
+    },
+    ...
+    {
+        "id": "investigate_lib_gkvp_math_portable",
+        "agent": "code_act",
+        "step": f"<{args.n_steps}",
+        "text": "Investigate lib/gkvp_math_portable.f90. This file is about portable mathematical helper functions.",
+        "tags": ["code_act", "inspect", "lib"],
+    },
+    {
+        "id": "answer_clear_from_agents",
+        "agent": "answer",
+        "step": f"{args.n_steps}",
+        "text": "From the agent output obtained in previous steps, give a clear final answer.",
+        "tags": ["answer", "clarity"],
+    },
+]
+
+update_knowledge_after_scoring function in exp11_plasma_gkv_v5/train_v5.py is not working properly. I think 
+```
+    - [ ] think log is a bit hard to see
+    - [x] check if workspace is correctly modified
     - [ ] How knowledge is prompted should be checked (code_act.py, answer.py) 
+
+
+！！！
+I think train_v4,5 needs fundamental architecture modification. For now, klg order is fixed despite of agent outputs. This means rmsearch chooses same klg to (cat -> success) and (cat -> unsuccessful). This should be fixed.
+
+-> 
+
+To fix this, only possibility is to abondon (klg_chunk1 -> inference1~3 -> average them). Applying one klg_chunk to multiple inferences is wrong. (1 klg chunk -> 1 inference) -> this is the key.
+
+->
+
+Also, choosing klg from base_inference and restriction on it is very weird now. this loses random sampling. Rather than choosing klg from inference history and answer, let seimei agent_search_mode="klg" decide klg.
+
+-> 
+
+Let's make train_v6.py considering this.
+
+
+
+- [x] Add sampling in agent_search_config and knowledge_search_config in seimei.__call__
+```
+I wanna add "topk", "sampling_topk", "sampling_distribution", "sampling_distribution_decay_rate" and "random_sampling_rate" to agent_search_config and knowledge_search_config in seimei __call__.
+
+Here's an example: 
+    agent_search_config = [{"mode":"llm or rm or klg","step":"<3","sampling_topk":5,"sampling_distribution":[1,0.5, 0.5^2, 0.5^3, 0.5^4], "random_sampling_rate":0.2}, ...]
+    knowledge_search_config = [{"mode":"llm or rm","step":"<5","topk":2,"sampling_topk":5,"sampling_distribution_decay_rate":0.5, "random_sampling_rate":0.2}, ...]
+
+The sampling method works like this:
+    I. get top-<sampling_topk> (like 5) agents or knowledge texts by "llm" or "rm"
+    II. From the top-<sampling_topk> agents or knowledge texts, choose top-<topk> out of them following <sampling_distribution> and <random_sampling_rate>. (for agent_search_config, <topk> is always 1)
+    III. <sampling_distribution> and <random_sampling_rate> work like this. First, for random_sampling_rate, an agent or tok knowledge texts are selected completely randomly from all knowledge texts and agents set by kowledge_load_config and agent_config. In this case, it's not even needed to sample top-<sampling_topk> knowledge texts or agents by llm or rm, so decide if random sampling or not before acting llm or rm. For (1-random_sampling_rate), topk is selected from <sampling_topk> sampled knowledge texts or agents following distribution. The distribution is determined by <sampling_distribution> or <sampling_distribution_decay_rate>. If <sampling_distribution>=[1,0.5,0.5^2,0.5^3,0.5^4], top-1 knowledge texts or agents is selected at 1/(1+0.5+0.5^2+0.5^3+0.5^4)*100%, top-2 is done at 0.5/(1+0.5+0.5^2+0.5^3+0.5^4)*100% ... <sampling_distribution_decay_rate>=0.5 means same as <sampling_distribution>=[1,0.5,0.5^2,0.5^3,0.5^4].
+
+Note that
+    I. if sampling_distribution_decay_rate and sampling_distribution are both designated, use sampling_distribution.
+    II. "topk" in agent_search_config is always 1.
+    III. if "mode"="klg" in agent_search_config and it's overlapping knowledge_search_config, use agent_search_config.
+
+Read all the content of seimei/seimei.py very carefully, and implement the above features. Even if there is any ambiguous point in my instructions, ask me back before you do the modification.
+```
+
+```
+1. when random_sampling_rate triggers, choose one randomly from allowed_agent_names and skip _select_agent_by_knowledge (no needed to be executed).
+2. if topk = 2, you should act rank-weighted-sampling for one of them and pick the other by excluding the already picked one.
+3. these sampling should affect all knowledge or agent search functions including _select_next_agent, _select_agent_by_knowledge and run_shared_ctx["search"].
+4. If mode=klg overlaps knowledge_search_config, override both sampling params and knowledge_search_mode.
+5. sampling_distribution format: only numeric weights are passed.
+6. when these fields are absent, use deterministic top‑k.
+7. For agent_search_config, if topk is provided and >1, error out.
+
+Also, update README.md and seimei/README.md according to your modification. Add detailed explanations and examples of the sampling arguments.
+```
+
+- [ ] Make train_v6.py
+```
+Refering to exp11_plasma_gkv_v5/train_v5.py, make exp11_plasma_gkv_v5/train_v6.py following the instructions below;
+
+1. In this experiment, use the pipeline: (run_orchestrator_with_patch -> scoring -> improve_knowledge)
+2. 
+
+Read all the content of seimei/seimei.py very carefully, and implement the above features. Even if there is any ambiguous point in my instructions, ask me back before you do the modification.
+```
+
+- [ ] Improve dataset
+
+- [ ] Other modification related to train_v5.py
     - [ ] dpo_converter should be changed
     - [ ] adpo_lora_example.py loss should be changed to loss = r_step1*r_step2*...
     - [ ] try GRPO in adpo_lora_example.py 
-```
-
-```
 
 - [ ] Run train_v5.py -> eval_v5.py
 
-- [ ] Improve dataset
+
 
 - [ ] Scale dataset
 
