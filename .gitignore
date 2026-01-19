@@ -97,6 +97,7 @@ Juan_NTT.pdf
 data_set.png
 knowledge.png
 TODO.md
+notes/Juan/
 
 # local scripts/tests
 examples/overpass.py
@@ -116,6 +117,7 @@ exp8_csv_small/*.py
 
 exp9_mobile_data_small/*
 seimei/eval/data_generators/*.json
+seimei/eval/data_generators/*.md
 
 done.txt
 done.*
