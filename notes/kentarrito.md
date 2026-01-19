@@ -3246,7 +3246,7 @@ Read all the content of seimei/seimei.py very carefully, and implement the above
 Also, update README.md and seimei/README.md according to your modification. Add detailed explanations and examples of the sampling arguments.
 ```
 
-- [ ] Make train_v6.py
+- [x] Make train_v6.py
 ```
 Refering to exp11_plasma_gkv_v5/train_v5.py, make exp11_plasma_gkv_v5/train_v6.py following the instructions below;
 
@@ -3321,22 +3321,486 @@ Read all the content of train_v5.py very carefully, and implement the above feat
 6. both of them are okay as far as output file is updated while other run_problem is running. Choose one which is easier to code.
 ```
 
+- [x] Run train_v6.py
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
+  > ./server-gptoss.log 2>&1 &
+
+cd gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+->
+```
+  "summary": {
+    "total_problems": 119,
+    "overall_mean_score_improvement": 0.67,
+    "max_mean_score_improvement": 2.76,
+    "min_mean_score_improvement": -0.36,
+    "no_klg_overall_mean": 2.51,
+    "klg_overall_mean": 3.18,
+    "no_klg_max_mean": 4.47,
+    "klg_max_mean": 7.23,
+    "no_klg_min_mean": 0.81,
+    "klg_min_mean": 0.45,
+    "mean_win_loss_tie": {
+      "win": 72,
+      "tie": 2,
+      "loss": 45
+    },
+    "max_mean_win_loss_tie": {
+      "win": 70,
+      "tie": 25,
+      "loss": 24
+    },
+    "min_mean_win_loss_tie": {
+      "win": 9,
+      "tie": 87,
+      "loss": 23
+    },
+  }
+```
+
+
+## Jan 16
+
+- [x] Make dataset_converter1,2.py
+```
+Now exp11_plasma_gkv_v5/train_v6.py is made and it can collect many inferences and their scores. The output file of train_v6.py should be converted into dataset format for LLM. Since dpo_converter1,2.py are made for train_v4.py, they are not compatible with train_v6.py output. Make exp11_plasma_gkv_v5/dataset_converter1.py and exp11_plasma_gkv_v5/dataset_converter2.py following the instructions below.
+
+    1. here's how dpo_converter1,2.py works
+    ```
+    current dpo_converter1.py converts results.json -> 
+    results_dpo.json:
+    [
+    {
+        "run_ids": [
+        "run-20251130-002138-38c194db",
+        ...
+        ],
+        "step": 3,
+        "message": [
+        {
+            "role": "system",
+            "content": "..."
+        },
+        {
+            "role": "user",
+            "content": "..."
+        },
+        {
+            "role": "agent",
+            "name": "code_act",
+            "content": "...",
+        },
+        ],
+        "knowledge": [
+        {
+            "text": null,
+            "agent": null,
+            "tags": [],
+            "step": 3,
+            "iteration": 0,
+            "run_id": "run-20251130-002138-38c194db",
+            "rationale": "baseline inference",
+            "score_feedback": "...",
+            "score": 7
+        },
+        {
+            "text": "Scan ...",
+            "agent": "think",
+            "tags": [
+            "data-exploration",
+            "parameter-mapping"
+            ],
+            "step": 3,
+            "iteration": 1,
+            "run_id": "run-20251130-002338-bb5725db",
+            "rationale": "This keeps the analysis robust against non-standard field names and ensures a repeatable method to map hyper-parameters to the three requested aspects.",
+            "score_feedback": "The answer does not address the question. ...",
+            "score": 6
+        },
+        ...
+        ],
+        "comparison": [
+            [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            [0,2],
+            [1,2]
+        ],
+        "scores": [7, 6, 4],
+    },
+    ...
+    ]
+
+    current dpo_converter2.py converts results_dpo.json -> 
+    dataset_list.json:
+    [
+        {
+            "batch": [
+            {"msg": [{"role": "user", "content": _format_prompt(query, knowledge[0])}]},
+            {"msg": [{"role": "user", "content": _format_prompt(query, knowledge[1])}]},
+            {"msg": [{"role": "user", "content": _format_prompt(query, knowledge[2])}]}
+            ],
+            "dpo_pairs": [
+            [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            [0,2],
+            [1,2]
+            ]
+            "scores": [7, 6, 4],
+        },
+        ...
+    ]
+    ```
+
+    2. here's the new python file you should create
+    ```
+    dataset_converter1.py
+    output (train_v6_results_converted.json):
+    [
+    {
+        "problem_id": 0,
+        "messages": [
+            {
+                "message": [
+                    {"role": "system","content": "s0"},
+                    {"role": "user","content": "q0"},
+                    {"role": "agent","name": "code_act","content": "a0_0","knowledge":"k0_0"},
+                    {"role": "agent","name": "code_act","content": "a0_1","knowledge":"k0_1"},
+                    {"role": "agent","name": "answer","content": "a0_2","knowledge":"k0_2"},
+                ],
+                "n_steps": 3,
+                "score": 7,
+                "run_id": "run-20251130-002138-38c194db",
+            },
+            {
+                "message": [
+                    {"role": "system","content": "s1"},
+                    {"role": "user","content": "q1"},
+                    {"role": "agent","name": "code_act","content": "a1_0","knowledge":"k1_0"},
+                    ...
+                    {"role": "agent","name": "code_act","content": "a1_4","knowledge":"k1_4"}
+                ],
+                "n_steps": 5,
+                "score": 6,
+                "run_id": "...",
+            },
+            ...
+        ],
+        "comparison": [
+            [0,1],  # [(chosen_msg_id), (rejected_msg_id)]
+            [0,2],
+            [1,2]
+        ],
+        "scores": [
+            7,
+            6,
+            4,
+        ]
+    },
+    ...
+    ]
+
+    dataset_converter2.py
+    output (train_v6_datasetlist_train.json, train_v6_datasetlist_test.json):
+    [
+        {
+            "batch": [
+                {
+                    "msg": [{
+                        "role": "user", 
+                        "content": _format_prompt(
+                            _format_query(
+                                {"role": "system","content": "s0"},
+                                {"role": "user","content": "q0"},
+                            ), 
+                            "k0_0"
+                        )
+                    }], 
+                    "msg_id":0, 
+                    "agent_step":1
+                },
+                {
+                    "msg": [{
+                        "role": "user", 
+                        "content": _format_prompt(
+                            _format_query(
+                                {"role": "system","content": "s0"},
+                                {"role": "user","content": "q0"},
+                                {"role": "agent","name": "code_act","content": "a0_0","knowledge":"k0_0"},
+                            ), 
+                            "k0_1"
+                        )
+                    }], 
+                    "msg_id":0, 
+                    "agent_step":2
+                },
+                {
+                    "msg": [{
+                        "role": "user", 
+                        "content": _format_prompt(
+                            _format_query(
+                                {"role": "system","content": "s0"},
+                                {"role": "user","content": "q0"},
+                                {"role": "agent","name": "code_act","content": "a0_0","knowledge":"k0_0"},
+                                {"role": "agent","name": "code_act","content": "a0_1", "knowledge":"k0_1"},
+                            ), 
+                            "k0_2"
+                        )
+                    }], 
+                    "msg_id":0, 
+                    "agent_step":3
+                },
+                {
+                    "msg": [{
+                        "role": "user", 
+                        "content": _format_prompt(
+                            _format_query(
+                                {"role": "system","content": "s1"},
+                                {"role": "user","content": "q1"},
+                            ), 
+                            "k1_0"
+                        )
+                    }], 
+                    "msg_id":1, 
+                    "agent_step":1
+                },
+                ...
+            ],
+            "msg_groups": [
+                [0,1,2], # batch element ids of messages which have msg_id = 0
+                [3,4,5,6,7], # batch element ids of messages which have msg_id = 1
+                ...
+            ]
+            "dpo_pairs": [
+                [0,3],  # [(chosen_batch_element_id), (rejected_batch_element_id)]
+                [0,4],
+                ...
+            ],
+            "scores": [7,7,7,6,...], # [(score for batch[0]), (score for batch[1]), ...]
+        },
+        ...
+    ]
+    ```
+
+    3. Difference and new features: train_v6_results_converted.json should have different format from results_dpo.json like above. Also batch field in output of dataset_converter2.py have elements mixed over different steps.
+
+    4. Define DEFAULT_N_BATCH_ELEMENTS (like 10) in dataset_converter2.py and it designates the exact number of elements inside the "batch" list. Let's say there are 5 messages for a problem and all of them have 5 agent steps. In this case, you cannot include all of the agent steps in a batch. In this case, you should randomly pick 2 agent steps from each message and construct a batch. You can make 2 batches without using same (message, agent_step) and make one more batch with the rest (message, agent_step) and some from already chosen ones. 
+    
+    5. To make _format_query, you should refer to how seimei/llm.py:prepare_messages function constructs messages.
+
+    6. after finishing converting, print out average number of characters of "msg" content.
+
+Note that
+    1. Abondon DEFAULT_N_KNOWLEDGE_STEPS, DEFAULT_KNOWLEDGE_PER_STEP in dataset_converter1.py, and automatically get the number from the results file.
+
+Read all the content of train_v4,6.py and dpo_converter1,2.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
+```
+
+```
+1. by train_v4, I mean exp11_plasma_gkv_v5/train_v4_eval_sample.py
+2. Only klg_trials, don't include no_klg_trials
+3. Use DEFAULT_COMPARISON_THRESHOLD = 0.5
+4. problem_id should be the index at dataset.json.
+5. use algorithm in dpo_converter1.py (take out all possible pairs from a batch which have score difference more than threshold)
+6. Yes
+7. yes
+8. all batch elements 
+```
+
+- [x] Run training rmsearch
+
+* go to prakhar folder with 1 gpu
+* Run
+```
+pip install -e RMSearch/
+
+export WANDB_API_KEY="ff486ef8439a8a1e9892d8017cb48f0ab0d7935b"
+wandb login
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model2 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model2 \
+  > ./train.log 2>&1 &
+```
+
+- [ ] Eval
+Pod 1
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
+  > ./server-gptoss.log 2>&1 &
+```
+
+Pod2
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/Prakhar/exp11_plasma_gkv_v5/model2/checkpoint-200 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path /workspace/qwen4b-reward-exp11-model2-200
+
+nohup vllm serve /workspace/qwen4b-reward-exp11-model1-360 \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+# change DEFAULT_MODEL_NAME in rmsearch.py
+
+nohup uvicorn rmsearch:app \
+  --host 0.0.0.0 --port 8000 \
+  > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+
+## Jan 17
+
+- I think the training didn't go well. the rmsearch almost chooses answer agent all the time. the reason can be
+1. Most likely, short agent steps gives better answer entirely. That's why it makes 
+2. the idea making dpo_pairs with different steps was wrong (using grpo maybe solves this.)
+3. adpo was not efficient enough (try making the batch_size bigger), or there was not enough dataset. 
+
+- [ ] Run train_v6.py with
+    - larger sample number
+    - make the number of sample of klg and no_klg same
+    - make randomness bigger
+```
+DEFAULT_BATCH_SIZE = 100
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.8
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.3
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 14
+DEFAULT_N_KLG_TRIALS = 14
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_2.csv"
+
+[
+    ...
+    {
+        "id": "answer_clear_from_agents",
+        "agent": "answer",
+        "step": ">2",
+        "text": "From the agent output obtained in previous steps, give a clear final answer.",
+        "tags": ["answer", "clarity"],
+    },
+]
+```
+
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 2 \
+  > ./server-gptoss.log 2>&1 &
+
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+-> train_v6_2_results.json
+
+
+```
+DEFAULT_BATCH_SIZE = 80
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.4
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 14
+DEFAULT_N_KLG_TRIALS = 14
+
+answer step >2
+```
+-> train_v6_results3.json
+
+```
+DEFAULT_BATCH_SIZE = 80
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.4
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 14
+DEFAULT_N_KLG_TRIALS = 14
+
+answer step >2
+```
+-> train_v6_results3.json
+
+
+```
+DEFAULT_BATCH_SIZE = 80
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.4
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 14
+DEFAULT_N_KLG_TRIALS = 14
+
+answer step >2
+```
+-> train_v6_results4.json
+```
+  "summary": {
+    "total_problems": 110,
+    "overall_mean_score_improvement": 0.69,
+    "max_mean_score_improvement": 1.1,
+    "min_mean_score_improvement": 0.18,
+    "no_klg_overall_mean": 2.54,
+    "klg_overall_mean": 3.24,
+    "no_klg_max_mean": 7.48,
+    "klg_max_mean": 8.58,
+    "no_klg_min_mean": 0.06,
+    "klg_min_mean": 0.25,
+    "mean_win_loss_tie": {
+      "win": 67,
+      "tie": 1,
+      "loss": 42
+```
+
+- [ ] adpo with train_v6_2_results.json 
+    - larger n batch elements
+
+- [ ] Make grpo_lora_rmtrain.py
+```
+Make SEIMEI/train/grpo_lora_rmtrain.py refering to SEIMEI/train/adpo_lora_rmtrain.py.
+
+Here's the explanation of GRPO.
+'''
+https://chatgpt.com/share/696b7f66-5224-8006-8cd3-f63ccf7bba9b
+'''
+
+You should use "scores" field for reward in GRPO and that's integer from 0 to 10.
+
+Read all the content of train_v4,6.py and dpo_converter1,2.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
+```
+
+- [ ] Run train_v6.py -> eval_v6.py
+
 - [ ] Improve dataset (exp11_plasma_gkv_v6)
 ```
 Make dataset
 ```
 
-- [ ] Other modification related to train_v6.py
-    - [ ] dpo_converter should be changed
-    - [ ] adpo_lora_example.py loss should be changed to loss = r_step1*r_step2*...
-    - [ ] try GRPO in adpo_lora_example.py 
-
 - [ ] Run train_v6.py -> eval_v6.py
-
 
 
 - [ ] Scale dataset
 
-
+- [ ] Run train_v6.py -> eval_v6.py
 
 
