@@ -2920,15 +2920,18 @@ class seimei:
     @staticmethod
     def _dedupe_knowledge_items(items: Sequence[Tuple[str, Any]]) -> List[Tuple[str, Any]]:
         deduped: List[Tuple[str, Any]] = []
-        seen: set = set()
+        index_by_text: Dict[str, int] = {}
         for text, kid in items:
             if not text:
                 continue
-            key = (text, kid)
-            if key in seen:
+            existing_idx = index_by_text.get(text)
+            if existing_idx is None:
+                index_by_text[text] = len(deduped)
+                deduped.append((text, kid))
                 continue
-            seen.add(key)
-            deduped.append((text, kid))
+            existing_text, existing_kid = deduped[existing_idx]
+            if existing_kid is None and kid is not None:
+                deduped[existing_idx] = (existing_text, kid)
         return deduped
 
     def _extract_message_knowledge(self, payload: Dict[str, Any]) -> Tuple[List[str], List[Any]]:

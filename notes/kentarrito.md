@@ -3772,10 +3772,14 @@ answer step >2
       "loss": 42
 ```
 
+now answering in a step does accurate 
+
+- [ ] 
+
 - [ ] adpo with train_v6_2_results.json 
     - larger n batch elements
 
-- [ ] Make grpo_lora_rmtrain.py
+- [x] Make grpo_lora_rmtrain.py
 ```
 Make SEIMEI/train/grpo_lora_rmtrain.py refering to SEIMEI/train/adpo_lora_rmtrain.py.
 
@@ -3784,14 +3788,22 @@ Here's the explanation of GRPO.
 https://chatgpt.com/share/696b7f66-5224-8006-8cd3-f63ccf7bba9b
 '''
 
-You should use "scores" field for reward in GRPO and that's integer from 0 to 10.
+You should use "scores" field as rewards in GRPO and that's integer from 0 to 10.
 
 Read all the content of train_v4,6.py and dpo_converter1,2.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
 ```
 
+knowledge_used is bugged
+- [x] Fix knowledge_used issue
+
 - [ ] Run train_v6.py -> eval_v6.py
 
 - [ ] Improve dataset (exp11_plasma_gkv_v6)
+```
+SEIMEI/eval/generate_dataset_code.py
+
+```
+
 ```
 Make dataset
 ```
