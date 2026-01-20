@@ -1085,6 +1085,9 @@ async def run_orchestrator_with_patch(
         knowledge_kwargs["knowledge_search_config"] = knowledge_search_config
     if knowledge_search_mode:
         knowledge_kwargs["knowledge_search_mode"] = knowledge_search_mode
+        
+    knowledge_kwargs["agent_search_mode"] = "klg"
+
     try:
         with patch_manager.apply_for_problem(dataset_entry, dataset_index):
             result = await _run_llm_request(
@@ -1598,28 +1601,62 @@ def extract_knowledge_entries_from_messages(
     entries: List[Dict[str, Any]] = []
     agent_messages = extract_agent_messages(messages)
     for step_idx, msg in enumerate(agent_messages, start=1):
-        if orchestrator is not None and hasattr(orchestrator, "_extract_message_knowledge"):
-            texts, ids = orchestrator._extract_message_knowledge(msg)
+        raw = msg.get("knowledge")
+        items: List[Tuple[str, Any]] = []
+        if orchestrator is not None and hasattr(orchestrator, "_coerce_knowledge_items_with_ids"):
+            items = orchestrator._coerce_knowledge_items_with_ids(raw)
+            if hasattr(orchestrator, "_dedupe_knowledge_items"):
+                items = orchestrator._dedupe_knowledge_items(items)
         else:
-            texts = []
-            ids = []
-            raw = msg.get("knowledge")
-            if isinstance(raw, str) and raw.strip():
-                texts.append(raw.strip())
-            elif isinstance(raw, list):
-                texts.extend(str(item).strip() for item in raw if str(item).strip())
-            kid = msg.get("knowledge_id")
-            if kid not in (None, ""):
-                ids.append(kid)
-        if not texts:
+            def _coerce_local(value: Any) -> List[Tuple[str, Any]]:
+                local_items: List[Tuple[str, Any]] = []
+                if value is None:
+                    return local_items
+                if isinstance(value, str):
+                    text = value.strip()
+                    if text:
+                        local_items.append((text, None))
+                    return local_items
+                if isinstance(value, dict):
+                    text_value = (
+                        value.get("text")
+                        or value.get("knowledge")
+                        or value.get("content")
+                        or value.get("value")
+                    )
+                    text = str(text_value or "").strip()
+                    kid = value.get("id") or value.get("knowledge_id")
+                    if text:
+                        local_items.append((text, kid))
+                    return local_items
+                if isinstance(value, (list, tuple, set)):
+                    for entry in value:
+                        local_items.extend(_coerce_local(entry))
+                    return local_items
+                try:
+                    text = str(value).strip()
+                except Exception:
+                    return local_items
+                if text:
+                    local_items.append((text, None))
+                return local_items
+
+            items = _coerce_local(raw)
+
+        if not items:
             continue
-        if ids and len(ids) == len(texts):
-            pairs = zip(texts, ids)
-        elif ids and len(ids) == 1:
-            pairs = ((text, ids[0]) for text in texts)
-        else:
-            pairs = ((text, None) for text in texts)
-        for text, kid in pairs:
+        if msg.get("knowledge_id") not in (None, "") and all(kid is None for _, kid in items):
+            kid_value = msg.get("knowledge_id")
+            if isinstance(kid_value, (list, tuple, set)):
+                ids_list = list(kid_value)
+            else:
+                ids_list = [kid_value]
+            if len(ids_list) == len(items):
+                items = [(text, ids_list[idx]) for idx, (text, _) in enumerate(items)]
+            elif len(ids_list) == 1:
+                items = [(text, ids_list[0]) for text, _ in items]
+
+        for text, kid in items:
             entry = {"step": step_idx, "text": text}
             if kid is not None:
                 entry["id"] = kid
