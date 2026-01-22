@@ -3616,7 +3616,7 @@ Read all the content of train_v4,6.py and dpo_converter1,2.py very carefully, an
 ```
 pip install -e RMSearch/
 
-export WANDB_API_KEY="ff486ef8439a8a1e9892d8017cb48f0ab0d7935b"
+export WANDB_API_KEY=""
 wandb login
 
 nohup accelerate launch --config_file ./accelerate_config.yaml \
@@ -3796,13 +3796,91 @@ Read all the content of train_v4,6.py and dpo_converter1,2.py very carefully, an
 knowledge_used is bugged
 - [x] Fix knowledge_used issue
 
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
+  > ./server-gptoss.log 2>&1 &
+
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+-> train_v6_5_results.json
+-> there are so many bugs
+
+- [x] there are still same bugs (input the message format)
+- [x] it modifies answer knowledge text and put almost correct answer here (that's maybe why it got really good)
+    -> apply improve knowledge only for code_act bugs
+- [ ] for some reason, always answer agent is  (maybe sampling is not working in seimei) -> that's not true. But LLM often doesn't choose 5 knowledge. (routing prompt is not really good)
+- [ ] check if how knowledge is put in the prompt (because sometimes there are 2 knowledge for one step)
+- [ ] skip overlapping knowedge (use only one)
+
+
+```
+Modify exp11_plasma_gkv_v5/train_v6.py following
+
+1. Now, in knowledge_updating, it creates knowledge which includes the correct answer (this is not intended behavior). But the main purpose of the function is to make better knowledge so that code_act agent doesn't get simple errors. Change the prompt in _build_knowledge_update_prompt and modify knowledge only when the agent gets error output for a step which is augmented by the knowledge. Also, if there is no error, allow the LLM to output empty json or None (you should modify output processing so that it can process the empty)
+
+2. Add DEFAULT_ENABLE_KNOWLEDGE_UPDATE. If this is false, skip update_knowledge_after_scoring. Set true in default.
+
+3. 
+```
+
+wait!
+
+!!!!  I realized agent_search_mode = "klg" was not set in train_v6
+-> 'Add agent_search_mode = "klg" in train_v6.py'
+-> now it always chooses code_act. I think I should set some 
+
+so in previous experiments, agent was not properly sampled. (answer was always picked)
+
+this explains why there were so many knowledge selected (knowledge was picked in each agent)
+
+So the remaining error now is
+
+- [ ] knowledge prompt is bad. Make <KNOWLEDGE> (this can be skipped.)
+
+I will run train_v6.py again without doing the above.
+
 - [ ] Run train_v6.py -> eval_v6.py
+
+adpo
+```
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m rmsearch.train.adpo_lora_example \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model3 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model3 \
+  > ./train.log 2>&1 &
+```
+
+
+SEIMEI/SEIMEI/train/grpo_lora_rmtrain.py
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.grpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model3 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model3 \
+  > ./train.log 2>&1 &
+
+
+
+
 
 - [ ] Improve dataset (exp11_plasma_gkv_v6)
 ```
 SEIMEI/eval/generate_dataset_code.py
 
 ```
+
 
 ```
 Make dataset
