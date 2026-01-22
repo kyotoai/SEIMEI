@@ -5,7 +5,7 @@ import argparse
 import json
 import random
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Sequence, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 DEFAULT_INPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_dpo2.json")
 DEFAULT_OUTPUT_PATH_TRAIN = Path("exp11_plasma_gkv_v3/dataset_list_train.json")
@@ -352,6 +352,28 @@ def _coerce_comparisons(
     return pairs
 
 
+def _coerce_score_value(value: Any) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _coerce_scores(
+    scores: Any,
+    batch_size: int,
+) -> List[Optional[float]]:
+    if isinstance(scores, Sequence) and not isinstance(scores, (str, bytes, bytearray)):
+        values = [_coerce_score_value(item) for item in list(scores)[:batch_size]]
+    else:
+        values = []
+    if len(values) < batch_size:
+        values.extend([None] * (batch_size - len(values)))
+    return values
+
+
 def convert_entry(
     entry: Dict[str, Any],
     *,
@@ -367,7 +389,8 @@ def convert_entry(
         prompt = _format_prompt(query_block, key_text)
         batch.append(_build_batch_entry(prompt))
     dpo_pairs = _coerce_comparisons(entry.get("comparison") or [], len(batch))
-    return {"batch": batch, "dpo_pairs": dpo_pairs}
+    scores = _coerce_scores(entry.get("scores"), len(batch))
+    return {"batch": batch, "dpo_pairs": dpo_pairs, "scores": scores}
 
 
 def main() -> None:

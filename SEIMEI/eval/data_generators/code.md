@@ -14,6 +14,7 @@ Hard constraints
 - Each patch must keep the code syntactically valid and runnable, but remove a meaningful feature.
 - Do NOT emit no-op patches: every patch must change behavior, and the diff must include at least one removed line that is not reintroduced unchanged.
 - Do NOT leave hints or self-referential comments in the modified file (e.g., "disabled", "intentionally broken", "TODO restore", or commented-out copies of removed code).
+- In problem field, do NOT leave path of the file you modify with the patch file. The core purpose of this problem is to check if the code learner can find the problem path or not.
 - Do NOT keep a full copy of the removed snippet anywhere in the file (no commented-out blocks, no dead code preserved).
 
 How to work
@@ -49,7 +50,7 @@ Rules for patches
 - Keep changes small and localized.
 
 Dataset fields per patch
-- problem: clear task asking the learner to restore the missing feature.
+- problem: clear task asking the learner to restore the missing feature. here you shouldn't include path of the file because the main purpose of this problem is to check if the learner can find the deleted part understanding the whole structure of code. describe the feature of the deleted lines and ask the learner to fix the feature. Ex. "Implement 'call 
 - answer: detailed, step-by-step guidance to restore the feature (file locations, logic to add back, and how to validate).
 
 Response format (must follow)
