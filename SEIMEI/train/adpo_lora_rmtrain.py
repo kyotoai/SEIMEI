@@ -16,7 +16,7 @@ from trl import RewardConfig, RewardTrainer
 from torch.utils.data import DataLoader, RandomSampler, DistributedSampler, SequentialSampler
 from accelerate.utils import broadcast_object_list
 import torch.distributed as dist
-from .utils import extract_int, extract_text
+from .utils2 import extract_int, extract_text
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -288,7 +288,7 @@ class CustomRewardTrainer(Trainer):
         for i in range(len(all_rewards)):
             rewards = all_rewards[i]
             dpo_pairs = dpo_pairs_list[i]
-            if not dpo_pairs:
+            if not dpo_pairs or dpo_pairs==[]:
                 continue
 
             dpo_pairs_T = torch.tensor(dpo_pairs).transpose(0,1)
@@ -298,7 +298,10 @@ class CustomRewardTrainer(Trainer):
             #print("logits.shape: ", logits.shape)
             # all_logits = all_logits.to(logits.device)
             all_logits = torch.cat((all_logits, logits), dim=0)
-
+            
+        if len(all_logits)==0:
+            return loss, None, None
+            
         all_logits = all_logits.softmax(dim=1).detach()
         '''
         logits = tuple(v for k, v in logits_dict.items() if k not in ignore_keys)
