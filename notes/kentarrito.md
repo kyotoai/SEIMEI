@@ -3847,8 +3847,14 @@ I will run train_v6.py again without doing the above.
 
 adpo
 ```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=
+wandb login
+
 nohup accelerate launch --config_file ./accelerate_config.yaml \
-  -m rmsearch.train.adpo_lora_example \
+  -m seimei.train.adpo_lora_rmtrain \
   --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_train.json \
   --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_test.json \
   --model-name /workspace/qwen4b-reward \
@@ -3858,21 +3864,85 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
   > ./train.log 2>&1 &
 ```
 
+DEFAULT_BATCH_SIZE = 40
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.8
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.1
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 7
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_6.csv"
 
-SEIMEI/SEIMEI/train/grpo_lora_rmtrain.py
+
+
+
+
+grpo
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=
+wandb login
 
 nohup accelerate launch --config_file ./accelerate_config.yaml \
   -m seimei.train.grpo_lora_rmtrain \
-  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_train.json \
-  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_6_datasetlist_test.json \
+  --dataset-list-train ./gkvp/exp11_plasma_gkv_v5/train_v6_6_datasetlist_train.json \
+  --dataset-list-test ./gkvp/exp11_plasma_gkv_v5/train_v6_6_datasetlist_test.json \
   --model-name /workspace/qwen4b-reward \
-  --output-dir ./exp11_plasma_gkv_v5/model3 \
+  --output-dir ./gkvp/exp11_plasma_gkv_v5/model4 \
   --wandb-project rmsearch \
-  --wandb-run-name exp11-plasma-gkv-v5-model3 \
-  > ./train.log 2>&1 &
+  --wandb-run-name exp11-plasma-gkv-v5-model4 \
+  > ./train-grpo.log 2>&1 &
+```
 
 
 
+## Jan 23
+
+- [x] Debug rmtrain in seimei/train
+
+Pod1
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
+  > ./server-gptoss.log 2>&1 &
+```
+
+Pod2
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model3/checkpoint-1480 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path /workspace/qwen4b-reward-exp11-model3-1480
+
+nohup vllm serve /workspace/qwen4b-reward-exp11-model3-1480 \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+# change DEFAULT_MODEL_NAME in rmsearch.py
+
+nohup uvicorn rmsearch:app \
+  --host 0.0.0.0 --port 8000 \
+  > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+
+
+pip cache purge
+nohup bash -lc 'sleep 2h; runpodctl stop pod $RUNPOD_POD_ID' >/tmp/autostop.log 2>&1 &
 
 
 - [ ] Improve dataset (exp11_plasma_gkv_v6)

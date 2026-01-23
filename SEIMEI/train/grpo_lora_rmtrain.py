@@ -18,7 +18,7 @@ from trl import RewardConfig, RewardTrainer
 from torch.utils.data import DataLoader, RandomSampler, DistributedSampler, SequentialSampler
 from accelerate.utils import broadcast_object_list
 import torch.distributed as dist
-from .utils import extract_int, extract_text
+from .utils2 import extract_int, extract_text
 
 
 os.environ["TOKENIZERS_PARALLELISM"] = "false"

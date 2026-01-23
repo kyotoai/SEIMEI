@@ -1,4 +1,4 @@
-transformers
+transformers==4.55.1
 datasets
 trl
 peft
@@ -9,3 +9,4 @@ evaluate
 sentence_transformers
 wandb
 hf_transfer
+bitsandbytes
