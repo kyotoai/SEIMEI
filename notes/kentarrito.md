@@ -3939,8 +3939,10 @@ cd /workspace/kentarrito/gkvp
 nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
 ```
 
+- [x] Debug seimei: allow env key is not set
 
 
+- [ ] Debug grpo
 pip cache purge
 nohup bash -lc 'sleep 2h; runpodctl stop pod $RUNPOD_POD_ID' >/tmp/autostop.log 2>&1 &
 
@@ -3950,15 +3952,6 @@ nohup bash -lc 'sleep 2h; runpodctl stop pod $RUNPOD_POD_ID' >/tmp/autostop.log 
 SEIMEI/eval/generate_dataset_code.py
 
 ```
-
-
-```
-Make dataset
-```
-
-- [ ] Run train_v6.py -> eval_v6.py
-
-
 - [ ] Scale dataset
 
 - [ ] Run train_v6.py -> eval_v6.py

@@ -36,6 +36,7 @@ STEP_TITLE_COLOR = LogColors.GREEN
 LOG_BLOCK_COLOR = LogColors.CYAN
 ANSWER_BLOCK_COLOR = LogColors.BOLD_MAGENTA
 ERROR_COLOR = LogColors.RED
+WARNING_COLOR = LogColors.YELLOW
 KNOWLEDGE_COLOR = LogColors.YELLOW
 DEFAULT_RMSEARCH_URL = "https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch"
 
@@ -946,7 +947,8 @@ class seimei:
 
         api_key = os.getenv("KYOTOAI_API_KEY")
         if not api_key:
-            raise RuntimeError("KYOTOAI_API_KEY environment variable is not set")
+            print(colorize(f"[seimei] warning: KYOTOAI_API_KEY variable is not set", WARNING_COLOR), file=sys.stderr)
+            #raise RuntimeError("KYOTOAI_API_KEY environment variable is not set")
 
         headers = {
             "Authorization": f"Bearer {api_key}",
