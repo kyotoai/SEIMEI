@@ -3916,21 +3916,19 @@ Pod2
 pip install -e RMSearch/
 pip install -e SEIMEI/
 
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model3-1480
+
 python -m rmsearch.evaluation.utils \
   --type checkpoint \
   --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model3/checkpoint-1480 \
   --base-model-path /workspace/qwen4b-reward \
   --model-path /workspace/qwen4b-reward-exp11-model3-1480
 
-nohup vllm serve /workspace/qwen4b-reward-exp11-model3-1480 \
-  --runner pooling --host 127.0.0.1 --port 9000 \
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
   > server-vllm-reward.log 2>&1 &
 
-# change DEFAULT_MODEL_NAME in rmsearch.py
-
-nohup uvicorn rmsearch:app \
-  --host 0.0.0.0 --port 8000 \
-  > server-rmsearch.log 2>&1 &
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
 
 # wait until both gpt-oss and rmsearch is prepared
 
@@ -3940,7 +3938,7 @@ nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
 ```
 
 ```url check
-curl -X POST https://msz3jelfbjfa92-8000.proxy.runpod.net/rmsearch \
+curl -X POST https://qyq1np9490tn8x-8000.proxy.runpod.net/rmsearch \
   -H "Content-Type: application/json" \
   -d '{
         "queries": ["How to tune a reward model?", "What is LLM?"],
