@@ -4,8 +4,10 @@ from .agent import Agent, register, get_agent_subclasses
 from .knowledge import DEFAULT_RUN_PROMPT
 from .utils import load_run_messages
 from . import agents
+from .rmsearch import app
 
 __all__ = [
+    "app",
     "seimei",
     "LLMClient",
     "Agent",
