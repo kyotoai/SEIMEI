@@ -47,11 +47,8 @@ print("device_count:", torch.cuda.device_count())
 __all__ = ["make_dataset_list", "train_reward_model"]
 
 _PROMPT_TEMPLATE = (
-    "Give me relevant score between query and sentence;\n\n"
-    "Query:{query}\n\n"
-    'Sentence:```{sentence}```'
+    "<query>\n{query}\n</query>\n\n\n<key>\n{sentence}\n</key>\n\n\nQuery-Key Relevance Score:"
 )
-
 # Copyright 2025 The HuggingFace Team. All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");

@@ -45,9 +45,7 @@ print("device_count:", torch.cuda.device_count())
 __all__ = ["make_dataset_list", "train_reward_model"]
 
 _PROMPT_TEMPLATE = (
-    "Give me relevant score between query and sentence;\n\n"
-    "Query:{query}\n\n"
-    'Sentence:```{sentence}```'
+    "<query>\n{query}\n</query>\n\n\n<key>\n{sentence}\n</key>\n\n\nQuery-Key Relevance Score:"
 )
 
 # Copyright 2025 The HuggingFace Team. All rights reserved.
@@ -298,7 +296,7 @@ class CustomRewardTrainer(Trainer):
             #print("logits.shape: ", logits.shape)
             # all_logits = all_logits.to(logits.device)
             all_logits = torch.cat((all_logits, logits), dim=0)
-            
+
         if len(all_logits)==0:
             return loss, None, None
             
