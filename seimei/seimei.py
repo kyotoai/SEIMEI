@@ -1014,7 +1014,7 @@ class seimei:
         if isinstance(data, list):
             entries = data
         elif isinstance(data, dict):
-            entries = data.get("results") or data.get("queries") or []
+            entries = data.get("output")
             if isinstance(entries, dict):
                 entries = [entries]
             if not isinstance(entries, list):
