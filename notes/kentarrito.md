@@ -3934,9 +3934,27 @@ nohup uvicorn rmsearch:app \
 
 # wait until both gpt-oss and rmsearch is prepared
 
-# change config for train_v6.py
+# change config for train_v6.py (url should be changed!!)
 cd /workspace/kentarrito/gkvp
 nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+```url check
+curl -X POST https://bcf6fgv2jdimiy-8000.proxy.runpod.net/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{
+        "queries": ["How to tune a reward model?", "What is LLM?"],
+        "keys": ["Reward models score sequences.", "LLM is large language model"],
+        "k": 2
+      }'
+
+curl -X POST http://0.0.0.0:8000/rmsearch \
+  -H "Content-Type: application/json" \
+  -d '{
+        "queries": ["How to tune a reward model?", "What is LLM?"],
+        "keys": ["Reward models score sequences.", "LLM is large language model"],
+        "k": 2
+      }'
 ```
 
 - [x] Debug seimei: allow env key is not set
