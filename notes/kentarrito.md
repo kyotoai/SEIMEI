@@ -3974,6 +3974,14 @@ Modify exp11_plasma_gkv_v5/train_v6.py, exp11_plasma_gkv_v5/train_v6_runpod.py f
 Read all the content of train_v6.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
 ```
 
+```
+1. exp11_plasma_gkv_v5/knowledge_v6.csv
+2. globally
+3. write the updates only to DEFAULT_FINAL_KLG_POOL_SAVE_PATH
+4. use default knowledge pool at the top of the file(DEFAULT_KNOWLEDGE_POOL)
+5. skip calling it entirely
+```
+
 - [ ] Debug grpo
 
 pip cache purge

@@ -36,6 +36,8 @@ DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.2
 DEFAULT_KLG_SAMPLE_MODE = "llm"
 DEFAULT_N_NO_KLG_TRIALS = 3
 DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = True
 DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6.csv"
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
@@ -611,7 +613,63 @@ def _normalize_pool_ids(pool: Sequence[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return normalized
 
 
+def _load_knowledge_pool_csv(path: Path) -> List[Dict[str, Any]]:
+    pool: List[Dict[str, Any]] = []
+    if not path.exists():
+        return pool
+    try:
+        with path.open("r", encoding="utf-8", newline="") as handle:
+            reader = csv.DictReader(handle)
+            for row in reader:
+                if not isinstance(row, dict):
+                    continue
+                text = str(row.get("knowledge") or row.get("text") or "").strip()
+                agent = str(row.get("agent") or "").strip()
+                if not text or not agent:
+                    continue
+                tags_raw = row.get("tags")
+                tags: List[str] = []
+                if tags_raw not in (None, ""):
+                    try:
+                        parsed_tags = json.loads(tags_raw)
+                        if isinstance(parsed_tags, list):
+                            tags = [str(tag) for tag in parsed_tags]
+                        elif isinstance(parsed_tags, str):
+                            tags = [parsed_tags]
+                    except json.JSONDecodeError:
+                        tags = [tag.strip() for tag in str(tags_raw).split(",") if tag.strip()]
+                step_value = row.get("step")
+                step: Optional[int] = None
+                if step_value not in (None, ""):
+                    try:
+                        step = int(step_value)
+                    except (TypeError, ValueError):
+                        step = None
+                entry: Dict[str, Any] = {
+                    "id": row.get("id"),
+                    "agent": agent,
+                    "text": text,
+                    "tags": tags,
+                }
+                if step is not None:
+                    entry["step"] = step
+                pool.append(entry)
+    except OSError as exc:
+        print(f"[train_v6] Failed to load knowledge pool from {path}: {exc}")
+        return []
+    return pool
+
+
 DEFAULT_KNOWLEDGE_POOL = _normalize_pool_ids(DEFAULT_KNOWLEDGE_POOL)
+if DEFAULT_KLG_POOL_LOAD_PATH is not None:
+    loaded_pool = _load_knowledge_pool_csv(Path(DEFAULT_KLG_POOL_LOAD_PATH))
+    if loaded_pool:
+        DEFAULT_KNOWLEDGE_POOL = _normalize_pool_ids(loaded_pool)
+    else:
+        print(
+            "[train_v6] Using built-in knowledge pool; "
+            f"failed to load from {DEFAULT_KLG_POOL_LOAD_PATH}"
+        )
 
 SCORING_SYSTEM_PROMPT = "Return only JSON."
 
@@ -1937,7 +1995,7 @@ async def run_problem(
             feedback = score_info.get("feedback")
             if not _is_bugged_score(score, feedback):
                 valid_scores.append(score)
-            if use_knowledge:
+            if use_knowledge and DEFAULT_ENABLE_UPDATE_KLG_POOL:
                 await update_knowledge_after_scoring(
                     orchestrator.llm,
                     question=question,
