@@ -3962,7 +3962,17 @@ curl -X POST http://0.0.0.0:8000/rmsearch \
     - when I put too many concurrent requests, it will die
     -> `export VLLM_USE_V1=0` was needed for some reason. (https://github.com/vllm-project/vllm/issues/24436)
 
-- [ ]
+- [x] Debug train_v6.py: no summary
+- [ ] Additional feature train_v6.py: make mode to use existed csv file without updating
+```
+Modify exp11_plasma_gkv_v5/train_v6.py, exp11_plasma_gkv_v5/train_v6_runpod.py following:
+
+1. Add DEFAULT_KLG_POOL_LOAD_PATH. If this is not None, you should use csv file specified by the path instead of using the default knowledge pool.
+
+2. Add DEFAULT_ENABLE_UPDATE_KLG_POOL. If this is False, you should deactivate the function which updates knowledge pool after scoring.
+
+Read all the content of train_v6.py very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
+```
 
 - [ ] Debug grpo
 

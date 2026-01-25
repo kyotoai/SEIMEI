@@ -24,19 +24,21 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results6_eval3.json"
 DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
-DEFAULT_LLM_URL = "https://94sownu2ebkgwm-8000.proxy.runpod.net/v1"  # Set None if you use openai model
-DEFAULT_RM_URL = None
-#DEFAULT_RM_URL = "https://oyl94a4yv16q5y-8000.proxy.runpod.net/rmsearch"
-DEFAULT_BATCH_SIZE = 100
+#DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
+DEFAULT_LLM_URL = "https://gj8jlfkjpyfeyl-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+#DEFAULT_RM_URL = None
+DEFAULT_RM_URL = "https://afoj3moc4y6sw8-8000.proxy.runpod.net/rmsearch"
+#DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
+DEFAULT_BATCH_SIZE = 10
 DEFAULT_TOP_N_SAMPLE_KLG = 5
-DEFAULT_DISTRIBUTION_DECAY_RATE = 0.5
-DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.2
-DEFAULT_KLG_SAMPLE_MODE = "llm"
-DEFAULT_N_NO_KLG_TRIALS = 3
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 7
 DEFAULT_N_KLG_TRIALS = 7
-DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6.csv"
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_6_eval3.csv"
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
 BASE_SYSTEM_PROMPT_LIST = [
@@ -1085,7 +1087,7 @@ async def run_orchestrator_with_patch(
         knowledge_kwargs["knowledge_search_config"] = knowledge_search_config
     if knowledge_search_mode:
         knowledge_kwargs["knowledge_search_mode"] = knowledge_search_mode
-        
+    
     knowledge_kwargs["agent_search_mode"] = "klg"
 
     try:
@@ -1664,6 +1666,7 @@ def extract_knowledge_entries_from_messages(
     return entries
 
 
+
 def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
     if not knowledge_config:
         return {}
@@ -1918,6 +1921,7 @@ async def run_problem(
             run_id = normalize_result_run_id(result, log_dir)
             output = result.get("output", "")
             messages = get_messages_for_run(result, log_dir)
+
             used_knowledge = (
                 extract_knowledge_entries_from_messages(messages, orchestrator)
                 if use_knowledge
@@ -1956,6 +1960,7 @@ async def run_problem(
                 "score_feedback": feedback,
                 "output": output,
             }
+            print("record: ", record)
             if use_knowledge:
                 record["knowledge_used"] = used_knowledge
             trial_records.append(record)
