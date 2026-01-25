@@ -3924,6 +3924,7 @@ python -m rmsearch.evaluation.utils \
   --base-model-path /workspace/qwen4b-reward \
   --model-path /workspace/qwen4b-reward-exp11-model3-1480
 
+export VLLM_USE_V1=0
 nohup vllm serve $RMSEARCH_MODEL_NAME \
   --runner pooling --host 0.0.0.0 --port 9000 \
   > server-vllm-reward.log 2>&1 &
@@ -3957,8 +3958,14 @@ curl -X POST http://0.0.0.0:8000/rmsearch \
 
 - [x] Debug seimei: allow env key is not set
 
+- [x] Debug seimei/rmsearch.py
+    - when I put too many concurrent requests, it will die
+    -> `export VLLM_USE_V1=0` was needed for some reason. (https://github.com/vllm-project/vllm/issues/24436)
+
+- [ ]
 
 - [ ] Debug grpo
+
 pip cache purge
 nohup bash -lc 'sleep 2h; runpodctl stop pod $RUNPOD_POD_ID' >/tmp/autostop.log 2>&1 &
 
