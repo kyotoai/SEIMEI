@@ -24,6 +24,7 @@ Typical setup:
 Ex.
 ```
 export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model3-1480
+export VLLM_USE_V1=0   # this is needed for using qwen3 series model; otherwise it gets error when there are many concurrent requests
 
 nohup vllm serve $RMSEARCH_MODEL_NAME \
   --runner pooling --host 0.0.0.0 --port 9000 --data-parallel-size 1 \
