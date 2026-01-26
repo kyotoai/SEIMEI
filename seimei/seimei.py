@@ -356,6 +356,21 @@ class seimei:
         if not entries:
             return {}, {}, {}, {}, None, False
 
+        def _tag_store_entries_with_config_step(store: Dict[str, List[Dict[str, Any]]], config_step: Any) -> None:
+            if config_step in (None, ""):
+                return
+            for agent_entries in store.values():
+                if not isinstance(agent_entries, list):
+                    continue
+                for entry in agent_entries:
+                    if not isinstance(entry, dict):
+                        continue
+                    meta = entry.get("meta")
+                    if not isinstance(meta, dict):
+                        meta = {}
+                        entry["meta"] = meta
+                    meta.setdefault("config_step", config_step)
+
         for raw in entries:
             step_spec = raw.get("step")
             steps = self._coerce_step_targets(step_spec)
@@ -394,6 +409,8 @@ class seimei:
                 store_meta = {"path": load_path, "loaded": False}
                 store_payload = self._load_manual_knowledge_store(load_path)
                 if store_payload:
+                    if step_spec_present:
+                        _tag_store_entries_with_config_step(store_payload, step_spec)
                     store_meta["loaded"] = True
                     total_entries = 0
                     agent_names: List[str] = []
@@ -409,12 +426,6 @@ class seimei:
             for step in targets:
                 for payload in entry_payloads:
                     entry_map[step].append(dict(payload))
-                if store_payload:
-                    store_map[step].append(store_payload)
-                if store_meta:
-                    store_source_map[step].append(dict(store_meta))
-                elif load_path and not is_base_load:
-                    store_source_map[step].append({"path": load_path, "loaded": False})
                 if (
                     agent_field_present
                     and routing_candidates
@@ -424,6 +435,16 @@ class seimei:
                     for candidate in routing_candidates:
                         if candidate not in route:
                             route.append(candidate)
+
+            if load_path and not is_base_load:
+                store_targets = [None] if step_spec_present else targets
+                for step in store_targets:
+                    if store_payload:
+                        store_map[step].append(store_payload)
+                    if store_meta:
+                        store_source_map[step].append(dict(store_meta))
+                    else:
+                        store_source_map[step].append({"path": load_path, "loaded": False})
 
         return (
             dict(entry_map),
@@ -755,6 +776,43 @@ class seimei:
         step: Optional[int],
     ) -> Dict[str, List[Dict[str, Any]]]:
         merged: Dict[str, List[Dict[str, Any]]] = {}
+        matcher_cache: Dict[str, Optional[Callable[[int], bool]]] = {}
+
+        def _get_entry_step_spec(entry: Dict[str, Any]) -> Optional[Any]:
+            step_value = entry.get("step")
+            if step_value not in (None, ""):
+                return step_value
+            meta = entry.get("meta")
+            if isinstance(meta, dict):
+                meta_step = meta.get("step")
+                if meta_step not in (None, ""):
+                    return meta_step
+            return None
+
+        def _get_config_step_spec(entry: Dict[str, Any]) -> Optional[Any]:
+            meta = entry.get("meta")
+            if isinstance(meta, dict):
+                config_step = meta.get("config_step")
+                if config_step not in (None, ""):
+                    return config_step
+            return None
+
+        def _matches_step(entry: Dict[str, Any]) -> bool:
+            entry_step = _get_entry_step_spec(entry)
+            config_step = _get_config_step_spec(entry) if entry_step is None else None
+            step_spec = entry_step if entry_step is not None else config_step
+            if step_spec is None:
+                return True
+            if step is None:
+                return False
+            cache_key = repr(step_spec)
+            matcher = matcher_cache.get(cache_key)
+            if cache_key not in matcher_cache:
+                matcher = self._build_step_matcher(step_spec)
+                matcher_cache[cache_key] = matcher
+            if matcher is None:
+                return False
+            return bool(matcher(step))
 
         def _merge_store(store: Dict[str, List[Dict[str, Any]]]) -> None:
             for agent, entries in store.items():
@@ -762,13 +820,15 @@ class seimei:
                     continue
                 agent_entries = merged.setdefault(agent, [])
                 for entry in entries:
-                    if isinstance(entry, dict):
+                    if isinstance(entry, dict) and _matches_step(entry):
                         agent_entries.append(dict(entry))
 
         if isinstance(base_store, dict):
             for agent, entries in base_store.items():
                 if isinstance(entries, list):
-                    merged[agent] = [dict(entry) for entry in entries if isinstance(entry, dict)]
+                    merged[agent] = [
+                        dict(entry) for entry in entries if isinstance(entry, dict) and _matches_step(entry)
+                    ]
 
         for store in manual_stores.get(None, []):
             if isinstance(store, dict):
@@ -781,6 +841,8 @@ class seimei:
         def _merge_entries(entry_list: List[Dict[str, Any]]) -> None:
             for entry in entry_list:
                 if not isinstance(entry, dict):
+                    continue
+                if not _matches_step(entry):
                     continue
                 agent_name = str(entry.get("agent") or "*").strip() or "*"
                 merged.setdefault(agent_name, []).append(dict(entry))

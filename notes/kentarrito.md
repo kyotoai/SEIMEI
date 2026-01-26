@@ -3902,6 +3902,8 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
 
 - [x] Debug rmtrain in seimei/train
 
+pip install vllm==0.14.1
+
 Pod1
 ```
 pip install -e RMSearch/
@@ -3915,6 +3917,7 @@ Pod2
 ```
 pip install -e RMSearch/
 pip install -e SEIMEI/
+pip install vllm==0.14.1
 
 export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model3-1480
 
@@ -3938,8 +3941,26 @@ cd /workspace/kentarrito/gkvp
 nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
 ```
 
+Pod2
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model3-1480
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
 ```url check
-curl -X POST https://qyq1np9490tn8x-8000.proxy.runpod.net/rmsearch \
+curl -X POST https://yjdqlhgc1318ei-8000.proxy.runpod.net/rmsearch \
   -H "Content-Type: application/json" \
   -d '{
         "queries": ["How to tune a reward model?", "What is LLM?"],
@@ -3963,7 +3984,7 @@ curl -X POST http://0.0.0.0:8000/rmsearch \
     -> `export VLLM_USE_V1=0` was needed for some reason. (https://github.com/vllm-project/vllm/issues/24436)
 
 - [x] Debug train_v6.py: no summary
-- [ ] Additional feature train_v6.py: make mode to use existed csv file without updating
+- [x] Additional feature train_v6.py: make mode to use existed csv file without updating
 ```
 Modify exp11_plasma_gkv_v5/train_v6.py, exp11_plasma_gkv_v5/train_v6_runpod.py following:
 
@@ -3981,6 +4002,52 @@ Read all the content of train_v6.py very carefully, and implement the above feat
 4. use default knowledge pool at the top of the file(DEFAULT_KNOWLEDGE_POOL)
 5. skip calling it entirely
 ```
+
+- [ ] Make exp11_plasma_gkv_v5/make_sumary.py
+```
+Make exp11_plasma_gkv_v5/make_sumary.py following;
+
+1. refer to exp11_plasma_gkv_v5/train_v6.py and make make_sumary.py which converts run_cache and construct summary and detail, and save it in the same file. So input of this file is file path of the output file of train_v6. (like DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results6_eval4.json")
+```
+
+- I got some errors on vllm server. I installed vllm==0.14.1 and solved it.
+
+train_v6_results6_eval5.json
+-> this often gets answer nothing error. I will put step restriction (knowledge_v6_6_modified)
+
+train_v6_results6_eval6.json
+-> I found another bug, it didn't use step in csv. This is inconvenient so I will modify.
+
+
+- [x] Debug step in knowledge.csv
+```
+Now seimei doesn't take into account "step" column in knowledge.csv. Debug this following:
+
+1. knowledge csv path is designated in seimei.__call__ like
+
+knowledge_load_config=[
+    {"step":"<2", "load_knowledge_path": "exp11_plasma_gkv_v5/knowledge_v6_6_modified.csv",}
+]
+
+step field in the dict above works for specifying inference steps the knowledge is used. But this cannot designate more detailed specification of each knowledge text inside the csv file. So I added step column in the csv file like
+```
+id,agent,knowledge,tags,step
+code_ls_inventory,code_act,"Use `ls -a` to inventory the repo before touching files so you know which modules, patches, or scripts exist.","[""shell"", ""ls"", ""context""]",<8
+code_pwd_confirm,code_act,Run `pwd` and confirm you are inside the experiment workspace before editing paths.,"[""shell"", ""pwd"", ""sanity-check""]",<2
+```
+
+But this step column is not being read by seimei.py properly. You should debug this point.
+
+2. how step is processed should be same as the step in dict in knowledge_load_config list. Reuse the process function used in it if possible.
+
+3. if there are multiple step specification for one knowledge, prioritize the step column in the csv file.
+
+Read all the content of seimei.py and relevant files very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
+```
+
+
+
+
 
 - [ ] Debug grpo
 
