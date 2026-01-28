@@ -24,23 +24,23 @@ EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
 PATCH_DIR = EXP_DIR / "patch_files"
 DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
-DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results6_eval4.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results6_eval7.json"
 DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
 #DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
-DEFAULT_LLM_URL = "https://gj8jlfkjpyfeyl-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_LLM_URL = "https://rrg48ysue3kx3u-8000.proxy.runpod.net/v1"  # Set None if you use openai model
 #DEFAULT_RM_URL = None
-DEFAULT_RM_URL = "https://afoj3moc4y6sw8-8000.proxy.runpod.net/rmsearch"
+DEFAULT_RM_URL = "https://yjdqlhgc1318ei-8000.proxy.runpod.net/rmsearch"
 #DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
-DEFAULT_BATCH_SIZE = 10
+DEFAULT_BATCH_SIZE = 20
 DEFAULT_TOP_N_SAMPLE_KLG = 5
 DEFAULT_DISTRIBUTION_DECAY_RATE = 0
 DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
 DEFAULT_KLG_SAMPLE_MODE = "rm"
 DEFAULT_N_NO_KLG_TRIALS = 7
 DEFAULT_N_KLG_TRIALS = 7
-DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_6.csv"
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_6_modified.csv"
 DEFAULT_ENABLE_UPDATE_KLG_POOL = False
-DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_6_eval4.csv"
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_6_eval7.csv"
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
 BASE_SYSTEM_PROMPT_LIST = [
@@ -1957,10 +1957,14 @@ async def run_problem(
                 base_prompt_messages,
                 use_knowledge_prompt=use_knowledge,
             )
-            manual_entries = build_manual_knowledge_entries() if use_knowledge else None
-            knowledge_config = build_knowledge_config(
-                [dict(entry) for entry in manual_entries] if manual_entries else None
-            )
+            #manual_entries = build_manual_knowledge_entries() if use_knowledge else None
+            #knowledge_config = build_knowledge_config(
+            #    [dict(entry) for entry in manual_entries] if manual_entries else None
+            #)
+            knowledge_config = {
+                "load_knowledge_path": DEFAULT_KLG_POOL_LOAD_PATH,
+            }
+
             run_name = f"train_v6_{index:04d}_{label}_r{trial + 1}"
             result = await run_orchestrator_with_patch(
                 orchestrator,
@@ -1969,7 +1973,7 @@ async def run_problem(
                 dataset_index=index,
                 messages=rerun_messages,
                 run_name=run_name,
-                knowledge_config=knowledge_config,
+                knowledge_config=knowledge_config if use_knowledge else None,
                 knowledge_search_config=knowledge_search_config if use_knowledge else None,
                 knowledge_search_mode=klg_sample_mode if use_knowledge else None,
                 checkpoint=checkpoint,
@@ -2018,7 +2022,6 @@ async def run_problem(
                 "score_feedback": feedback,
                 "output": output,
             }
-            print("record: ", record)
             if use_knowledge:
                 record["knowledge_used"] = used_knowledge
             trial_records.append(record)
@@ -2314,8 +2317,10 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                         record = await task
                     except Exception as exc:  # pragma: no cover - runtime guard
                         print(f"[train_v6] Problem {entry_id} failed: {exc}")
+
                     if record:
                         rid = str(record.get("id") or "").strip()
+
                         if rid and rid not in processed_ids:
                             eval_entries.append(record)
                             processed_ids.add(rid)
@@ -2323,6 +2328,7 @@ async def run_evaluation(args: argparse.Namespace) -> None:
                                 "[train_v6] Stored record "
                                 f"{rid}; total entries={len(eval_entries)}"
                             )
+
                     async with checkpoint.lock:
                         save_eval_entries(
                             eval_entries,
