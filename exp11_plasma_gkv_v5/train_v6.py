@@ -1954,10 +1954,13 @@ async def run_problem(
                 base_prompt_messages,
                 use_knowledge_prompt=use_knowledge,
             )
-            manual_entries = build_manual_knowledge_entries() if use_knowledge else None
-            knowledge_config = build_knowledge_config(
-                [dict(entry) for entry in manual_entries] if manual_entries else None
-            )
+            #manual_entries = build_manual_knowledge_entries() if use_knowledge else None
+            #knowledge_config = build_knowledge_config(
+            #    [dict(entry) for entry in manual_entries] if manual_entries else None
+            #)
+            knowledge_config = {
+                "load_knowledge_path": DEFAULT_KLG_POOL_LOAD_PATH,
+            }
             run_name = f"train_v6_{index:04d}_{label}_r{trial + 1}"
             result = await run_orchestrator_with_patch(
                 orchestrator,
@@ -1966,7 +1969,7 @@ async def run_problem(
                 dataset_index=index,
                 messages=rerun_messages,
                 run_name=run_name,
-                knowledge_config=knowledge_config,
+                knowledge_config=knowledge_config if use_knowledge else None,
                 knowledge_search_config=knowledge_search_config if use_knowledge else None,
                 knowledge_search_mode=klg_sample_mode if use_knowledge else None,
                 checkpoint=checkpoint,
