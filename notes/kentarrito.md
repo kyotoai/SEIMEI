@@ -4045,8 +4045,15 @@ But this step column is not being read by seimei.py properly. You should debug t
 Read all the content of seimei.py and relevant files very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
 ```
 
+- [x] Debug knowledge.csv processing in train_v6
+    - delete unnecessary load klg config processing in train_v6
+
+train_v6_results6_eval7.json
+-> no_klg was same as klg with my mistakes. But comparing klg in it with no_klg in train_v6_results6_eval6_2.json and train_v6_results6.json, the mean accuracy goes up by 15%
 
 
+
+- [ ] 
 
 
 - [ ] Debug grpo
