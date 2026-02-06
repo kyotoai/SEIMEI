@@ -88,6 +88,33 @@ def convert_checkpoint(base_model_path, checkpoint_path, model_path):
     del generate_model
 
 
+def convert_checkpoint2(base_model_path, checkpoint_path, model_path):
+    tokenizer = AutoTokenizer.from_pretrained(base_model_path, padding_side="left",add_eos_token=False,add_bos_token=False)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+        config.pad_token_id = config.eos_token_id
+
+    # Load the pre-trained model without the LM head.
+    # AutoModelForCausalLM usually refers to models with the LM head included, so you'd typically use a more specific base model class.
+    #base_model = AutoModelForCausalLM.from_config(config).base_model
+    model = AutoModelForSequenceClassification.from_pretrained(base_model_path, num_labels=1)
+
+    lora_model = PeftModel.from_pretrained(model, checkpoint_path)
+
+    reward_model = lora_model.merge_and_unload()
+
+    score_save_path = f"{model_path}/score.pt"
+
+    tokenizer.save_pretrained(model_path)
+    reward_model.save_pretrained(model_path)
+
+    print("reward_model: ", reward_model)
+    
+    torch.save(reward_model.score.weight.data, score_save_path)
+    del reward_model
+
+
+
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Generate query sequences with controlled relevance drift for source keys.")
@@ -102,6 +129,10 @@ if __name__ == "__main__":
         if not args.base_model_path or not args.base_model_path or not args.model_path:
             raise Exception("provide check-point-path, base-model-path and model-path for type:checkpoint")
         convert_checkpoint(args.base_model_path, args.check_point_path, args.model_path)
+    if args.type == "checkpoint2":
+        if not args.base_model_path or not args.base_model_path or not args.model_path:
+            raise Exception("provide check-point-path, base-model-path and model-path for type:checkpoint")
+        convert_checkpoint2(args.base_model_path, args.check_point_path, args.model_path)
     elif args.type == "model":
         if not args.keep_original or not args.model_path:
             raise Exception("provide check-point-path, base-model-path and model-path for type:checkpoint")
