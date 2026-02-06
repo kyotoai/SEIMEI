@@ -3908,6 +3908,7 @@ Pod1
 ```
 pip install -e RMSearch/
 pip install -e SEIMEI/
+pip install vllm==0.14.1
 nohup vllm serve /workspace/gpt-oss-20b \
   --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
   > ./server-gptoss.log 2>&1 &
@@ -3919,13 +3920,13 @@ pip install -e RMSearch/
 pip install -e SEIMEI/
 pip install vllm==0.14.1
 
-export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model3-1480
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model4-1840
 
 python -m rmsearch.evaluation.utils \
   --type checkpoint \
-  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model3/checkpoint-1480 \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model4/checkpoint-1840 \
   --base-model-path /workspace/qwen4b-reward \
-  --model-path /workspace/qwen4b-reward-exp11-model3-1480
+  --model-path $RMSEARCH_MODEL_NAME
 
 export VLLM_USE_V1=0
 nohup vllm serve $RMSEARCH_MODEL_NAME \
@@ -4052,25 +4053,512 @@ train_v6_results6_eval7.json
 -> no_klg was same as klg with my mistakes. But comparing klg in it with no_klg in train_v6_results6_eval6_2.json and train_v6_results6.json, the mean accuracy goes up by 15%
 
 
+## Jan 28
 
-- [ ] 
+
+ToDo by tmrw
+- [ ] write thesis and gaiyosho
+
+ToDo until next week
+- [x] split dataset.json -> dataset_train.json, dataset_eval.json
+- [ ] Run training rmsearch -> eval seimei
+Sampling:
+```train_v6.py
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7.json"
+DEFAULT_BATCH_SIZE = 40
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.8
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.1
+DEFAULT_KLG_SAMPLE_MODE = "llm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 14
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = True
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter1.csv"
+```
+06:22:35 -> 12:33:50
+
+Train:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=
+wandb login
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.adpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_7_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_7_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model4 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model4 \
+  > ./train.log 2>&1 &
+```
+
+Eval:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model4-1840
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model4/checkpoint-1840 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path $RMSEARCH_MODEL_NAME
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+Eval train_v6.py
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_test.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_eval.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+#DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
+DEFAULT_LLM_URL = "https://9m3koew8d1au9a-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+#DEFAULT_RM_URL = None
+DEFAULT_RM_URL = "https://cjem3vnde13quw-8000.proxy.runpod.net/rmsearch"
+#DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
+DEFAULT_BATCH_SIZE = 28
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7_iter1.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = False
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter2.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+-> this is minimal exp for the thesis
 
 
+Extra:
+- [ ] Try iteration of rmsearch
+train_v6 iter2
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_train.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_iter2.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+#DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
+DEFAULT_LLM_URL = "https://9anj9xel6977qo-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+#DEFAULT_RM_URL = None
+DEFAULT_RM_URL = "https://qmphhqgyc9meqd-8000.proxy.runpod.net/rmsearch"
+#DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
+DEFAULT_BATCH_SIZE = 40
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.5
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.1
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 14
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7_iter1.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = True
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter2.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+Train iter2
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=
+wandb login
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model4-1840-train
+
+python -m seimei.train.utils \
+  --type checkpoint2 \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model4/checkpoint-1840 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path /workspace/qwen4b-reward-exp11-model4-1840-train
+
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.adpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_7_iter2_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_7_iter2_datasetlist_test.json \
+  --model-name $RMSEARCH_MODEL_NAME \
+  --output-dir ./exp11_plasma_gkv_v5/model5 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model5 \
+  > ./train.log 2>&1 &
+```
+
+
+Eval iter2:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model5-1640
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model5/checkpoint-1640 \
+  --base-model-path /workspace/qwen4b-reward-exp11-model4-1840-train \
+  --model-path $RMSEARCH_MODEL_NAME
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+Eval iter2:
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_test.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_iter2_eval.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+#DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
+DEFAULT_LLM_URL = "https://umtcggukwo1jtd-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+#DEFAULT_RM_URL = None
+DEFAULT_RM_URL = "https://lhe0lavhsauv5y-8000.proxy.runpod.net/rmsearch"
+#DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
+DEFAULT_BATCH_SIZE = 28
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7_iter2.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = False
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter3.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+
+train_v6 iter3
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_train.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_iter3.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+#DEFAULT_LLM_URL = "http://0.0.0.0:8000/v1"
+DEFAULT_LLM_URL = "https://umtcggukwo1jtd-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+#DEFAULT_RM_URL = None
+DEFAULT_RM_URL = "https://lhe0lavhsauv5y-8000.proxy.runpod.net/rmsearch"
+#DEFAULT_RM_URL = "http://0.0.0.0:8000/rmsearch"
+DEFAULT_BATCH_SIZE = 40
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.5
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.1
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 14
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7_iter2.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = True
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter3.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+Train iter3
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=ff486ef8439a8a1e9892d8017cb48f0ab0d7935b
+wandb login
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model5-1640-train
+
+python -m seimei.train.utils \
+  --type checkpoint2 \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model5/checkpoint-1640 \
+  --base-model-path /workspace/qwen4b-reward-exp11-model4-1840-train \
+  --model-path /workspace/qwen4b-reward-exp11-model5-1640-train
+
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.adpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_7_iter3_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_7_iter3_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward-exp11-model5-1640-train \
+  --output-dir ./exp11_plasma_gkv_v5/model6 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model6 \
+  > ./train.log 2>&1 &
+```
+
+Eval iter3:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model6-2040
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model6/checkpoint-2040 \
+  --base-model-path /workspace/qwen4b-reward-exp11-model5-1640-train \
+  --model-path $RMSEARCH_MODEL_NAME
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+Before this, try to modify knowledge_v6_7_iter3.csv and add step restriction using exp11_plasma_gkv_v5/modify_klg_csv.py
+
+Eval iter3:
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_test.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_iter3_eval.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://umtcggukwo1jtd-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_RM_URL = "https://lhe0lavhsauv5y-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 28
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7_iter3.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = False
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_iter4.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+
+Eval qwen4b-reward:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-converted-model
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+Before this, try to modify knowledge_v6_7_iter3.csv and add step restriction using exp11_plasma_gkv_v5/modify_klg_csv.py
+
+Eval qwen4b-reward:
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_test.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results7_qwen4b_reward_eval.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://c58sixe1o7r4ei-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_RM_URL = "https://h0y2euo3exrw8x-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 28
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_7.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = False
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_7_old.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+
+
+
+-> I found qwen4b base has higher score than any iter here (gkvp/exp11_plasma_gkv_v5/train_v6_results7_qwen4b_reward_eval.json)
+-> I will use this for iter1 sampling. I expect the result to become like
+    * in qwen4b base, it finishes at step 2 or 3. this is desirable because we can probably see the agent step becomes longer.
+    * In iter1, it should be 20% bigger.
+
+
+Sampling qwen4b-reward iter1:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-converted-model
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+
+Sampling qwen4b-reward iter1:
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_train.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results8.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://mjphhv7r42knfx-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_RM_URL = "https://ebo1e9nmslnb0j-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 40
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0.5
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0.1
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 14
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_8.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = True
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_8_iter1.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+Train qwen4b-reward iter1:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=ff486ef8439a8a1e9892d8017cb48f0ab0d7935b
+wandb login
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.adpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_8_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_8_datasetlist_test.json \
+  --model-name /workspace/qwen4b-reward \
+  --output-dir ./exp11_plasma_gkv_v5/model7 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model7 \
+  > ./train.log 2>&1 &
+```
+
+Eval qwen4b-reward iter1:
+```
+pip install -e RMSearch/
+pip install -e SEIMEI/
+pip install vllm==0.14.1
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model7-1320
+
+python -m rmsearch.evaluation.utils \
+  --type checkpoint \
+  --check-point-path /workspace/kentarrito/exp11_plasma_gkv_v5/model7/checkpoint-1320 \
+  --base-model-path /workspace/qwen4b-reward \
+  --model-path $RMSEARCH_MODEL_NAME
+
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+
+# wait until both gpt-oss and rmsearch is prepared
+
+# change config for train_v6.py (url should be changed!!)
+cd /workspace/kentarrito/gkvp
+nohup python exp11_plasma_gkv_v5/train_v6.py > ./server-python.log 2>&1 &
+```
+
+modify step in knowledge_v6_8_iter1.csv
+
+Eval qwen4b-reward iter1:
+```
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_test.json"
+DEFAULT_RESULT_PATH = EXP_DIR / "train_v6_results8_eval.json"
+DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
+DEFAULT_LLM_URL = "https://mjphhv7r42knfx-8000.proxy.runpod.net/v1"  # Set None if you use openai model
+DEFAULT_RM_URL = "https://r4fh8z5zqetkjk-8000.proxy.runpod.net/rmsearch"
+DEFAULT_BATCH_SIZE = 28
+DEFAULT_TOP_N_SAMPLE_KLG = 5
+DEFAULT_DISTRIBUTION_DECAY_RATE = 0
+DEFAULT_RANDOM_KLG_SAMPLING_RATE = 0
+DEFAULT_KLG_SAMPLE_MODE = "rm"
+DEFAULT_N_NO_KLG_TRIALS = 0
+DEFAULT_N_KLG_TRIALS = 7
+DEFAULT_KLG_POOL_LOAD_PATH = EXP_DIR / "knowledge_v6_8_iter1.csv"
+DEFAULT_ENABLE_UPDATE_KLG_POOL = False
+DEFAULT_FINAL_KLG_POOL_SAVE_PATH = EXP_DIR / "knowledge_v6_8_iter2.csv"
+WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
+```
+
+- [ ] scale dataset (exp11_plasma_gkv_v6)
 - [ ] Debug grpo
 
 pip cache purge
 nohup bash -lc 'sleep 2h; runpodctl stop pod $RUNPOD_POD_ID' >/tmp/autostop.log 2>&1 &
-
-
-- [ ] Improve dataset (exp11_plasma_gkv_v6)
-```
-SEIMEI/eval/generate_dataset_code.py
-
-```
-- [ ] Scale dataset
 
 - [ ] Run train_v6.py -> eval_v6.py
 
 
 
 
+
+pip install -e RMSearch/
+pip install -e SEIMEI/
+
+export WANDB_API_KEY=ff486ef8439a8a1e9892d8017cb48f0ab0d7935b
+wandb login
+
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-exp11-model4-1840-train
+
+nohup accelerate launch --config_file ./accelerate_config.yaml \
+  -m seimei.train.adpo_lora_rmtrain \
+  --dataset-list-train ./exp11_plasma_gkv_v5/train_v6_7_iter2_datasetlist_train.json \
+  --dataset-list-test ./exp11_plasma_gkv_v5/train_v6_7_iter2_datasetlist_test.json \
+  --model-name $RMSEARCH_MODEL_NAME \
+  --output-dir ./exp11_plasma_gkv_v5/model5 \
+  --wandb-project rmsearch \
+  --wandb-run-name exp11-plasma-gkv-v5-model5 \
+  > ./train.log 2>&1 &
