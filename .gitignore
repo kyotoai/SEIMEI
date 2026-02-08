@@ -90,6 +90,10 @@ seimei_knowledge
 exp12_telecom_gpt5_v1/csv/
 exp12_telecom_gpt5_v1/meta/
 exp12_telecom_gpt5_v1/python/
+# ignore all exp13 outputs by default, but keep generator code
+exp13_EventYosou/*
+!exp13_EventYosou/generate_validate/
+!exp13_EventYosou/generate_validate/**
 
 # local docs/images
 Juan_NTT*.md
@@ -124,4 +128,3 @@ done.*
 all.*
 todo.txt
 todo.*
-

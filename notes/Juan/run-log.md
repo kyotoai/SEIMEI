@@ -156,3 +156,116 @@ dataset.json looks like
 - Added campus-specific region_types (campus_ground/campus_hall) and directed university festival events to school grounds/halls.
 - Added kanji/kana validation to block non-Japanese prefecture/city outputs.
 - Implemented real batching with async semaphore; improved robustness to partial failures.
+
+## 2026-01-21
+
+- Added automatic `metrics_summary.csv` aggregation in `exp13_EventYosou/eval` after each validation run.
+- First-event experiment findings: strong class imbalance (stadium positive_rate ~0.91, university ~0.03) and poor calibration (ECE up to ~0.95).
+- Baseline `logloss_event_present` worse than constant base-rate for omiai/university; indicates weak signal-to-event coupling and noisy confounders.
+- Prompt updates planned: enforce target event prevalence (10–35% bins per city), shorter durations, stronger attendance-scaled signal bumps, and stable KPI baselines.
+- Iteration labeling: current plots correspond to the second experiment iteration; third iteration will add signal-coupling improvements and revised baselines.
+
+### Challenges by Iteration (EventYosou v1)
+
+Iteration 1:
+- LLM-generated Python modules exhibited syntax errors and missing imports.
+- Mojibake appeared in prefecture/city/operator labels.
+- Schema mix-ups (events vs signal columns) occurred under retries.
+- Topic alignment was violated under strict constraints.
+
+Iteration 2 (current plots):
+- Class imbalance remains severe for some topics (rare vs near-always events), hurting calibration.
+- Signal-to-event coupling remains weak for some scenarios (log-loss worse than base-rate).
+- Some event/region plausibility violations persist under heavy retries.
+
+## 2026-01-21 (run log)
+
+- Data generation per topic takes around 4 attempts when run sequentially; example success:
+
+```text
+[topic=omiai_matchmaking_social_evening] attempt 4/7 requesting LLM...
+[topic=omiai_matchmaking_social_evening] wrote modules: omiai_matchmaking_social_evening_1_features.py, omiai_matchmaking_social_evening_1_signal.py
+[topic=omiai_matchmaking_social_evening] run hyper 1/1
+[topic=omiai_matchmaking_social_evening] completed sample 1
+```
+
+- Common failures are syntax/argparse errors in the signal module; examples:
+
+```text
+[topic=omiai_matchmaking_social_evening] error: signal module failed for h=1: returncode=1
+STDERR:
+Traceback (most recent call last):
+  File "/Users/juan/Desktop/Git/SEIMEI_/exp13_EventYosou/python/omiai_matchmaking_social_evening_1_signal.py", line 153, in <module>
+    main()
+  File "/Users/juan/Desktop/Git/SEIMEI_/exp13_EventYosou/python/omiai_matchmaking_social_evening_1_signal.py", line 150, in main
+    generate(args.csv_output_path, args.hyper_param_index, args.total_hyper_params, args.events_csz_path)
+                                                                                    ^^^^^^^^^^^^^^^^^^^^
+AttributeError: 'Namespace' object has no attribute 'events_csz_path'. Did you mean: 'events_csv_path'?
+usage: omiai_matchmaking_social_evening_1_features.py [-h] --csv-output-path
+                                                      CSV_OUTPUT_PATH
+                                                      --hyper-param-index
+                                                      HYPER_PARAM_INDEX
+                                                      --total-hyper-params
+                                                      TOTAL_HYPER_PARAMS
+                                                      --events-csv-path
+                                                      EVENTS_CSV_PATH
+omiai_matchmaking_social_evening_1_features.py: error: the following arguments are required: --events-csv-path
+```
+
+```text
+[topic=omiai_matchmaking_social_evening] error: signal module failed for h=1: returncode=1
+STDERR:
+Traceback (most recent call last):
+  File "/Users/juan/Desktop/Git/SEIMEI_/exp13_EventYosou/python/omiai_matchmaking_social_evening_1_signal.py", line 141, in main
+    generate(args.csv_output_path, args.hyper_param_index, args.total_hyper_params, args.events_csv_path)
+  File "/Users/juan/Desktop/Git/SEIMEI_/exp13_EventYosou/python/omiai_matchmaking_social_evening_1_signal.py", line 33, in generate
+    base_date = min(pd.to_datetime(events['start_time']).min(), pd.Timestamp.utcnow())
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "pandas/_libs/tslibs/timestamps.pyx", line 387, in pandas._libs.tslibs.timestamps._Timestamp.__richcmp__
+TypeError: Cannot compare tz-naive and tz-aware timestamps
+```
+
+```text
+[topic=stadium_event_congestion] wrote modules: stadium_event_congestion_1_features.py, stadium_event_congestion_1_signal.py
+[topic=stadium_event_congestion] error: module syntax error:   File "/Users/juan/Desktop/Git/SEIMEI_/exp13_EventYosou/python/stadium_event_congestion_1_signal.py", line 162
+    'region_type': info := CITY_INFO[city]['region_type'],
+                        ^^
+SyntaxError: invalid syntax
+```
+
+## 2026-01-21 (gpt-5-mini run)
+
+- Model: gpt-5-mini, prompt: excel_events_small.md, topics=3.
+- All three topics eventually completed; some initial timeouts and retries, but no fatal syntax failures at the end.
+- Key errors observed during retries: API timeouts; pandas date_range `closed` keyword mismatch; sports_day attendance out of range; prevalence under target; bad walrus usage.
+
+### Metrics summary (Iteration 4)
+- omiai: pos_rate 0.061, logloss 1.082, Brier 0.431, ECE 0.611
+- stadium: pos_rate 0.049, logloss 0.857, Brier 0.330, ECE 0.552
+- university: pos_rate 0.091, logloss 0.921, Brier 0.362, ECE 0.562
+
+### Conclusion
+- Calibration remains weak for low-prevalence events (ECE ~0.55--0.61), and logloss is still high (~0.86--1.08).
+- Positives are closer to target but still low, suggesting under-detection; next iteration should strengthen signal coupling or adjust event prevalence targets.
+
+## 2026-01-21 (Iteration 5 planning)
+
+- Guardrails still frequently trigger; focus on generating valid ranges at source instead of post-fix.
+- Targets for next iteration:
+  - Increase positive rates (10–20%) by shortening quiet periods and adding medium events.
+  - Lower logloss_event_present by strengthening event-to-signal coupling (attendance-scaled bumps + city baselines).
+  - Improve calibration (lower ECE) by adding controlled non-event anomalies and stabilizing baselines.
+  - Ensure full 7-day 15-min grids per city inside the generator to avoid sparse-bin repair.
+
+## 2026-01-21 (Iteration 5 generator changes)
+
+- Added low-probability regime guidance (quiet bins), diurnal baselines, and city-level drift in prompts.
+- Fallback generator now shapes event prevalence per city window, reduces omiai attendance, and scales KPI effects by topic.
+- Signal fallback now adds diurnal baseline, small drift, and controlled anomalies to populate low-p bins.
+
+<!-- #NOTES PROGRAM KITCHEN -->
+
+## 2026-02-01 (Iteration 6 preds_breakdown)
+
+- Ran preds_breakdown for stadium with RUN_ID=20260201_085014:
+  `python3 exp13_EventYosou/preds_breakdown.py --labelspath exp13_EventYosou/eval/stadium_20260201_085014/labels_and_preds.csv --eventspath exp13_EventYosou/csv/stadium_event_congestion_1_20260201_085014_events_1.csv --output-dir exp13_EventYosou/eval/stadium_20260201_085014/preds_breakdown`
