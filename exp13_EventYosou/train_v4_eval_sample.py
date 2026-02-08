@@ -8,7 +8,7 @@ import time
 from contextlib import contextmanager
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Iterable, List, Optional, Sequence, Set, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 from seimei import load_run_messages, seimei
 from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_workspace
@@ -21,18 +21,15 @@ from seimei.editing import PatchApplyError, PatchParseError, apply_patch_to_work
 
 EXP_DIR = Path(__file__).resolve().parent
 REPO_ROOT = EXP_DIR.parent
-CSV_DIR = "csv"
-DEFAULT_DATASET_PATH = EXP_DIR / "dataset.json"
+PATCH_DIR = EXP_DIR / "patch_files"
+DEFAULT_DATASET_PATH = EXP_DIR / "dataset_10.json"
 DEFAULT_RESULT_PATH = EXP_DIR / "train_v4_eval_sample_results.json"
-DEFAULT_LLM_URL = None
-DEFAULT_LLM_MODEL_NAME = "gpt-5-nano"
-#DEFAULT_LLM_MODEL_NAME = "/workspace/gpt-oss-20b"
 DEFAULT_RM_URL = "https://j4s6oyznxb8j3v-8000.proxy.runpod.net/rmsearch"
 DEFAULT_BATCH_SIZE = 10
 DEFAULT_N_KNOWLEDGE_STEPS = 3
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 DEFAULT_N_CHECK_KNOWLEDGE = 3
-DEFAULT_FINAL_RERUNS = 7
+DEFAULT_FINAL_RERUNS = 3
 WORKSPACE_ROOT = EXP_DIR / "_workspace_copies"
 
 BASE_SYSTEM_PROMPT_LIST = [
@@ -242,7 +239,6 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     },
 ]
 
-
 SCORING_SYSTEM_PROMPT = (
     "You are an impartial evaluator scoring an assistant's answer against a reference answer. "
     "Judge factual accuracy, coverage, and clarity. Return ONLY a JSON object with keys 'score' "
@@ -352,76 +348,6 @@ class EvalCheckpoint:
             save_eval_entries(self.eval_entries, self.output_path, run_cache=self.run_cache)
 
 
-class LLMRequestQueue:
-    def __init__(self, max_concurrent: int) -> None:
-        self.max_concurrent = max(int(max_concurrent), 1)
-        self.queue: asyncio.Queue = asyncio.Queue()
-        self._workers: List[asyncio.Task] = []
-        self._closed = False
-
-    async def start(self) -> None:
-        if self._workers:
-            return
-        self._workers = [
-            asyncio.create_task(self._worker(worker_id))
-            for worker_id in range(self.max_concurrent)
-        ]
-
-    async def request(
-        self,
-        func: Callable[..., Awaitable[Any]],
-        *args: Any,
-        **kwargs: Any,
-    ) -> Any:
-        if self._closed:
-            raise RuntimeError("LLMRequestQueue is closed.")
-        loop = asyncio.get_running_loop()
-        future: asyncio.Future = loop.create_future()
-        await self.queue.put((func, args, kwargs, future))
-        return await future
-
-    async def close(self) -> None:
-        if self._closed:
-            return
-        self._closed = True
-        for _ in self._workers:
-            await self.queue.put(None)
-        if self._workers:
-            await asyncio.gather(*self._workers, return_exceptions=True)
-
-    async def _worker(self, _worker_id: int) -> None:
-        while True:
-            item = await self.queue.get()
-            if item is None:
-                self.queue.task_done()
-                return
-            func, args, kwargs, future = item
-            if future.cancelled():
-                self.queue.task_done()
-                continue
-            try:
-                result = await func(*args, **kwargs)
-            except Exception as exc:
-                if not future.done():
-                    future.set_exception(exc)
-            else:
-                if not future.done():
-                    future.set_result(result)
-            finally:
-                self.queue.task_done()
-
-
-async def _run_llm_request(
-    llm_request: Optional[LLMRequestQueue],
-    func: Callable[..., Awaitable[Any]],
-    *args: Any,
-    **kwargs: Any,
-) -> Any:
-    if llm_request is None:
-        return await func(*args, **kwargs)
-    return await llm_request.request(func, *args, **kwargs)
-
-
 def _sanitize_id_component(text: str, *, limit: int = 48) -> str:
     cleaned = "".join(ch if (ch.isalnum() or ch in {"-", "_", " "}) else " " for ch in text)
     collapsed = "_".join(cleaned.split())
@@ -436,24 +362,220 @@ def extract_reference_answer(entry: Dict[str, Any]) -> str:
     return str(entry.get("answer") or entry.get("CorrectAnswer") or "").strip()
 
 
+def extract_expected_difference(entry: Dict[str, Any]) -> str:
+    return str(entry.get("expected_simulation_result_difference") or "").strip()
+
+
+def build_problem_prompt(problem: str, expected_difference: str) -> str:
+    lines = [
+        "You are debugging the gyrokinetic plasma simulation workspace. "
+        "Edit the local Fortran sources to resolve the regression described below.",
+    ]
+    if problem:
+        lines.append(f"Problem statement:\n{problem}")
+    if expected_difference:
+        lines.append(
+            "Expected simulation behavior after applying a correct fix:\n"
+            f"{expected_difference}"
+        )
+    lines.append(
+        "Apply minimal, precise code edits to resolve the issue. Reference the exact files and routines you touch, "
+        "and explain why the fix restores the intended physics before concluding."
+    )
+    return "\n\n".join(line for line in lines if line.strip())
+
+
 def build_task_prompt(entry: Dict[str, Any]) -> str:
+    problem = extract_problem_text(entry)
+    if problem:
+        return build_problem_prompt(problem, extract_expected_difference(entry))
     csv_path = str(entry.get("CSVPath") or "").strip()
     question = str(entry.get("Question") or "").strip()
     if csv_path and question:
         return f"Analyze inside {csv_path} and answer the question below:\n\n{question}"
-    return question
+    return question or problem
 
 
-def format_relative_path(path: Path) -> str:
+def format_relative_path(path: Optional[Path]) -> str:
+    if path is None:
+        return ""
     try:
         return path.relative_to(REPO_ROOT).as_posix()
     except ValueError:
         return str(path)
 
 
-async def run_orchestrator(
+class PatchWorkspaceManager:
+    def __init__(self, workspace: Path, patch_dir: Path) -> None:
+        self.workspace = workspace.resolve()
+        self.patch_dir = patch_dir.resolve()
+
+    def resolve_patch_path(self, dataset_entry: Dict[str, Any], dataset_index: int) -> Optional[Path]:
+        custom_field = str(
+            dataset_entry.get("patch_file")
+            or dataset_entry.get("patch_path")
+            or ""
+        ).strip()
+        if custom_field:
+            candidate = self._coerce_patch_path(Path(custom_field))
+            if candidate:
+                return candidate
+            return None
+
+        default_name = f"patch{dataset_index}.txt"
+        default_path = (self.patch_dir / default_name).resolve()
+        if default_path.exists():
+            return default_path
+        return None
+
+    def _coerce_patch_path(self, candidate: Path) -> Optional[Path]:
+        search_paths: List[Path] = []
+        if candidate.is_absolute():
+            search_paths.append(candidate)
+        else:
+            search_paths.append(self.patch_dir / candidate)
+            search_paths.append(self.workspace / candidate)
+            search_paths.append(candidate)
+        for option in search_paths:
+            resolved = option.resolve()
+            if resolved.exists():
+                return resolved
+        return None
+
+    @contextmanager
+    def apply_for_problem(self, dataset_entry: Dict[str, Any], dataset_index: int):
+        patch_path = self.resolve_patch_path(dataset_entry, dataset_index)
+        if not patch_path:
+            # No patch available; run without modifications.
+            yield
+            return
+        patch_text = patch_path.read_text(encoding="utf-8")
+        touched_paths = self._collect_touched_paths(patch_text)
+        backups = self._snapshot_files(touched_paths)
+        try:
+            apply_patch_to_workspace(patch_text, self.workspace)
+        except (PatchApplyError, PatchParseError) as exc:
+            rel_name = self._relative_patch_name(patch_path)
+            raise RuntimeError(f"Failed to apply patch {rel_name}: {exc}") from exc
+        try:
+            yield
+        finally:
+            self._restore_files(backups)
+
+    def _relative_patch_name(self, patch_path: Path) -> str:
+        try:
+            return patch_path.relative_to(self.workspace).as_posix()
+        except ValueError:
+            return str(patch_path)
+
+    def _collect_touched_paths(self, patch_text: str) -> Iterable[str]:
+        markers = (
+            "*** Update File:",
+            "*** Add File:",
+            "*** Delete File:",
+            "*** Move to:",
+        )
+        seen: Dict[str, None] = {}
+        for raw_line in patch_text.splitlines():
+            stripped = raw_line.strip()
+            for marker in markers:
+                if stripped.startswith(marker):
+                    rel_path = stripped[len(marker) :].strip()
+                    if rel_path and rel_path not in seen:
+                        seen[rel_path] = None
+                    break
+        return tuple(seen.keys())
+
+    def _snapshot_files(self, rel_paths: Iterable[str]) -> Dict[Path, Optional[bytes]]:
+        backups: Dict[Path, Optional[bytes]] = {}
+        for rel_path in rel_paths:
+            absolute = self._resolve_within_workspace(rel_path)
+            if absolute in backups:
+                continue
+            backups[absolute] = absolute.read_bytes() if absolute.exists() else None
+        return backups
+
+    def _resolve_within_workspace(self, rel_path: str) -> Path:
+        candidate = (self.workspace / Path(rel_path)).resolve()
+        try:
+            candidate.relative_to(self.workspace)
+        except ValueError as exc:  # pragma: no cover - defensive
+            raise AssertionError(f"Patch references a path outside the workspace: {rel_path}") from exc
+        return candidate
+
+    def _restore_files(self, backups: Dict[Path, Optional[bytes]]) -> None:
+        for path, content in backups.items():
+            if content is None:
+                path.unlink(missing_ok=True)
+            else:
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(content)
+
+
+@dataclass(frozen=True)
+class WorkspaceHandle:
+    workspace: Path
+    patch_manager: PatchWorkspaceManager
+    orchestrator: Any
+
+
+def _build_orchestrator(args: argparse.Namespace, workspace: Path):
+    prior_cwd = Path.cwd()
+    os.chdir(workspace)
+    try:
+        return seimei(
+            # agent_config=[{"file_path": "seimei/agents/code_act.py"}],
+            agent_config=[{"name": "code_act"}],
+            # llm_kwargs={"model": "gpt-5-nano"},
+            llm_kwargs={
+                "base_url": "https://8xpzxirsu9bev1-8000.proxy.runpod.net/v1",
+                "api_key": "EMPTY",             # or your key if required
+                "model": "/workspace/gpt-oss-20b",            # the model name your server serves
+            },
+            rm_kwargs={"url": args.rm_url, "agent_routing": False, "knowledge_search": True},
+            allow_code_exec=True,
+            agent_log_head_lines=1,
+            max_tokens_per_question=80000,
+        )
+    finally:
+        os.chdir(prior_cwd)
+
+
+def _prepare_workspace(workspace: Path) -> None:
+    workspace.mkdir(parents=True, exist_ok=True)
+    src_dest = workspace / "src"
+    run_dest = workspace / "run"
+    if src_dest.exists():
+        shutil.rmtree(src_dest)
+    if run_dest.exists():
+        shutil.rmtree(run_dest)
+    src_src = REPO_ROOT / "src"
+    run_src = REPO_ROOT / "run"
+    if src_src.exists():
+        shutil.copytree(src_src, src_dest)
+    else:
+        src_dest.mkdir(parents=True, exist_ok=True)
+    if run_src.exists():
+        shutil.copytree(run_src, run_dest)
+    else:
+        run_dest.mkdir(parents=True, exist_ok=True)
+
+
+def build_workspace_pool(args: argparse.Namespace, count: int) -> List[WorkspaceHandle]:
+    WORKSPACE_ROOT.mkdir(parents=True, exist_ok=True)
+    handles: List[WorkspaceHandle] = []
+    for idx in range(count):
+        workspace = WORKSPACE_ROOT / f"ws_{idx:02d}"
+        _prepare_workspace(workspace)
+        patch_manager = PatchWorkspaceManager(workspace, PATCH_DIR)
+        orchestrator = _build_orchestrator(args, workspace)
+        handles.append(WorkspaceHandle(workspace=workspace, patch_manager=patch_manager, orchestrator=orchestrator))
+    return handles
+
+
+async def run_orchestrator_with_patch(
     orchestrator,
-    #patch_manager: PatchWorkspaceManager,
+    patch_manager: PatchWorkspaceManager,
     *,
     dataset_entry: Dict[str, Any],
     dataset_index: int,
@@ -462,7 +584,6 @@ async def run_orchestrator(
     knowledge_config: Dict[str, Any],
     checkpoint: Optional[EvalCheckpoint] = None,
     entry_id: Optional[str] = None,
-    llm_request: Optional[LLMRequestQueue] = None,
 ) -> Dict[str, Any]:
     """
     NEW behavior:
@@ -480,16 +601,13 @@ async def run_orchestrator(
                 cached["msg_history"] = cached.get("msg_history")
             return cached
 
-    #with patch_manager.apply_for_problem(dataset_entry, dataset_index):
-    knowledge_kwargs = split_knowledge_args(knowledge_config)
-    result = await _run_llm_request(
-        llm_request,
-        orchestrator,
-        messages=messages,
-        run_name=run_name,
-        **knowledge_kwargs,
-        #workspace=patch_manager.workspace,
-    )
+    with patch_manager.apply_for_problem(dataset_entry, dataset_index):
+        result = await orchestrator(
+            messages=messages,
+            run_name=run_name,
+            knowledge_config=knowledge_config,
+            workspace=patch_manager.workspace,
+        )
 
     if checkpoint is not None:
         await checkpoint.record_run(
@@ -519,16 +637,6 @@ def parse_args() -> argparse.Namespace:
         help="Where to store evaluation traces and scores.",
     )
     parser.add_argument(
-        "--llm-url",
-        default=DEFAULT_LLM_URL,
-        help="LLM endpoint passed to the orchestrator. Set None to use openai API",
-    )
-    parser.add_argument(
-        "--llm-model-name",
-        default=DEFAULT_LLM_MODEL_NAME,
-        help="LLM model name passed to the orchestrator.",
-    )
-    parser.add_argument(
         "--rm-url",
         default=DEFAULT_RM_URL,
         help="Reward model search endpoint passed to the orchestrator.",
@@ -537,7 +645,7 @@ def parse_args() -> argparse.Namespace:
         "--batch-size",
         type=int,
         default=DEFAULT_BATCH_SIZE,
-        help="Maximum number of concurrent LLM requests.",
+        help="Number of problems to process concurrently.",
     )
     parser.add_argument(
         "--n-knowledge-steps",
@@ -853,50 +961,6 @@ def build_knowledge_config(manual_entries: Optional[List[Dict[str, Any]]] = None
     return cfg
 
 
-def split_knowledge_args(knowledge_config: Optional[Dict[str, Any]]) -> Dict[str, Any]:
-    if not knowledge_config:
-        return {}
-    load_config: List[Dict[str, Any]] = []
-    load_path = knowledge_config.get("load_knowledge_path")
-    load_steps = knowledge_config.get("load_knowledge_steps")
-    if load_path:
-        entry: Dict[str, Any] = {"load_knowledge_path": load_path}
-        if load_steps:
-            entry["step"] = load_steps
-        load_config.append(entry)
-    manual_entries = knowledge_config.get("knowledge")
-    if manual_entries:
-        if isinstance(manual_entries, list):
-            for item in manual_entries:
-                if isinstance(item, dict):
-                    load_config.append(dict(item))
-                elif isinstance(item, str):
-                    load_config.append({"text": item})
-        elif isinstance(manual_entries, dict):
-            load_config.append(dict(manual_entries))
-        elif isinstance(manual_entries, str):
-            load_config.append({"text": manual_entries})
-    generate_config = None
-    if (
-        knowledge_config.get("generate_knowledge")
-        or knowledge_config.get("save_knowledge_path")
-        or knowledge_config.get("knowledge_prompt_path")
-    ):
-        generate_config = {}
-        save_path = knowledge_config.get("save_knowledge_path")
-        if save_path:
-            generate_config["save_knowledge_path"] = save_path
-        prompt_path = knowledge_config.get("knowledge_prompt_path")
-        if prompt_path:
-            generate_config["knowledge_generation_prompt_path"] = prompt_path
-    payload: Dict[str, Any] = {}
-    if load_config:
-        payload["knowledge_load_config"] = load_config
-    if generate_config:
-        payload["knowledge_generate_config"] = generate_config
-    return payload
-
-
 def get_messages_for_run(
     run_result: Dict[str, Any],
     log_dir: Path,
@@ -933,14 +997,7 @@ def get_messages_for_run(
     return _normalize(raw_messages)
 
 
-async def score_answer(
-    orchestrator_llm,
-    question: str,
-    reference_answer: str,
-    model_answer: str,
-    *,
-    llm_request: Optional[LLMRequestQueue] = None,
-) -> Dict[str, Any]:
+async def score_answer(orchestrator_llm, question: str, reference_answer: str, model_answer: str) -> Dict[str, Any]:
     prompt = (
         "Evaluate the model's answer.\n"
         f"Question:\n{question}\n\n"
@@ -949,9 +1006,7 @@ async def score_answer(
         "Respond strictly in JSON."
     )
     try:
-        response, usage = await _run_llm_request(
-            llm_request,
-            orchestrator_llm.chat,
+        response, usage = await orchestrator_llm.chat(
             messages=[{"role": "user", "content": prompt}],
             system=SCORING_SYSTEM_PROMPT,
         )
@@ -984,7 +1039,6 @@ async def generate_step_knowledge(
     iteration: int,
     prior_knowledge: Optional[Sequence[Dict[str, Any]]] = None,
     used_knowledge_ids: Optional[Set[str]] = None,
-    llm_request: Optional[LLMRequestQueue] = None,
 ) -> Optional[Dict[str, Any]]:
     question = build_task_prompt(dataset_entry)
     reference = extract_reference_answer(dataset_entry)
@@ -998,8 +1052,8 @@ async def generate_step_knowledge(
     candidate_json = json.dumps(_format_pool_candidates(candidates), ensure_ascii=False, indent=2)
     used_ids_json = json.dumps(sorted(used_knowledge_ids or set()), ensure_ascii=False, indent=2)
     prompt = (
-        f"You are selecting reusable knowledge that will be inserted before agent step {step} "
-        "in a CSV reasoning workflow.\n\n"
+        f"You are selecting reusable knowledge to insert before agent step {step} "
+        "in a code-debugging workflow for the gyrokinetic plasma repository.\n\n"
         "Evaluation summary for the run that produced this transcript:\n"
         "- Knowledge snippets already injected (JSON array, matches this transcript exactly):\n"
         f"{knowledge_json}\n\n"
@@ -1021,9 +1075,7 @@ async def generate_step_knowledge(
         "}\n"
     )
     try:
-        response, _ = await _run_llm_request(
-            llm_request,
-            llm_client.chat,
+        response, _ = await llm_client.chat(
             messages=[{"role": "user", "content": prompt}],
             system=KNOWLEDGE_SELECTION_SYSTEM_PROMPT,
         )
@@ -1053,7 +1105,7 @@ async def generate_step_knowledge(
 
 async def run_candidate_inference(
     orchestrator,
-    #patch_manager: PatchWorkspaceManager,
+    patch_manager: PatchWorkspaceManager,
     *,
     dataset_entry: Dict[str, Any],
     truncated_history: Sequence[Dict[str, Any]],
@@ -1063,7 +1115,6 @@ async def run_candidate_inference(
     candidate_index: int,
     checkpoint: Optional[EvalCheckpoint],
     entry_id: str,
-    llm_request: Optional[LLMRequestQueue] = None,
 ) -> Dict[str, Any]:
     rerun_messages = randomize_system_prompt(truncated_history, use_knowledge_prompt=True)
     manual_entries = [
@@ -1076,9 +1127,9 @@ async def run_candidate_inference(
     ]
     knowledge_config = build_knowledge_config(manual_entries)
     run_name = f"train_v4_eval_sample_{dataset_index:04d}_s{step}_k{candidate_index + 1}"
-    result = await run_orchestrator(
+    result = await run_orchestrator_with_patch(
         orchestrator,
-        #patch_manager,
+        patch_manager,
         dataset_entry=dataset_entry,
         dataset_index=dataset_index,
         messages=rerun_messages,
@@ -1086,7 +1137,6 @@ async def run_candidate_inference(
         knowledge_config=knowledge_config,
         checkpoint=checkpoint,
         entry_id=entry_id,
-        llm_request=llm_request,
     )
     new_run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
     new_output = result.get("output", "")
@@ -1111,7 +1161,7 @@ async def run_candidate_inference(
 
 async def run_full_problem_trials(
     orchestrator,
-    #patch_manager: PatchWorkspaceManager,
+    patch_manager: PatchWorkspaceManager,
     *,
     dataset_entry: Dict[str, Any],
     base_prompt_messages: Sequence[Dict[str, Any]],
@@ -1121,7 +1171,6 @@ async def run_full_problem_trials(
     label: str,
     checkpoint: Optional[EvalCheckpoint],
     entry_id: str,
-    llm_request: Optional[LLMRequestQueue] = None,
 ) -> Tuple[List[Dict[str, Any]], float]:
     if trials <= 0:
         return [], 0.0
@@ -1137,9 +1186,9 @@ async def run_full_problem_trials(
             [dict(entry) for entry in manual_entries] if manual_entries else None
         )
         run_name = f"train_v4_eval_sample_{dataset_index:04d}_{label}_r{trial + 1}"
-        result = await run_orchestrator(
+        result = await run_orchestrator_with_patch(
             orchestrator,
-            #patch_manager,
+            patch_manager,
             dataset_entry=dataset_entry,
             dataset_index=dataset_index,
             messages=rerun_messages,
@@ -1147,17 +1196,10 @@ async def run_full_problem_trials(
             knowledge_config=knowledge_config,
             checkpoint=checkpoint,
             entry_id=entry_id,
-            llm_request=llm_request,
         )
         run_id = normalize_result_run_id(result, Path(orchestrator.log_dir))
         output = result.get("output", "")
-        score_info = await score_answer(
-            orchestrator.llm,
-            question,
-            reference,
-            output,
-            llm_request=llm_request,
-        )
+        score_info = await score_answer(orchestrator.llm, question, reference, output)
         score = score_info.get("score", 0.0) or 0.0
         feedback = score_info.get("feedback")
         if not _is_bugged_score(score, feedback):
@@ -1182,7 +1224,7 @@ async def run_full_problem_trials(
 
 async def run_problem(
     orchestrator,
-    #patch_manager: PatchWorkspaceManager,
+    patch_manager: PatchWorkspaceManager,
     dataset_entry: Dict[str, Any],
     index: int,
     entry_id: str,
@@ -1192,7 +1234,6 @@ async def run_problem(
     n_check_knowledge: int,
     final_reruns: int,
     checkpoint: Optional[EvalCheckpoint],
-    llm_request: Optional[LLMRequestQueue] = None,
 ) -> Dict[str, Any]:
     problem_text = extract_problem_text(dataset_entry)
     prompt_text = build_task_prompt(dataset_entry) or problem_text
@@ -1200,10 +1241,10 @@ async def run_problem(
         prompt_text = "Investigate the regression and repair the affected code paths."
     reference_answer = extract_reference_answer(dataset_entry)
     csv_path = str(dataset_entry.get("CSVPath") or "").strip()
-    #try:
-    #    patch_path = patch_manager.resolve_patch_path(dataset_entry, index)
-    #except FileNotFoundError as exc:
-    #    raise RuntimeError(f"[sample {index}] Missing patch file: {exc}") from exc
+    try:
+        patch_path = patch_manager.resolve_patch_path(dataset_entry, index)
+    except FileNotFoundError as exc:
+        raise RuntimeError(f"[sample {index}] Missing patch file: {exc}") from exc
 
     base_prompt_messages = [{"role": "user", "content": prompt_text}]
 
@@ -1214,9 +1255,9 @@ async def run_problem(
     for chunk_idx in range(knowledge_per_step):
         base_messages = randomize_system_prompt(base_prompt_messages)
         run_name = f"train_v4_eval_sample_{index:04d}_base_seed{chunk_idx + 1}"
-        base_result = await run_orchestrator(
+        base_result = await run_orchestrator_with_patch(
             orchestrator,
-            #patch_manager,
+            patch_manager,
             dataset_entry=dataset_entry,
             dataset_index=index,
             messages=[dict(msg) for msg in base_messages],
@@ -1224,7 +1265,6 @@ async def run_problem(
             knowledge_config=build_knowledge_config(),
             checkpoint=checkpoint,
             entry_id=entry_id,
-            llm_request=llm_request,
         )
         base_run_id = normalize_result_run_id(base_result, log_dir)
         base_output = base_result.get("output", "")
@@ -1255,7 +1295,7 @@ async def run_problem(
         "id": entry_id,
         "problem": problem_text,
         "csv_path": csv_path,
-        #"patch_path": format_relative_path("./csv/"),
+        "patch_path": format_relative_path(patch_path),
         "base_inferences": base_inferences,
         "chunks": [],
         "knowledge_chunk_mean_scores": [],
@@ -1281,7 +1321,6 @@ async def run_problem(
                 iteration=chunk_data["chunk_index"] - 1,
                 prior_knowledge=[dict(entry) for entry in chunk_data["manual_entries"]],
                 used_knowledge_ids=used_ids_for_step,
-                llm_request=llm_request,
             )
             if not knowledge_entry:
                 print(
@@ -1308,7 +1347,7 @@ async def run_problem(
 
             candidate = await run_candidate_inference(
                 orchestrator,
-                #patch_manager,
+                patch_manager,
                 dataset_entry=dataset_entry,
                 truncated_history=truncated_history,
                 step=step,
@@ -1317,7 +1356,6 @@ async def run_problem(
                 candidate_index=chunk_data["chunk_index"] - 1,
                 checkpoint=checkpoint,
                 entry_id=entry_id,
-                llm_request=llm_request,
             )
             candidate_info = candidate["info"]
             chunk_data["knowledge_steps"].append(
@@ -1377,7 +1415,7 @@ async def run_problem(
         label = f"chunk{chunk_data['chunk_index']}"
         chunk_trials, chunk_mean = await run_full_problem_trials(
             orchestrator,
-            #patch_manager,
+            patch_manager,
             dataset_entry=dataset_entry,
             base_prompt_messages=base_prompt_messages,
             manual_entries=manual_entries if manual_entries else None,
@@ -1386,7 +1424,6 @@ async def run_problem(
             label=label,
             checkpoint=checkpoint,
             entry_id=entry_id,
-            llm_request=llm_request,
         )
         chunk_mean = round(chunk_mean, 2)
         knowledge_chunk_scores.append(chunk_mean)
@@ -1417,7 +1454,7 @@ async def run_problem(
 
     base_trials, base_mean = await run_full_problem_trials(
         orchestrator,
-        #patch_manager,
+        patch_manager,
         dataset_entry=dataset_entry,
         base_prompt_messages=base_prompt_messages,
         manual_entries=None,
@@ -1426,11 +1463,10 @@ async def run_problem(
         label="base_final",
         checkpoint=checkpoint,
         entry_id=entry_id,
-        llm_request=llm_request,
     )
     knowledge_trials, knowledge_mean = await run_full_problem_trials(
         orchestrator,
-        #patch_manager,
+        patch_manager,
         dataset_entry=dataset_entry,
         base_prompt_messages=base_prompt_messages,
         manual_entries=best_chunk_manual_entries if best_chunk_manual_entries else None,
@@ -1439,7 +1475,6 @@ async def run_problem(
         label="knowledge_final",
         checkpoint=checkpoint,
         entry_id=entry_id,
-        llm_request=llm_request,
     )
 
     record["fair_comparison"] = {
@@ -1570,27 +1605,18 @@ def save_eval_entries(
 
 async def run_evaluation(args: argparse.Namespace) -> None:
     dataset = json.loads(args.dataset_path.read_text(encoding="utf-8"))
-    orchestrator = seimei(
-        agent_config=[{"name": "code_act"}],
-        llm_config={"model": "gpt-5-nano"},
-        rm_config={"base_url": args.rm_url},
-        allow_code_exec=True,
-        agent_log_head_lines=1,
-        max_tokens_per_question=80000,
-    )
-
-    #patch_files = sorted(PATCH_DIR.glob("*.txt"))
-    #if not patch_files:
-    #    raise RuntimeError(f"No patch files found under {PATCH_DIR}")
-    #workspace_count = min(args.batch_size, len(patch_files))
-    #if workspace_count < 1:
-    #    raise RuntimeError("batch_size must be >= 1 and patch_files must be non-empty.")
-    #if args.batch_size != workspace_count:
-    #    print(
-    #        "[train_v4_eval_sample] Limiting concurrency to "
-    #        f"{workspace_count} based on patch file count."
-    #    )
-    #workspace_pool = build_workspace_pool(args, workspace_count)
+    patch_files = sorted(PATCH_DIR.glob("*.txt"))
+    if not patch_files:
+        print(f"[train_v4_eval_sample] No patch files under {PATCH_DIR}, skipping patch step.")
+        workspace_count = max(1, args.batch_size)
+    else:
+        workspace_count = min(args.batch_size, len(patch_files))
+        if args.batch_size != workspace_count:
+            print(
+                "[train_v4_eval_sample] Limiting concurrency to "
+                f"{workspace_count} based on patch file count."
+            )
+    workspace_pool = build_workspace_pool(args, workspace_count)
 
     eval_entries, processed_ids, needs_resave, run_cache = load_existing_eval_entries(
         dataset, args.output_path
@@ -1625,36 +1651,25 @@ async def run_evaluation(args: argparse.Namespace) -> None:
         )
         return
 
-    llm_request = LLMRequestQueue(args.batch_size)
-    await llm_request.start()
-    try:
-        problem_tasks: List[asyncio.Task] = []
-        task_ids: Dict[asyncio.Task, str] = {}
-        for dataset_idx, entry, entry_id in pending:
-            task = asyncio.create_task(
-                run_problem(
-                    orchestrator,
-                    entry,
-                    dataset_idx,
-                    entry_id,
-                    n_knowledge_steps=args.n_knowledge_steps,
-                    knowledge_per_step=args.knowledge_per_step,
-                    n_check_knowledge=args.n_check_knowledge,
-                    final_reruns=args.final_reruns,
-                    checkpoint=checkpoint,
-                    llm_request=llm_request,
-                )
+    for batch_start in range(0, len(pending), workspace_count):
+        batch_slice = pending[batch_start : batch_start + workspace_count]
+        batch_tasks = [
+            run_problem(
+                handle.orchestrator,
+                handle.patch_manager,
+                entry,
+                dataset_idx,
+                entry_id,
+                n_knowledge_steps=args.n_knowledge_steps,
+                knowledge_per_step=args.knowledge_per_step,
+                n_check_knowledge=args.n_check_knowledge,
+                final_reruns=args.final_reruns,
+                checkpoint=checkpoint,
             )
-            problem_tasks.append(task)
-            task_ids[task] = entry_id
-
-        for task in asyncio.as_completed(problem_tasks):
-            try:
-                record = await task
-            except Exception as exc:  # pragma: no cover - runtime guard
-                entry_id = task_ids.get(task, "unknown")
-                print(f"[train_v4_eval_sample] Problem {entry_id} failed: {exc}")
-                continue
+            for handle, (dataset_idx, entry, entry_id) in zip(workspace_pool, batch_slice)
+        ]
+        batch_records = await asyncio.gather(*batch_tasks)
+        for record in batch_records:
             if not record:
                 continue
             rid = str(record.get("id") or "").strip()
@@ -1663,14 +1678,13 @@ async def run_evaluation(args: argparse.Namespace) -> None:
             eval_entries.append(record)
             processed_ids.add(rid)
 
-            # Save after each completed problem while run_cache is updated per LLM run.
-            async with checkpoint.lock:
-                save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
-            print(
-                f"[train_v4_eval_sample] Saved progress: {len(processed_ids)}/{len(dataset)} problems complete"
-            )
-    finally:
-        await llm_request.close()
+        # Keep existing behavior: save completed-problem detail after each batch,
+        # but now we also persist run_cache continuously from inside run_orchestrator_with_patch.
+        save_eval_entries(eval_entries, args.output_path, run_cache=checkpoint.run_cache)
+        batch_idx = batch_start // args.batch_size + 1
+        print(
+            f"[train_v4_eval_sample] Saved batch {batch_idx}: {len(processed_ids)}/{len(dataset)} problems complete"
+        )
 
     print(f"[train_v4_eval_sample] Saved evaluation dataset to {args.output_path}")
 

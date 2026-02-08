@@ -14,6 +14,11 @@ DEFAULT_OUTPUT_PATH_TRAIN = Path("exp11_plasma_gkv_v3/dataset_list_train.json")
 DEFAULT_OUTPUT_PATH_TEST = Path("exp11_plasma_gkv_v3/dataset_list_test.json")
 MAX_AGENT_CHARS = 3000
 
+DEFAULT_INPUT_PATH = Path("exp11_plasma_gkv_v3/train_v4_eval_sample_results2.json")
+DEFAULT_OUTPUT_PATH_TRAIN = Path("exp11_plasma_gkv_v3/dataset_list_train.json")
+DEFAULT_OUTPUT_PATH_TEST = Path("exp11_plasma_gkv_v3/dataset_list_test.json")
+MAX_AGENT_CHARS = 3000
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Convert train_v3 DPO runs into dataset_list format."

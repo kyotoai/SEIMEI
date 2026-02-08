@@ -141,8 +141,8 @@ def format_key_for_rmsearch(
         lines = [base_text]
         if tag_values:
             lines.append(f"Tags: {', '.join(tag_values)}")
-        joined_lines = '\n'.join(lines)
-        formatted = f"<key>\n{joined_lines}\n</key>"
+        join_lines = "\n".join(lines)
+        formatted = f"<key>\n{join_lines}\n</key>"
 
     formatted = formatted.strip()
     if "Query-Key Relevance Score:" not in formatted:

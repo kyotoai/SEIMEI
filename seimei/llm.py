@@ -5,6 +5,9 @@ import json
 import math
 import os
 import sys
+import csv
+import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import requests
@@ -367,6 +370,7 @@ class LLMClient:
         load_dotenv(dotenv_path=Path(__name__).resolve().parent / ".env")
 
         api_key_env = kwargs.pop("api_key_env", None)
+        usage_log_path = kwargs.pop("usage_log_path", None)
         extra_headers = kwargs.pop("extra_headers", None) or {}
 
         self.model = model
@@ -389,6 +393,8 @@ class LLMClient:
         self.extra_headers = extra_headers
         self.last_response: Optional[Dict[str, Any]] = None
         self._warned_filtered_kwargs = False
+        env_usage_log = os.getenv("SEIMEI_USAGE_LOG_PATH")
+        self.usage_log_path = Path(usage_log_path or env_usage_log) if (usage_log_path or env_usage_log) else None
         self._semaphore: Optional[asyncio.Semaphore] = None
         if max_concurrent_requests and int(max_concurrent_requests) > 0:
             self._semaphore = asyncio.Semaphore(int(max_concurrent_requests))
@@ -537,6 +543,7 @@ class LLMClient:
                     continue
             if token_limiter:
                 token_limiter.record(usage)
+            self._log_usage(usage)
             return content, usage
 
         if self._semaphore is None:
@@ -559,6 +566,28 @@ class LLMClient:
             )
             self._warned_filtered_kwargs = True
         return filtered
+
+    def _log_usage(self, usage: Dict[str, int]) -> None:
+        if not self.usage_log_path:
+            return
+        if not usage:
+            return
+        try:
+            self.usage_log_path.parent.mkdir(parents=True, exist_ok=True)
+            exists = self.usage_log_path.exists()
+            with self.usage_log_path.open("a", newline="", encoding="utf-8") as fh:
+                writer = csv.writer(fh)
+                if not exists:
+                    writer.writerow(["timestamp", "model", "prompt_tokens", "completion_tokens", "total_tokens"])
+                writer.writerow([
+                    int(time.time()),
+                    self.model,
+                    usage.get("prompt_tokens", ""),
+                    usage.get("completion_tokens", ""),
+                    usage.get("total_tokens", ""),
+                ])
+        except Exception:
+            pass
 
     @staticmethod
     def _estimate_prompt_tokens(messages: Sequence[Dict[str, Any]]) -> int:

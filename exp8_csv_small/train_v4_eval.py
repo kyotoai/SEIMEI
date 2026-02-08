@@ -18,6 +18,8 @@ DEFAULT_N_KNOWLEDGE_STEPS = 7
 DEFAULT_KNOWLEDGE_PER_STEP = 3
 # DEFAULT_FINAL_RERUNS = 3
 DEFAULT_FINAL_RERUNS = 8
+
+# USE THISSS
 DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
     {
         "id": "code_ls_inventory",
@@ -307,6 +309,7 @@ DEFAULT_KNOWLEDGE_POOL: List[Dict[str, Any]] = [
         "tags": ["coverage", "quality"],
     },
 ]
+
 '''
 # MODIFY to INCLUSE KNOWLEDGE IMPROVEMENT
 BASE_SYSTEM_PROMPT_LIST = [

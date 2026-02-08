@@ -60,6 +60,13 @@ exp9_mobile_data_small/csv.zip
 exp9_mobile_data_small.zip
 exp11_plasma_gkv_v2/
 exp11_plasma_gkv_v3/train*.json
+exp10_csv_small_OLD/*.json
+exp10_csv_small_gpt4/*.json
+exp10_csv_small_gpt5/*.json
+exp10_csv_small_deepseek1.3/*.json
+exp10_csv_small_OLD/
+exp10_csv_small_gpt5/
+exp12_telecom_gpt5_v1/*.json
 exp11_plasma_gkv_v3/dataset_list*.json
 exp11_plasma_gkv_v5/*.json
 exp11_plasma_gkv_v5/*patch*/
