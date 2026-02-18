@@ -1,13 +1,4 @@
-#torch
-#transformers
-#sentence_transformers
-#vllm
-#ray
-#packaging
-#typing
 dotenv
-ipywidgets
-IPython
 numpy
 pandas
 matplotlib

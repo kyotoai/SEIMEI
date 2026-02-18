@@ -19,18 +19,37 @@
 6. Deploy pod and connect through jupyter notebook or vscode ssh
 * You can refer to https://docs.runpod.io/pods/configuration/use-ssh for how to connect through ssh
 
-7. Open /workspace/kentarrito
+7. Make directory and go there
 
-8. Run the followng code
 ```
-pip install -e RMSearch/
+mkdir /workspace/(your_name) # Optional
+cd /workspace/(your_name)
+```
+
+8. Run vllm serve
+
+For generative models:
+
+```
+pip install -e /workspace/kentarrito/SEIMEI/requirements_developper.txt
 nohup vllm serve (model_saved_path_on_volume2) --data-parallel-size (number_of_gpus_set_in_step_3) --host 0.0.0.0 --port 8000 > server.log 2>&1 &
 ```
 
 Ex:
 ```
-pip install -e RMSearch/
+pip install -e /workspace/kentarrito/SEIMEI/requirements_developper.txt
 nohup vllm serve /workspace/gpt-oss-20b --data-parallel-size 1 --host 0.0.0.0 --port 8000 > server.log 2>&1 &
+```
+
+For reward models:
+
+```
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
 ```
 
 * You can see log from /workspace/kentarrito/server.log
