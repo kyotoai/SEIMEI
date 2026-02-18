@@ -68,7 +68,7 @@ orchestrator = seimei(
 ```
 
 
-## Train
+## Train seimei
 
 
 

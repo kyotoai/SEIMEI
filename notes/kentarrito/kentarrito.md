@@ -4569,7 +4569,11 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
 
 ## Feb 18
 
-- [ ] Make README.md 1h
+- [ ] Make inference_sampling.py in train folder
+```
+from seimei.train.inference_sampling import seimei
+```
+- [ ] Make README.md & Doc 1h
 - [ ] Make examples 1h
 - [ ] Refine the paper 3h
 

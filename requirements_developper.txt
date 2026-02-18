@@ -7,7 +7,7 @@ duckduckgo_search
 requests
 ddgs
 
-transformers==4.55.1
+transformers==4.56.0
 datasets
 trl
 peft
