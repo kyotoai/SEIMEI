@@ -4562,3 +4562,18 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
   --wandb-project rmsearch \
   --wandb-run-name exp11-plasma-gkv-v5-model5 \
   > ./train.log 2>&1 &
+
+
+
+
+
+## Feb 18
+
+- [ ] Make README.md 1h
+- [ ] Make examples 1h
+- [ ] Refine the paper 3h
+
+
+
+Unlike conventional RL that only optimizes knowledge *inside* the LLM, SEIMEI jointly optimizes external knowledge sources, enabling AI to truly absorb domain-specific and tacit expertise. Build self-trained AI with dramatically lower cost, higher adaptability, and real-world performance.
+
