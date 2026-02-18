@@ -32,16 +32,16 @@
 <br />
 <div align="center">
   <a href="https://kyotoai.org">
-    <img src="images/SEIMEI_overlook.png" alt="Logo" width="640" height="360">
+    <img src="images/seimei_architecture.png" alt="Logo" width="640" height="360">
   </a>
 
 <h3 align="center">SEIMEI</h3>
 
   <p align="center">
-    Search-Enhanced Interface for Multi-Expertise Integration (SEIMEI)
+    <strong>S</strong>earch-<strong>E</strong>nhanced <strong>I</strong>nterface for <strong>M</strong>ulti-<strong>E</strong>xpertise <strong>I</strong>ntegration
   </p>
   <p align="center">
-    SEIMEI ENABLES 1000s OF AGENTS TO INTERACT WITH EACH OTHER!! With highly intelligent search engine, SEIMEI optimizes reasoning steps (with agents) and achieves SOTA results on tasks requiring deep reasoning!!
+    Unlike conventional RL that only optimizes knowledge inside the LLM, SEIMEI jointly optimizes external knowledge, enabling AI to truly absorb domain-specific and tacit expertise. Build much more personalized AI trained only for you with dramatically lower cost and higher adaptability!!
     <br />
     <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>Explore the docs »</strong></a>
     <br />
@@ -83,68 +83,39 @@
 </details>
 
 
-
 <!-- ABOUT THE PROJECT -->
 ## About The Project
 
-### Search The Best Agent To Make Deep Reasoning
+### Search The Best Knowledge For Accurate Thought
 <!-- [![Product Name Screen Shot][product-screenshot]](https://example.com) -->
 <br />
 <div align="center">
-  <img src="images/SEIMEI_example.png" alt="seimei" width="640" height="360">
+  <img src="images/seimei_idea.png" alt="seimei" width="640" height="400">
 </div>
 
 <br />
 Here's the example of how SEIMEI works. Each agent interacts with LLM and document and makes inference. These inferences are automatically integrated by search engine and gives an answer of question.
 
-<br />
-<div align="center">
-  <img src="images/SEIMEI_train_example.png" alt="seimei" width="640" height="360">
-</div>
-
-<br />
-By training search engine, we can optimize the thinking steps like o1 or deepseek-r1!!
-
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### The Most Intelligent Search Engine
+### The Most Intelligent Search Model
 <div align="center">
   <img src="images/Comparison.png" alt="seimei" width="400" height="360">
 </div>
 
-Our proprietary search model performs better than semantic embedding model(so called vector search). The graph above shows the result of training our model (3b) and e5-mistral-7b model to search best agents. While the vector search model cannot really retrieve best agents(because problems and agents do not have similar sentences), our proprietary search model can learn what agents are needed to solve a question and retrieve the best ones!!
+Reward model performs better than semantic embedding model(so called vector search). The graph above shows the result of training reward model (3b) and e5-mistral-7b model to search best knowledge. While the vector search model cannot really retrieve best knowledge (because problems and knowledge texts are not similar as sentences), our proprietary search model can learn what knowledge are needed to solve a question and retrieve the best ones.
 
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
-### Achieves State Of The Art Result
+### Improves Strong Models
 
 <div align="center">
   <img src="images/Improvement.png" alt="seimei" width="500" height="360">
 </div>
 
 We acheved an improvement of bigcodebench/deepseek-r1 by our search engine!!
-
-<a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-### Applications of SEIMEI
-
-<div align="center">
-  <img src="images/Application1.png" alt="seimei" width="640" height="360">
-</div>
-
-<div align="center">
-  <img src="images/Application2.png" alt="seimei" width="640" height="360">
-</div>
-
-<div align="center">
-  <img src="images/Application3.png" alt="seimei" width="640" height="360">
-</div>
-
-SEIMEI can be applied to make these useful functions!!
 
 <a href="https://github.com/kyotoai/SEIMEI/tree/main/demo"><strong>See more details »</strong></a>
 
@@ -171,11 +142,8 @@ SEIMEI can be applied to make these useful functions!!
 
 
 
-<!-- GETTING STARTED -->
-## Getting Started
-
-This is an example of how you build SEIMEI on local gpu or rental server gpu.
-You can use it by installing seimei using `pip install` or downloading this directory into your local folder.
+<!-- Quick Start -->
+## Quick Start
 
 ### Installation
 
@@ -186,37 +154,33 @@ git clone https://github.com/kyotoai/SEIMEI.git
 pip install -e SEIMEI/
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
 ### Set API key
 
+1. Get KyotoAI API key from [https://kyotoai.net](https://kyotoai.net)
+
+2. Run
 ```bash
 export OPENAI_API_KEY = "(your_openai_api_key)"
 export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
 ```
 
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-<!-- USAGE EXAMPLES -->
-## Usage
-
-Here's an usage example using /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
-
-### Quick Start
+### Run SEIMEI
 
 #### In CLI app
+
+Open seimei terminal app inside your project directory by
 
 ```bash
 seimei
 ```
 
+and start asking question.
+
 #### python code
 
 ```python
 import asyncio
-from seimei import seimei  # class name is `seimei` (lowercase) for convenience
+from seimei import seimei
 
 async def demo_code_act():
     orchestrator = seimei(
@@ -239,6 +203,13 @@ async def demo_code_act():
 asyncio.run(demo_code_act())
 ```
 
+<p align="right">(<a href="#readme-top">back to top</a>)</p>
+
+
+<!-- USAGE EXAMPLES -->
+## Usage
+
+Here's an usage example using /Experts/Math module. This module answers mathematical questions with brainstorming steps integrated by RMSearch. You can see more examples in /examples/example.ipynb.
 
 ### Built-in Agent Demos
 
@@ -445,20 +416,6 @@ result = await orchestrator(
 ```
 
 When a knowledge entry defines both `step` and `agent`, SEIMEI constrains routing to those agents for the matching steps (or, in `"klg"` mode, routes via the selected knowledge item).
-
-<p align="right">(<a href="#readme-top">back to top</a>)</p>
-
-
-
-<!-- ROADMAP -->
-## Roadmap
-
-- [x] Basic Agents
-- [x] CLI Chat App Feature
-- [x] Knowledge Retrieval
-- [ ] Automatical Dataset Generation for RMSearch
-
-See the [open issues](https://github.com/github_username/repo_name/issues) for a full list of proposed features (and known issues).
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 
