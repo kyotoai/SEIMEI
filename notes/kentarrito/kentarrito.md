@@ -4571,7 +4571,17 @@ nohup accelerate launch --config_file ./accelerate_config.yaml \
 
 - [ ] Make inference_sampling.py in train folder
 ```
-from seimei.train.inference_sampling import seimei
+Now I'm using exp11_plasma_gkv_v5/train_v6.py for making inference by seimei and scoring them. I wanna copy functions of this file to seimei/train/sampling.py
+
+Note that
+
+1. Make `sampling` class in sampling.py which is easy for developper to use and modify. Also set arguments for all the default parameters in train_v6.py
+
+2. Put all the default prompts to seimei/train/sampling_prompts.py and not important functions to seimei/train/sampling_utils.py
+
+3. Don't change any code content in train_v6.py
+
+Read all the content of train_v6.py and relevant files very carefully, and implement the above features. Even if there is any small ambiguous point in my instructions, ask me back before you do the modification.
 ```
 - [ ] Make README.md & Doc 1h
 - [ ] Make examples 1h
