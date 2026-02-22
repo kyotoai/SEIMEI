@@ -8,9 +8,9 @@ This document explains how to run inference + scoring with the sampling runner.
 
 ```python
 from pathlib import Path
-from seimei.train.sampling import Samping
+from seimei.train.sampling import Sampling
 
-runner = Samping(
+runner = Sampling(
     dataset_path=Path("exp11_plasma_gkv_v5/dataset.json"),
     output_path=Path("exp11_plasma_gkv_v5/train_v6_results.json"),
     llm_model_name="/workspace/gpt-oss-20b",
@@ -26,10 +26,10 @@ print(len(results))
 
 ```python
 import asyncio
-from seimei.train.sampling import Samping
+from seimei.train.sampling import Sampling
 
 async def main():
-    runner = Samping(max_problems=10)
+    runner = Sampling(max_problems=10)
     records = await runner.run_async()
     print("done", len(records))
 
@@ -135,7 +135,7 @@ Top-level shape:
 
 ## Detailed Settings
 
-Constructor: `Samping(...)`
+Constructor: `Sampling(...)`
 
 | Argument | Type | Default | Description |
 |---|---|---|---|

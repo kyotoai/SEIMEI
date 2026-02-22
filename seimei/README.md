@@ -43,7 +43,6 @@ export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
 
 ---
 
-
 ## Quick start
 
 ### In CLI app
