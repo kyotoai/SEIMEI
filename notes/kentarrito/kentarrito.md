@@ -4587,7 +4587,13 @@ Read all the content of train_v6.py and relevant files very carefully, and imple
 - [ ] Make examples 1h
 - [ ] Refine the paper 3h
 
-
-
 Unlike conventional RL that only optimizes knowledge *inside* the LLM, SEIMEI jointly optimizes external knowledge sources, enabling AI to truly absorb domain-specific and tacit expertise. Build self-trained AI with dramatically lower cost, higher adaptability, and real-world performance.
 
+## Feb 22
+
+- [x] Fill usage A, B in README.md
+```
+Analyze whole library and complete `Usage A`and `Usage B` in README.md. You should write 1 to 3 lines of sentence in overview as a summary for each step too.
+
+Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+```
