@@ -4628,7 +4628,7 @@ nohup vllm serve $RMSEARCH_MODEL_NAME \
 nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
 ```
 
-
+- [ ] Enable `pip install "./SEIMEI[dev]"` in setup.py
 
 
 

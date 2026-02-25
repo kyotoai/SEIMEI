@@ -4,10 +4,21 @@ import io
 import os
 from setuptools import setup, find_packages
 
-# read the contents of your requirements.txt
 here = os.path.abspath(os.path.dirname(__file__))
-with io.open(os.path.join(here, 'requirements.txt'), encoding='utf-8') as f:
-    requirements = f.read().splitlines()
+
+
+def read_requirements(filename):
+    with io.open(os.path.join(here, filename), encoding='utf-8') as f:
+        return [
+            line.strip()
+            for line in f
+            if line.strip() and not line.strip().startswith('#')
+        ]
+
+
+requirements = read_requirements('requirements.txt')
+dev_requirements = read_requirements('requirements_developper.txt')
+dev_only_requirements = [req for req in dev_requirements if req not in requirements]
 
 setup(
     name='seimei',
@@ -20,6 +31,9 @@ setup(
     url='https://github.com/kyotoai/SEIMEI',
     packages=find_packages(exclude=('tests',)),
     install_requires=requirements,
+    extras_require={
+        'dev': dev_only_requirements,
+    },
     python_requires='>=3.7',
     classifiers=[
         'Programming Language :: Python :: 3',
