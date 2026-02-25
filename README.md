@@ -1,15 +1,4 @@
-<!-- Improved compatibility of back to top link: See: https://github.com/othneildrew/Best-README-Template/pull/73 -->
 <a id="readme-top"></a>
-<!--
-*** https://github.com/othneildrew/Best-README-Template/blob/main/BLANK_README.md
-*** Thanks for checking out the Best-README-Template. If you have a suggestion
-*** that would make this better, please fork the repo and create a pull request
-*** or simply open an issue with the tag "enhancement".
-*** Don't forget to give the project a star!
-*** Thanks again! Now go create something AMAZING! :D
--->
-
-
 
 <!-- PROJECT SHIELDS -->
 <!--
@@ -64,19 +53,35 @@
   <ol>
     <li>
       <a href="#about-the-project">About The Project</a>
+    </li>
+    <li>
+      <a href="#quick-start">Quick Start</a>
       <ul>
-        <li><a href="#built-with">Built With</a></li>
+        <li><a href="#installation">Installation</a></li>
+        <li><a href="#set-api-key">Set API key</a></li>
+        <li><a href="#run-seimei">Run SEIMEI</a></li>
       </ul>
     </li>
     <li>
-      <a href="#getting-started">Getting Started</a>
+      <a href="#usage-a-integrate-your-own-knowledge">Usage A. Integrate your own knowledge</a>
       <ul>
-        <li><a href="#prerequisites">Prerequisites</a></li>
-        <li><a href="#installation">Installation</a></li>
+        <li><a href="#1-prepare-your-knowledge-file">1. Prepare your knowledge file</a></li>
+        <li><a href="#2-run-seimei-with-knowledge-loading">2. Run SEIMEI with knowledge loading</a></li>
+        <li><a href="#3-automatic-knowledge-accumulation-optional">3. Automatic knowledge accumulation (optional)</a></li>
       </ul>
     </li>
-    <li><a href="#usage">Usage</a></li>
-    <li><a href="#roadmap">Roadmap</a></li>
+    <li>
+      <a href="#usage-b-train-reward-model-to-optimize-knowledge">Usage B. Train Reward Model To Optimize Knowledge</a>
+      <ul>
+        <li><a href="#1-inferences-sampling">1. Inferences sampling</a></li>
+        <li><a href="#2-data-conversion">2. Data conversion</a></li>
+        <li><a href="#3-train-reward-model">3. Train reward model</a></li>
+        <li><a href="#4-evaluate-your-model">4. Evaluate your model</a></li>
+      </ul>
+    </li>
+    <li>
+      <a href="#usage-c-cli-chat">Usage C. CLI Chat</a>
+    </li>
     <li><a href="#contributing">Contributing</a></li>
     <li><a href="#license">License</a></li>
     <li><a href="#contact">Contact</a></li>
@@ -192,7 +197,7 @@ async def demo_code_act():
         llm_config={"model": "gpt-5-nano"},
         max_tokens_per_question=30000,
     )
-    
+
     result = await orchestrator(
         messages=[
             {"role": "user", "content": "Analyze the current directory and change."},
@@ -500,9 +505,9 @@ Distributed under the Apache-2.0 License. See `LICENSE.txt` for more information
 <!-- ACKNOWLEDGMENTS -->
 ## Acknowledgments
 
-* [vLLM](https://docs.vllm.ai/en/latest/)
-* [Huggingface](https://huggingface.co)
-* [Kyoto University Library](https://www.kulib.kyoto-u.ac.jp/mainlib/en/)
+SEIMEI exists because of KyotoAI collaborators who kept pushing ideas into working systems, from research framing to production-grade implementation and evaluation.
+Thank you for the honest feedback loops, fast iteration, and deep domain discussions that shaped this project.
+This repository is the result of your continuous engineering and research partnership.
 
 <p align="right">(<a href="#readme-top">back to top</a>)</p>
 

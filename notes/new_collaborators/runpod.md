@@ -65,6 +65,7 @@ nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.l
   1. Run `ps aux | grep nohup`
   2. kill -9 (process_number)
     * You shouldn't kill `... grep --color=auto` process
+* If you get `ERROR: Could not install packages due to an OSError: [Errno 28] No space left on device`, Run `pip cache purge`
 
 ## Test LLM Request
 

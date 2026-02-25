@@ -4597,3 +4597,38 @@ Analyze whole library and complete `Usage A`and `Usage B` in README.md. You shou
 
 Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 ```
+
+## Feb 23
+
+- [ ] 
+
+
+
+
+## Feb 26
+
+- [ ] start ksn poc
+
+Pod1
+```
+pip install -r /workspace/kentarrito/SEIMEI/requirements_developper.txt
+nohup vllm serve /workspace/gpt-oss-20b \
+  --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
+  > ./server-gptoss.log 2>&1 &
+```
+
+Pod2
+```
+pip install -r /workspace/kentarrito/SEIMEI/requirements_developper.txt
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward
+export VLLM_USE_V1=0
+nohup vllm serve $RMSEARCH_MODEL_NAME \
+  --runner pooling --host 0.0.0.0 --port 9000 \
+  > server-vllm-reward.log 2>&1 &
+nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
+```
+
+
+
+
+
