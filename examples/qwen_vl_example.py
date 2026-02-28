@@ -1,7 +1,14 @@
 import asyncio
+from seimei import LLMClient, seimei, format_agent_history, TokenLimiter
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from seimei import LLMClient, seimei
-
+def _stringify_content(value: Any) -> str:
+    if isinstance(value, (dict, list)):
+        try:
+            return json.dumps(value, ensure_ascii=False)
+        except TypeError:
+            return str(value)
+    return str(value)
 
 class QwenVL_LLMClient(LLMClient):
     """Qwen3-VL local client that preserves multimodal message blocks."""

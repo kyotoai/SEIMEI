@@ -2,7 +2,7 @@
 
 ## Run SEIMEI using OpenAI API key
 
-### 1. Ask the api key and access to SEIMEI_ (private repo) from kentarrito
+### 1. Ask the openai api key and access to SEIMEI_ (private repo) from kentarrito
 
 ### 2. Set up
 

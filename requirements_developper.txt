@@ -1,3 +1,5 @@
+torch
+fastapi
 dotenv
 numpy
 pandas
@@ -7,7 +9,6 @@ duckduckgo_search
 requests
 ddgs
 
-torch
 transformers==4.56.0
 datasets
 trl

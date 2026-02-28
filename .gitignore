@@ -75,7 +75,7 @@ exp12_websearch_small/*.json
 
 # files created as seimei runs
 seimei_runs*
-seimei_knowledge
+seimei_knowledge_personal
 
 #
 exp10*
