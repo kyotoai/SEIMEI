@@ -6,6 +6,7 @@ huggingface_hub
 duckduckgo_search
 requests
 ddgs
+PyMuPDF
 
 torch
 transformers==4.56.0

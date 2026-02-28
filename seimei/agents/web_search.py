@@ -8,6 +8,8 @@ from html import unescape
 from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 from urllib.parse import parse_qsl, urlencode, urljoin, urlparse, urlsplit, urlunsplit
 
+from io import BytesIO
+
 import requests
 
 from seimei.agent import Agent, register
@@ -100,14 +102,14 @@ class web_search(Agent):
             body = (r.get("body", "") or "").strip()
             lines.append(f"{i}. {title or '[untitled]'} — {href}")
             if body:
-                lines.append(f"   {body[:160]}...")
+                lines.append(f"   {body[:1000]}...")
         if skipped_results:
             lines.append(f"Skipped {skipped_results} result(s) already visited in this run.")
         if pages:
             lines.append("")
             lines.append("Fetched content excerpts:")
             for page in pages:
-                excerpt = page["content"][:320].replace("\n", " ")
+                excerpt = page["content"][:10000].replace("\n", " ")
                 lines.append(f"- {page['title'] or page['url']}: {excerpt}...")
         knowledge_payload = knowledge_entries[:6]
         knowledge_texts = [item.get("text") for item in knowledge_payload if item.get("text")]
@@ -406,6 +408,33 @@ async def _fetch_top_pages(
         )
     return pages
 
+def _looks_like_pdf(url: str, content_type: str, content_disposition: str) -> bool:
+    u = (url or "").lower()
+    ct = (content_type or "").lower()
+    cd = (content_disposition or "").lower()
+    return (
+        ".pdf" in u
+        or "application/pdf" in ct
+        or ".pdf" in cd
+    )
+
+
+def _pdf_bytes_to_text(data: bytes) -> str:
+    try:
+        import pymupdf  # package: PyMuPDF
+    except Exception:
+        return ""
+    try:
+        doc = pymupdf.open(stream=data, filetype="pdf")
+        parts: List[str] = []
+        for page in doc:
+            parts.append(page.get_text() or "")
+        doc.close()
+        return "\n".join(parts).strip()
+    except Exception:
+        return ""
+
+
 
 async def _fetch_page_text(url: str) -> Tuple[str, str]:
     loop = asyncio.get_event_loop()
@@ -419,14 +448,21 @@ async def _fetch_page_text(url: str) -> Tuple[str, str]:
             )
             if resp.status_code >= 400:
                 return "", resp.url or url
-            return resp.text, resp.url or url
+
+            final_url = resp.url or url
+            content_type = resp.headers.get("Content-Type", "")
+            content_disposition = resp.headers.get("Content-Disposition", "")
+
+            if _looks_like_pdf(final_url, content_type, content_disposition):
+                print(_pdf_bytes_to_text(resp.content))
+                return _pdf_bytes_to_text(resp.content), final_url
+
+            return _html_to_text(resp.text, final_url), final_url
         except requests.RequestException:
             return "", url
 
-    html, base_url = await loop.run_in_executor(None, _run)
-    if not html:
-        return "", base_url
-    return _html_to_text(html, base_url), base_url
+    return await loop.run_in_executor(None, _run)
+
 
 
 def _get_domain(url: str) -> str:
