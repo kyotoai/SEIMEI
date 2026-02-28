@@ -8,7 +8,7 @@ It loads pluggable *agents* from a folder/file, routes steps using `rmsearch` (i
 ## Overview
 
 1. `seimei.py` — orchestrator that ties everything together (agent loading, routing, shared search, dataset logging)
-2. `llm.py` — minimal LLM client (OpenAI-compatible API or local vLLM-compatible base_url)
+2. `llm.py` — minimal LLM clients (`LLMClient` for OpenAI-compatible APIs and `Qwen_VL_LLM_Client` for local Qwen3-VL inference)
 3. `agent.py` — base `Agent` class with logging + a tiny registry
 4. `agents/think.py` — planner agent that selects instructions via the shared search API
 5. `agents/web_search.py` — example agent that performs web search (uses `duckduckgo_search` if available, or returns a graceful message)
@@ -30,6 +30,11 @@ pip install -e SEIMEI/.
 Optional dependencies:
 ```bash
 pip install duckduckgo_search requests
+```
+
+For Qwen3-VL multimodal runs:
+```bash
+pip install transformers torch
 ```
 
 ---
@@ -77,6 +82,42 @@ async def demo_code_act():
     )
 
 asyncio.run(demo_code_act())
+```
+
+### Qwen3-VL (custom LLM client class)
+
+```python
+import asyncio
+from seimei import Qwen_VL_LLM_Client, seimei
+
+async def demo_qwen_vl():
+    orchestrator = seimei(
+        agent_config=[{"name": "answer"}],
+        llm_client_class=Qwen_VL_LLM_Client,
+        llm_config={
+            "model": "/workspace/qwen8b-vl/",
+            "processor_path": "/workspace/qwen8b-vl/",
+            "device_map": "auto",
+            "torch_dtype": "auto",
+            "max_new_tokens": 128,
+            # "attn_implementation": "flash_attention_2",
+        },
+        max_steps=1,
+    )
+    result = await orchestrator(
+        messages=[
+            {
+                "role": "user",
+                "content": [
+                    {"type": "image", "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg"},
+                    {"type": "text", "text": "Describe this image."},
+                ],
+            }
+        ],
+    )
+    print(result["output"])
+
+asyncio.run(demo_qwen_vl())
 ```
 
 ### Output Schema
@@ -211,6 +252,7 @@ result = await orchestrator(messages=messages)
 **Arguments**
 - `agent_config: list[dict]` — A list of entries like `{"dir_path": "path/to/agents"}`, `{"file_path": "path/to/agent.py"}`, or `{"name": "code_act"}` to pick from already-registered agents.
 - `llm_config: dict` — Passed to the LLM client. Supports either OpenAI API or any OpenAI-compatible server via `base_url` and options like `max_concurrent_requests` for throttling.
+- `llm_client_class: type[LLMClient]` — LLM client class used to create `self.llm`. Default: `LLMClient`. Set this to `Qwen_VL_LLM_Client` to run local Qwen3-VL multimodal inference.
 - `rm_config: dict` — Optional; forwarded to `rmsearch` if you use it (use `base_url` to point at the RMSearch endpoint).
 - `log_dir: str` — Directory to store dataset logs. Default: `./seimei_runs`.
 - `max_steps: int` — Hard cap on agent steps per call. Default: 8.

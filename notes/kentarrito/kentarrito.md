@@ -4611,7 +4611,7 @@ Even if you find any small ambiguous point in my instructions after investigatin
 
 Pod1
 ```
-pip install -r /workspace/kentarrito/SEIMEI/requirements_developper.txt
+pip install "/workspace/kentarrito/SEIMEI[dev]"
 nohup vllm serve /workspace/gpt-oss-20b \
   --host 0.0.0.0 --port 8000 --data-parallel-size 1 \
   > ./server-gptoss.log 2>&1 &
@@ -4619,7 +4619,7 @@ nohup vllm serve /workspace/gpt-oss-20b \
 
 Pod2
 ```
-pip install -r /workspace/kentarrito/SEIMEI/requirements_developper.txt
+pip install "/workspace/kentarrito/SEIMEI[dev]"
 export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward
 export VLLM_USE_V1=0
 nohup vllm serve $RMSEARCH_MODEL_NAME \
@@ -4628,7 +4628,74 @@ nohup vllm serve $RMSEARCH_MODEL_NAME \
 nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
 ```
 
-- [ ] Enable `pip install "./SEIMEI[dev]"` in setup.py
+- [x] Enable `pip install "/workspace/kentarrito/SEIMEI[dev]"` in setup.py
 
+- [ ] Use multimodal model in seimei
+    - Make LLM_Client inherible and make Qwen_VL_LLM_Client
+    - Set argument for custom LLM_Client
+'''
+I wanna make Qwen_VL_LLM_Client which inherits LLM_Client. In Qwen_VL_LLM_Client, you should enable Qwen3VL model. Here's how to use the model.
 
+```
+from transformers import Qwen3VLForConditionalGeneration, AutoProcessor
+
+# default: Load the model on the available device(s)
+model = Qwen3VLForConditionalGeneration.from_pretrained(
+    "/workspace/qwen8b-vl/", dtype="auto", device_map="auto"
+)
+
+# We recommend enabling flash_attention_2 for better acceleration and memory saving, especially in multi-image and video scenarios.
+# model = Qwen3VLForConditionalGeneration.from_pretrained(
+#     "Qwen/Qwen3-VL-8B-Instruct",
+#     dtype=torch.bfloat16,
+#     attn_implementation="flash_attention_2",
+#     device_map="auto",
+# )
+
+processor = AutoProcessor.from_pretrained("/workspace/qwen8b-vl/")
+
+messages = [
+    {
+        "role": "user",
+        "content": [
+            {
+                "type": "image",
+                "image": "https://qianwen-res.oss-cn-beijing.aliyuncs.com/Qwen-VL/assets/demo.jpeg", # or a path of an image file
+            },
+            {"type": "text", "text": "Describe this image."},
+        ],
+    }
+]
+
+# Preparation for inference
+inputs = processor.apply_chat_template(
+    messages,
+    tokenize=True,
+    add_generation_prompt=True,
+    return_dict=True,
+    return_tensors="pt"
+)
+inputs = inputs.to(model.device)
+
+# Inference: Generation of the output
+generated_ids = model.generate(**inputs, max_new_tokens=128)
+generated_ids_trimmed = [
+    out_ids[len(in_ids) :] for in_ids, out_ids in zip(inputs.input_ids, generated_ids)
+]
+output_text = processor.batch_decode(
+    generated_ids_trimmed, skip_special_tokens=True, clean_up_tokenization_spaces=False
+)
+print(output_text)
+```
+
+Note that
+1. check if LLM_Client can be inherit properly and called perfectly in seimei.py
+2. you must set an argument in seimei.__init__ so that users can make different LLM_Client class like Qwen_VL_LLM_Client and customize LLM_Client depending on what model they want to use.
+3. you should write the Qwen_VL_LLM_Client class and example usage of it in examples/qwen_vl_example.py. 
+
+Read all the content of seimei.py, llm.py and other relevant files very carefully. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
+
+- [ ] Make knowledge of actual costs
+- [ ] Make PoC where it evolves from user feedback
 

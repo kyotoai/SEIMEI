@@ -17,7 +17,7 @@ and install prerequisites
 ```
 git clone https://github.com/kyotoai/SEIMEI_.git
 mv SEIMEI_ SEIMEI
-pip install -e SEIMEI/requirements_developper.txt
+pip install -e "SEIMEI[dev]"
 ```
 
 ### 3. Run SEIMEI

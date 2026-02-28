@@ -30,7 +30,7 @@ cd /workspace/(your_name)
 
 Install prerequisites
 ```
-pip install -r /workspace/kentarrito/SEIMEI/requirements_developper.txt
+pip install "/workspace/kentarrito/SEIMEI[dev]"
 ```
 
 8. Run vllm serve
@@ -49,7 +49,7 @@ nohup vllm serve /workspace/gpt-oss-20b --data-parallel-size 1 --host 0.0.0.0 --
 For reward models:
 
 ```
-export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward
+export RMSEARCH_MODEL_NAME=/workspace/qwen4b-reward-converted-model
 export VLLM_USE_V1=0
 nohup vllm serve $RMSEARCH_MODEL_NAME \
   --runner pooling --host 0.0.0.0 --port 9000 \
@@ -57,7 +57,7 @@ nohup vllm serve $RMSEARCH_MODEL_NAME \
 nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.log 2>&1 &
 ```
 
-* You can see log from /workspace/kentarrito/server.log
+* You can see log from server.log, server-vllm-reward.log & server-rmsearch.log
 
 ### Further Note
 

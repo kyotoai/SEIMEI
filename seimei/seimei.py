@@ -73,6 +73,7 @@ class seimei:
         approval_callback: Optional[Callable[[str], bool]] = None,
         agent_log_head_lines: int = 3,
         max_tokens_per_question: Optional[int] = None,
+        llm_client_class: Type[LLMClient] = LLMClient,
     ) -> None:
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
@@ -80,7 +81,10 @@ class seimei:
         # LLM
         if llm_config is None:
             raise ValueError("llm_config must be provided")
-        self.llm = LLMClient(**llm_config)
+        if not inspect.isclass(llm_client_class) or not issubclass(llm_client_class, LLMClient):
+            raise TypeError("llm_client_class must be a subclass of LLMClient")
+        self.llm_client_class: Type[LLMClient] = llm_client_class
+        self.llm = self.llm_client_class(**llm_config)
 
         # Routing
         default_rm_settings = {
@@ -1948,6 +1952,8 @@ class seimei:
 
         llm_meta = {
             "model": self.llm.model,
+            "client_class": self.llm.__class__.__name__,
+            "client_module": self.llm.__class__.__module__,
             "base_url": getattr(self.llm, "base_url", None),
             "timeout": getattr(self.llm, "timeout", None),
             "using_openai": getattr(self.llm, "using_openai", False),
