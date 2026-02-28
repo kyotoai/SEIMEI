@@ -8,6 +8,7 @@ huggingface_hub
 duckduckgo_search
 requests
 ddgs
+PyMuPDF
 
 transformers==4.56.0
 datasets

@@ -8,3 +8,4 @@ huggingface_hub
 duckduckgo_search
 requests
 ddgs
+PyMuPDF
