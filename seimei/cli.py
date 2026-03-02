@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 
-from .SEIMEI import seimei as SeimeiOrchestrator
+from .seimei import seimei as SeimeiOrchestrator
 from .logging_utils import LogColors, colorize, supports_color
 
 # -------- Default knobs (easy to tweak without hunting through the code) --------
@@ -266,8 +266,8 @@ async def run_cli(args: CLIArgs) -> None:
 
     orchestrator = SeimeiOrchestrator(
         agent_config=agent_config,
-        llm_kwargs=llm_kwargs,
-        rm_kwargs=dict(DEFAULT_RM_KWARGS),
+        llm_config=llm_kwargs,
+        rm_config=dict(DEFAULT_RM_KWARGS),
         log_dir=args.log_dir,
         max_steps=args.max_steps,
         allow_code_exec=DEFAULT_ALLOW_CODE_EXEC,

@@ -17,7 +17,7 @@ def read_requirements(filename):
 
 
 requirements = read_requirements('requirements.txt')
-dev_requirements = read_requirements('requirements_developper.txt')
+dev_requirements = read_requirements('requirements_developer.txt')
 dev_only_requirements = [req for req in dev_requirements if req not in requirements]
 
 setup(

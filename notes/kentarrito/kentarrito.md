@@ -4630,7 +4630,7 @@ nohup uvicorn seimei.rmsearch:app --host 0.0.0.0 --port 8000 > server-rmsearch.l
 
 - [x] Enable `pip install "/workspace/kentarrito/SEIMEI[dev]"` in setup.py
 
-- [ ] Use multimodal model in seimei
+- [x] Use multimodal model in seimei
     - Make LLM_Client inherible and make Qwen_VL_LLM_Client
     - Set argument for custom LLM_Client
 '''
