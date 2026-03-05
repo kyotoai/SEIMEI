@@ -4699,3 +4699,73 @@ Read all the content of seimei.py, llm.py and other relevant files very carefull
 - [ ] Make knowledge of actual costs
 - [ ] Make PoC where it evolves from user feedback
 
+
+## Mar 5
+
+- [x] Make CLI Setting
+```
+seimei/cli.py offers chat interface in terminal. However, it only has chat function right now, and cannot see chat_history, set model name, or see status. 
+
+So you must set the following features:
+
+1. when user types "/" in the beginning of input, show the following candidates
+/chat_history
+/status
+/new
+/settings
+/exit
+/help
+the user can select one of the candidates by "arrow keys" and "enter key". Also, if the user keeps typing like "/s", you should show only candidates matching the string (in this case, "/status" and "/settings"). If no candidate matches, just exit the selecting mode.
+
+2. When each candidate is selected, 
+chat_history: show the recent chat histories by showing the first 100 chars of user's question. When one of them is selected, show the content.
+status: show how many tokens are used. in the conversation
+new: make a new chat
+settings: user can set which model to be used from here. set "gpt-5-nano", "gpt-5-mini", "gpt-5".
+exit: exit from cli app
+help: show what is each candidate for.
+
+3. Think deeply how users will feel using this app and try to design the interface as user friendly as possible. You can implement many other features I don't describe above to improve user experience.
+
+4. If cli.py will become complicated, you should make seimei/cli folder and organize all the related files in it.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+
+By the way, you started to create the content earlier, so there are some files you already started to make. Please complete them as well.
+```
+
+```
+1. the latest 20 runs in seimei_runs/. If users ask more, let them see more runs in the past
+2. only that selected user message and its paired assistant response
+3. model/settings remain as-is and only conversation/tokens reset
+4. replace command set strictly with the six
+```
+
+- [ ] Make default knowledge
+- [ ] Make README
+
+
+
+
+
+
+
+
+Caddi
+昔
+新しい機械を作ると、全て見積もり
+商社
+
+現在
+設計図の管理SaaSをやっている
+
+
+LEANER Technology
+https://leaner.co.jp
+
+
+
+
+
+
+
