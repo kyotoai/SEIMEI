@@ -10,10 +10,7 @@ from seimei.agent import Agent, register
 from seimei.knowledge.utils import prepare_knowledge_payload
 
 _SAFE_DEFAULTS = [
-    "echo",
-    "python",
     "python3",
-    "pip",
     "pip3",
     "ls",
     "cat",
@@ -26,11 +23,6 @@ _SAFE_DEFAULTS = [
     "grep",
     "rg",
     "sed",
-    "awk",
-    "cut",
-    "wc",
-    "jq",
-    "xlsx2csv",
 ]
 
 
@@ -284,11 +276,11 @@ async def _generate_command(
     system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
-        "Always keep the generated Python code as short and simple as possible—prefer tiny helpers, "
-        "just the essential imports, and no extra commentary.",
-        "Whenever Python prints data, describe what each value represents (e.g., `print('TODO count:', count)`) so the output is self-explanatory without seeing the code.",
-        "Assume the user cannot see the Python script—stdout must read like natural language summaries, not raw data dumps.",
-        "If multi-line Python is required, emit a heredoc using `python - <<'PY'` and close with `PY`.",
+        "For code/file analysis, strongly prefer shell-native inspection commands: `ls`, `cat -n`, `rg`, or `sed`.",
+        "Use Python only as a last resort when the task cannot be solved with shell commands.",
+        "Before editing or reasoning about specific code lines, see meta info by `ls` and capture context with `cat -n` (or equivalent line-numbered output).",
+        "Use `rg` for repository-wide search and `sed` for focused line-range extraction whenever possible.",
+        "If Python is truly required, keep it minimal and emit multi-line Python via `python - <<'PY'` ... `PY`.",
         "Wrap the command in `<cmd>` and `</cmd>`. Output nothing before or after the tags.",
         "Ensure the command text inside `<cmd>` contains everything needed, including any heredoc markers.",
         "Your entire goal is to produce the shortest viable command that inspects the mentioned file and "

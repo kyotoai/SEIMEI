@@ -10,7 +10,7 @@ async def demo_edit_file():
 
     result = await orchestrator(
         messages=[
-            {"role": "system", "content": "In the first several steps, you should see file's content by code_act agents."},
+            {"role": "system", "content": "In the first several steps, you should see file's content by code_act agents and use edit_file agent after that."},
             {"role": "user", "content": "See README.md and modify grammer errors."},
         ],
     )
