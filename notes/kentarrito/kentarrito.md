@@ -4753,6 +4753,12 @@ By the way, you started to create the content earlier, so there are some files y
 right now, code_act uses python code basically. but it should use `cat -n`, `rg`, `sed` mainly. please modify the system line so that llm will use those commands mainly instead of python codes.
 ```
 
+- [x] Debug 2 edit_file agent
+    - higher accuracy of editing 
+
+- [ ] Debug 3 edit_file agent
+    - modify code_act prompt to avoid "sed ... ; cat ..." stuff
+
 - [ ] Make default knowledge
     - it's important to stabilize success and fault mechanism. to do that, rmsearch should correctly deep search correct reasoning way. "find different files", "check other things to do like `find other relevant file`, `think from how the process is different from past reasoning`, `the thought now is a bit irrelevant`"
 ```

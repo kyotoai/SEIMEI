@@ -321,11 +321,16 @@ def _parse_update_chunk(
         elif marker == '-':
             chunk.old_lines.append(payload)
         else:
-            if parsed == 0:
-                raise PatchParseError(
-                    "Unexpected line found in update hunk. Lines must start with ' ', '+', or '-'"
-                )
-            break
+            if stripped.startswith("***") or stripped.startswith("@@"):
+                if parsed == 0:
+                    raise PatchParseError(
+                        "Unexpected line found in update hunk. Lines must start with ' ', '+', or '-'"
+                    )
+                break
+            # Compatibility fallback: tolerate context lines that are missing the leading
+            # single-space marker and treat them as unchanged lines.
+            chunk.old_lines.append(stripped)
+            chunk.new_lines.append(stripped)
         parsed += 1
 
     return chunk, parsed + start_index
@@ -475,6 +480,20 @@ def _compute_replacements(
             )
 
         if found is None:
+            core_match = _trim_shared_context_edges(pattern, new_slice)
+            if core_match is not None:
+                core_old, core_new = core_match
+                found = _seek_sequence(
+                    original_lines,
+                    core_old,
+                    line_index,
+                    eof=chunk.is_end_of_file,
+                )
+                if found is not None:
+                    pattern = core_old
+                    new_slice = core_new
+
+        if found is None:
             raise PatchApplyError(
                 f"Failed to find expected lines in {path}:\n" + "\n".join(chunk.old_lines)
             )
@@ -484,6 +503,36 @@ def _compute_replacements(
 
     replacements.sort(key=lambda item: item[0])
     return replacements
+
+
+def _trim_shared_context_edges(
+    old_lines: Sequence[str],
+    new_lines: Sequence[str],
+) -> Optional[Tuple[List[str], List[str]]]:
+    if not old_lines or not new_lines:
+        return None
+
+    max_common = min(len(old_lines), len(new_lines))
+    prefix = 0
+    while prefix < max_common and old_lines[prefix] == new_lines[prefix]:
+        prefix += 1
+
+    suffix = 0
+    while suffix < (max_common - prefix):
+        if old_lines[len(old_lines) - 1 - suffix] != new_lines[len(new_lines) - 1 - suffix]:
+            break
+        suffix += 1
+
+    if prefix == 0 and suffix == 0:
+        return None
+
+    old_end = len(old_lines) - suffix if suffix else len(old_lines)
+    new_end = len(new_lines) - suffix if suffix else len(new_lines)
+    core_old = list(old_lines[prefix:old_end])
+    core_new = list(new_lines[prefix:new_end])
+    if not core_old:
+        return None
+    return core_old, core_new
 
 
 def _apply_replacements(

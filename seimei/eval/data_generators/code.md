@@ -29,18 +29,18 @@ Patch format (must follow)
   *** Begin Patch
   *** Update File: <TARGET_FILE>
   @@
-  <context line 1>
-  <context line 2>
+   <context line 1>
+   <context line 2>
   ...
-  <context line M1>
+   <context line M1>
   -<old line 1>
   -<old line 2>
   ...
   -<old line N>
-  <context line 1>
-  <context line 2>
+   <context line 1>
+   <context line 2>
   ...
-  <context line M2>
+   <context line M2>
   *** End Patch
 
 Rules for patches
