@@ -4741,7 +4741,19 @@ By the way, you started to create the content earlier, so there are some files y
 4. replace command set strictly with the six
 ```
 
+
+## Mar 6
+
+- [x] Make edit_file agent
+- [ ] Debug 
 - [ ] Make default knowledge
+```
+Please make seimei_knowledge/default.csv
+```
+
+- [ ] Make demo for meeting from 5th
+
+
 - [ ] Make README
 
 
@@ -4749,19 +4761,6 @@ By the way, you started to create the content earlier, so there are some files y
 
 
 
-
-
-Caddi
-昔
-新しい機械を作ると、全て見積もり
-商社
-
-現在
-設計図の管理SaaSをやっている
-
-
-LEANER Technology
-https://leaner.co.jp
 
 
 
