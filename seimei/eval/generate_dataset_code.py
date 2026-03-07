@@ -69,7 +69,7 @@ SYSTEM_PROMPT = textwrap.dedent(
     Each patch must be a full apply_patch payload that:
       - Uses only "*** Update File: <file_path>" (no Add/Delete/Move).
       - Modifies only the target file.
-      - Includes 3-10 lines of context above and below each change.
+      - Uses EDIT blocks like "<EDIT replace=A-B> ... </EDIT>" (or a compatible fallback format).
       - Keeps the code syntactically valid and runnable, while intentionally dropping or disabling a meaningful feature.
     """
 ).strip()
@@ -280,8 +280,8 @@ def _validate_patch_text(patch_text: str, expected_file_path: str) -> None:
         raise ValueError(
             f"Patch Update File path '{update_path}' does not match '{expected_file_path}'."
         )
-    if "@@" not in patch_text:
-        raise ValueError("Patch is missing @@ hunk markers.")
+    if "@@" not in patch_text and "<EDIT " not in patch_text:
+        raise ValueError("Patch is missing edit markers (@@... or <EDIT ...>).")
 
 
 @dataclass

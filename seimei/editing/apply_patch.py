@@ -15,6 +15,9 @@ EOF_MARKER = "*** End of File"
 CHANGE_CONTEXT_MARKER = "@@ "
 EMPTY_CONTEXT_MARKER = "@@"
 LINE_RANGE_HEADER_RE = re.compile(r"^@@\s*(\d+)(?:-(\d+))?\s*$")
+EDIT_INSERT_HEADER_RE = re.compile(r"^<EDIT\s+insert\s*=\s*(\d+)\s*>$")
+EDIT_REPLACE_HEADER_RE = re.compile(r"^<EDIT\s+replace\s*=\s*(\d+)-(\d+)\s*>$")
+EDIT_END_MARKER = "</EDIT>"
 
 
 class PatchParseError(ValueError):
@@ -158,8 +161,7 @@ def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation,
         consumed = 1
 
         chunks: List[Union[LineRangeChunk, UpdateChunk]] = []
-        has_line_range_chunk = False
-        has_legacy_chunk = False
+        chunk_dialect: Optional[str] = None
         while remaining:
             if remaining[0].strip() == "":
                 consumed += 1
@@ -167,13 +169,19 @@ def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation,
                 continue
             if remaining[0].startswith("***"):
                 break
-            chunk, chunk_lines = _parse_update_chunk(remaining, line_number + consumed, allow_missing_context=not chunks)
+            chunk, chunk_lines, dialect = _parse_update_chunk(
+                remaining,
+                line_number + consumed,
+                allow_missing_context=not chunks,
+            )
             if chunk_lines == 0:
                 break
-            if isinstance(chunk, LineRangeChunk):
-                has_line_range_chunk = True
-            else:
-                has_legacy_chunk = True
+            if chunk_dialect is None:
+                chunk_dialect = dialect
+            elif chunk_dialect != dialect:
+                raise PatchParseError(
+                    f"Update file hunk for path '{path}' mixes '{chunk_dialect}' and '{dialect}' chunk styles."
+                )
             chunks.append(chunk)
             consumed += chunk_lines
             remaining = remaining[chunk_lines:]
@@ -182,11 +190,6 @@ def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation,
             raise PatchParseError(
                 f"Update file hunk for path '{path}' is empty at line {line_number}"
             )
-        if has_line_range_chunk and has_legacy_chunk:
-            raise PatchParseError(
-                f"Update file hunk for path '{path}' mixes line-range and legacy diff chunks."
-            )
-
         return (
             UpdateFileOperation(path=path, chunks=chunks),
             consumed,
@@ -207,11 +210,44 @@ def _parse_update_chunk(
     line_number: int,
     *,
     allow_missing_context: bool,
-) -> Tuple[Union[LineRangeChunk, UpdateChunk], int]:
+) -> Tuple[Union[LineRangeChunk, UpdateChunk], int, str]:
     if not lines:
         raise PatchParseError("Update hunk does not contain any lines")
 
     header = lines[0].strip()
+    insert_match = EDIT_INSERT_HEADER_RE.match(header)
+    if insert_match:
+        start_line = int(insert_match.group(1))
+        new_lines, consumed = _parse_edit_chunk_body(lines[1:], line_number)
+        chunk = LineRangeChunk(
+            start_line=start_line,
+            end_line=None,
+            new_lines=new_lines,
+        )
+        return chunk, consumed + 1, "edit"
+
+    replace_match = EDIT_REPLACE_HEADER_RE.match(header)
+    if replace_match:
+        start_line = int(replace_match.group(1))
+        end_line = int(replace_match.group(2))
+        if end_line < start_line:
+            raise PatchParseError(
+                f"Invalid replace range at line {line_number}: {start_line}-{end_line}"
+            )
+        new_lines, consumed = _parse_edit_chunk_body(lines[1:], line_number)
+        chunk = LineRangeChunk(
+            start_line=start_line,
+            end_line=end_line,
+            new_lines=new_lines,
+        )
+        return chunk, consumed + 1, "edit"
+
+    if header.startswith("<EDIT"):
+        raise PatchParseError(
+            f"Invalid EDIT header at line {line_number}: '{header}'. "
+            "Use '<EDIT insert=N>' or '<EDIT replace=A-B>'."
+        )
+
     range_match = LINE_RANGE_HEADER_RE.match(header)
     if range_match:
         start_line = int(range_match.group(1))
@@ -227,7 +263,7 @@ def _parse_update_chunk(
             end_line=end_line,
             new_lines=new_lines,
         )
-        return chunk, consumed + 1
+        return chunk, consumed + 1, "line-range"
 
     header = lines[0]
     start_index = 0
@@ -275,7 +311,7 @@ def _parse_update_chunk(
         elif marker == '-':
             chunk.old_lines.append(payload)
         else:
-            if stripped.startswith("***") or stripped.startswith("@@"):
+            if stripped.startswith("***") or stripped.startswith("@@") or stripped.startswith("<EDIT"):
                 if parsed == 0:
                     raise PatchParseError(
                         "Unexpected line found in update hunk. Lines must start with ' ', '+', or '-'"
@@ -287,7 +323,20 @@ def _parse_update_chunk(
             chunk.new_lines.append(stripped)
         parsed += 1
 
-    return chunk, parsed + start_index
+    return chunk, parsed + start_index, "legacy"
+
+
+def _parse_edit_chunk_body(lines: Sequence[str], line_number: int) -> Tuple[List[str], int]:
+    body: List[str] = []
+    consumed = 0
+    for line in lines:
+        consumed += 1
+        if line.strip() == EDIT_END_MARKER:
+            return body, consumed
+        body.append(line)
+    raise PatchParseError(
+        f"Missing '{EDIT_END_MARKER}' for <EDIT ...> block that starts at line {line_number}"
+    )
 
 
 def _parse_line_range_chunk_body(lines: Sequence[str]) -> Tuple[List[str], int]:
@@ -295,7 +344,7 @@ def _parse_line_range_chunk_body(lines: Sequence[str]) -> Tuple[List[str], int]:
     consumed = 0
     for line in lines:
         stripped = line.strip()
-        if stripped.startswith("***") or stripped.startswith("@@"):
+        if stripped.startswith("***") or stripped.startswith("@@") or stripped.startswith("<EDIT"):
             break
         body.append(line)
         consumed += 1
@@ -484,7 +533,7 @@ def _compute_line_range_replacements(
         if chunk.end_line is None:
             if not chunk.new_lines:
                 raise PatchApplyError(
-                    f"Invalid insertion chunk #{chunk_index} in {path}: '@@{chunk.start_line}' requires inserted text."
+                    f"Invalid insertion chunk #{chunk_index} in {path}: insert operations require at least one inserted line."
                 )
             if chunk.start_line > len(original_lines) + 1:
                 raise PatchApplyError(

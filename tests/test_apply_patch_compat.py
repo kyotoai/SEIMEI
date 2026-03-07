@@ -55,18 +55,36 @@ def test_apply_patch_falls_back_to_core_replacement_when_context_drifts(tmp_path
     assert target.read_text(encoding="utf-8") == "line one\nupdated value\nline three\n"
 
 
-def test_apply_patch_supports_line_range_hunks_with_original_line_numbers(tmp_path: Path) -> None:
+def test_apply_patch_supports_line_range_fallback_format(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("alpha\nbeta\ngamma\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2-2
+beta fixed
+*** End Patch
+"""
+
+    patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+    assert target.read_text(encoding="utf-8") == "alpha\nbeta fixed\ngamma\n"
+
+
+def test_apply_patch_supports_edit_blocks_with_original_line_numbers(tmp_path: Path) -> None:
     patch_module = _load_apply_patch_module()
     target = tmp_path / "sample.txt"
     target.write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
 
     patch_text = """*** Begin Patch
 *** Update File: sample.txt
-@@2-3
+<EDIT replace=2-3>
 beta fixed
 gamma fixed
-@@4
+</EDIT>
+<EDIT insert=4>
 inserted before delta
+</EDIT>
 *** End Patch
 """
 
@@ -80,16 +98,18 @@ inserted before delta
     )
 
 
-def test_apply_patch_line_range_allows_delete_only_and_append(tmp_path: Path) -> None:
+def test_apply_patch_edit_blocks_allow_delete_only_and_append(tmp_path: Path) -> None:
     patch_module = _load_apply_patch_module()
     target = tmp_path / "sample.txt"
     target.write_text("one\ntwo\nthree\n", encoding="utf-8")
 
     patch_text = """*** Begin Patch
 *** Update File: sample.txt
-@@2-2
-@@4
+<EDIT replace=2-2>
+</EDIT>
+<EDIT insert=4>
 four
+</EDIT>
 *** End Patch
 """
 
@@ -116,10 +136,12 @@ def test_apply_patch_rejects_overlapping_line_ranges(tmp_path: Path) -> None:
 
     patch_text = """*** Begin Patch
 *** Update File: sample.txt
-@@2-3
+<EDIT replace=2-3>
 X
-@@3-4
+</EDIT>
+<EDIT replace=3-4>
 Y
+</EDIT>
 *** End Patch
 """
 
@@ -127,18 +149,18 @@ Y
         patch_module.apply_patch_to_workspace(patch_text, tmp_path)
 
 
-def test_apply_patch_rejects_mixed_line_range_and_legacy_hunks(tmp_path: Path) -> None:
+def test_apply_patch_rejects_mixed_edit_and_line_range_hunks(tmp_path: Path) -> None:
     patch_module = _load_apply_patch_module()
     target = tmp_path / "sample.txt"
     target.write_text("one\ntwo\nthree\n", encoding="utf-8")
 
     patch_text = """*** Begin Patch
 *** Update File: sample.txt
-@@2-2
-@@
- one
--two
-+two fixed
+<EDIT replace=2-2>
+two fixed
+</EDIT>
+@@3
+inserted
 *** End Patch
 """
 
@@ -153,7 +175,8 @@ def test_apply_patch_rejects_empty_insertion_chunk(tmp_path: Path) -> None:
 
     patch_text = """*** Begin Patch
 *** Update File: sample.txt
-@@2
+<EDIT insert=2>
+</EDIT>
 *** End Patch
 """
 

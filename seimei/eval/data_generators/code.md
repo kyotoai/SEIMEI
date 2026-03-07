@@ -28,25 +28,18 @@ Patch format (must follow)
 
   *** Begin Patch
   *** Update File: <TARGET_FILE>
-  @@
-   <context line 1>
-   <context line 2>
-  ...
-   <context line M1>
-  -<old line 1>
-  -<old line 2>
-  ...
-  -<old line N>
-   <context line 1>
-   <context line 2>
-  ...
-   <context line M2>
+  <EDIT replace=10-20>
+  <replacement text for that range>
+  </EDIT>
   *** End Patch
 
 Rules for patches
 - Use only `*** Update File:` (no renames, no deletes).
 - The path must exactly match TARGET_FILE.
-- Include 3 to 10 lines of context above and below each change so that the patch designates only one part in the file.
+- Use 1-based line numbers.
+- `replace` range is inclusive.
+- For delete-only edits, keep the `<EDIT replace=...>` body empty and still close with `</EDIT>`.
+- Every edit block must end with `</EDIT>`.
 - Keep changes small and localized.
 
 Dataset fields per patch

@@ -4807,6 +4807,53 @@ Here note that
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 ```
 
+- [x] Debug 4 edit_file agent
+```
+I got patch like this
+
+*** Begin Patch
+*** Update File: README.md
+@@35
+-    <!-- Grammar corrections applied -->
++    <!-- Grammar corrections applied -->
+@@35-36
+-    Unlike conventional RL that only optimizes knowledge inside the LLM, SEIMEI jointly optimizes external knowledge, enabling AI to truly absorb domain-specific and tacit expertise. Build much more personalized AI trained only for you with dramatically lower cost and higher adaptability!!
+-    <br />
++    Unlike conventional RL that only optimizes knowledge inside the LLM, SEIMEI jointly optimizes external knowledge, enabling AI to truly absorb domain-specific and tacit expertise. Build a much more personalized AI trained for you at dramatically lower cost and with higher adaptability.
++    <br />
+*** End Patch
+
+but it should be like
+
+*** Begin Patch
+*** Update File: README.md
+@@35
+   <!-- Grammar corrections applied -->
+@@35-36
+   Unlike conventional RL that only optimizes knowledge inside the LLM, SEIMEI jointly optimizes external knowledge, enabling AI to truly absorb domain-specific and tacit expertise. Build a much more personalized AI trained for you at dramatically lower cost and with higher adaptability.
+   <br />
+*** End Patch
+
+write more detailed prompt including an patch example and prevent this issue.
+```
+
+- [x] Debug 4 edit_file agent
+```
+Again it often generates `-`/`+` because the format is very similar to normal patch. Let's change the format to 
+
+'''
+<EDIT insert=1>
+I'm in Kyoto
+</EDIT>
+<EDIT replace=1-3>
+He is in Tokyo
+</EDIT>
+'''
+
+Here I explicitly mentioned `insert` and `replace`. Also put </EDIT> at the end of every edit text. Also use the above sentences as the example in the code_act prompt. 
+
+Modify all the relevant files.
+```
 
 - [ ] Make default knowledge
     - it's important to stabilize success and fault mechanism. to do that, rmsearch should correctly deep search correct reasoning way. "find different files", "check other things to do like `find other relevant file`, `think from how the process is different from past reasoning`, `the thought now is a bit irrelevant`"
