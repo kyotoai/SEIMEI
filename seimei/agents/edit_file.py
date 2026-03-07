@@ -20,25 +20,17 @@ APPLY_PATCH_FORMAT_HINT = (
     "Ensure your response is a valid apply_patch payload. The body must follow the grammar:\n"
     "*** Begin Patch\n"
     "*** Update File: relative/path\n"
-    "@@\n"
-    " <context line 1>\n"
-    " <context line 2>\n"
-    "...\n"
-    " <context line M1>\n"
-    "-<old line 1>\n"
-    "-<old line 2>\n"
-    "...\n"
-    "-<old line N1>\n"
-    "+<new line 1>\n"
-    "+<new line 2>\n"
-    "...\n"
-    "+<new line N2>\n"
-    " <context line 1>\n"
-    " <context line 2>\n"
-    "...\n"
-    " <context line M2>\n"
+    "@@<line>\n"
+    "<text to insert before <line>>\n"
+    "@@<start>-<end>\n"
+    "<replacement text for the deleted range>\n"
     "*** End Patch\n\n"
-    "Every unchanged context line inside a hunk must begin with a single leading space."
+    "Rules:\n"
+    "- Use only '*** Update File:' operations.\n"
+    "- Line numbers are 1-based and refer to the original file before any hunks are applied.\n"
+    "- '@@<line>' inserts text before <line> and must include at least one inserted line.\n"
+    "- '@@<start>-<end>' replaces that inclusive range. Use empty replacement text to delete only.\n"
+    "- Do not use '+'/'-' line prefixes in the new format."
 )
 
 
@@ -235,7 +227,7 @@ class edit_file(Agent):
         if not patch_text:
             message = (
                 "No apply_patch payload detected. Provide a patch enclosed in '*** Begin Patch'"
-                " and '*** End Patch', wrapped inside `<parameter=patch>...</parameter>`."
+                " and '*** End Patch'."
                 f"\n\n{APPLY_PATCH_FORMAT_HINT}"
             )
             log_data: Dict[str, Any] = {}

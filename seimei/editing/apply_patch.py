@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from pathlib import Path
+import re
 import sys
 import traceback
 from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
@@ -9,13 +10,11 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 BEGIN_MARKER = "*** Begin Patch"
 END_MARKER = "*** End Patch"
-ADD_MARKER = "*** Add File: "
-DELETE_MARKER = "*** Delete File: "
 UPDATE_MARKER = "*** Update File: "
-MOVE_MARKER = "*** Move to: "
 EOF_MARKER = "*** End of File"
 CHANGE_CONTEXT_MARKER = "@@ "
 EMPTY_CONTEXT_MARKER = "@@"
+LINE_RANGE_HEADER_RE = re.compile(r"^@@\s*(\d+)(?:-(\d+))?\s*$")
 
 
 class PatchParseError(ValueError):
@@ -35,41 +34,24 @@ class UpdateChunk:
 
 
 @dataclass
-class AddFileOperation:
-    path: str
-    contents: str
-
-
-@dataclass
-class DeleteFileOperation:
-    path: str
+class LineRangeChunk:
+    start_line: int
+    end_line: Optional[int]
+    new_lines: List[str]
 
 
 @dataclass
 class UpdateFileOperation:
     path: str
-    move_path: Optional[str]
-    chunks: List[UpdateChunk]
+    chunks: List[Union[LineRangeChunk, UpdateChunk]]
 
 
-PatchOperation = Union[AddFileOperation, DeleteFileOperation, UpdateFileOperation]
-
-
-@dataclass
-class PlannedAdd:
-    path: Path
-    content: str
-
-
-@dataclass
-class PlannedDelete:
-    path: Path
+PatchOperation = UpdateFileOperation
 
 
 @dataclass
 class PlannedUpdate:
-    source: Path
-    destination: Optional[Path]
+    path: Path
     content: str
 
 
@@ -117,49 +99,22 @@ def _apply_patch_impl(
     workspace = Path(workspace).expanduser().resolve()
     base_dir = _resolve_workdir(workspace, workdir_hint)
 
-    planned_actions: List[Union[PlannedAdd, PlannedDelete, PlannedUpdate]] = []
+    planned_actions: List[PlannedUpdate] = []
     staged_contents: Dict[Path, Optional[str]] = {}
-    added_paths: List[Path] = []
     modified_paths: List[Path] = []
-    deleted_paths: List[Path] = []
 
     for op in operations:
-        if isinstance(op, AddFileOperation):
-            path = _resolve_patch_path(op.path, base_dir, workspace)
-            staged_contents[path] = op.contents
-            planned_actions.append(PlannedAdd(path=path, content=op.contents))
-            added_paths.append(path)
-            continue
-
-        if isinstance(op, DeleteFileOperation):
-            path = _resolve_patch_path(op.path, base_dir, workspace)
-            _ensure_current_file_exists(path, staged_contents)
-            staged_contents[path] = None
-            planned_actions.append(PlannedDelete(path=path))
-            deleted_paths.append(path)
-            continue
-
-        if isinstance(op, UpdateFileOperation):
-            source = _resolve_patch_path(op.path, base_dir, workspace)
-            base_content = _read_current_contents(source, staged_contents)
-            new_content = _apply_chunks_to_text(base_content, source, op.chunks)
-            destination: Optional[Path] = None
-            if op.move_path:
-                destination = _resolve_patch_path(op.move_path, base_dir, workspace)
-                staged_contents[source] = None
-                staged_contents[destination] = new_content
-            else:
-                staged_contents[source] = new_content
-            planned_actions.append(
-                PlannedUpdate(source=source, destination=destination, content=new_content)
-            )
-            modified_paths.append(destination or source)
-            continue
-
-        raise PatchParseError("Unsupported patch operation encountered")
+        source = _resolve_patch_path(op.path, base_dir, workspace)
+        base_content = _read_current_contents(source, staged_contents)
+        new_content = _apply_chunks_to_text(base_content, source, op.chunks)
+        staged_contents[source] = new_content
+        planned_actions.append(
+            PlannedUpdate(path=source, content=new_content)
+        )
+        modified_paths.append(source)
 
     _apply_planned_actions(planned_actions)
-    return ApplyResult(added=added_paths, modified=modified_paths, deleted=deleted_paths)
+    return ApplyResult(added=[], modified=modified_paths, deleted=[])
 
 
 def _parse_patch(text: str) -> List[PatchOperation]:
@@ -195,44 +150,16 @@ def _parse_patch(text: str) -> List[PatchOperation]:
 
 def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation, int]:
     first_line = lines[0].strip()
-    if first_line.startswith(ADD_MARKER):
-        path = first_line[len(ADD_MARKER) :].strip()
-        if not path:
-            raise PatchParseError("Add File header missing path")
-        contents: List[str] = []
-        consumed = 1
-        for line in lines[1:]:
-            if line.startswith("+"):
-                contents.append(line[1:])
-                consumed += 1
-            else:
-                break
-        add_contents = "\n".join(contents)
-        if contents:
-            add_contents += "\n"
-        return AddFileOperation(path=path, contents=add_contents), consumed
-
-    if first_line.startswith(DELETE_MARKER):
-        path = first_line[len(DELETE_MARKER) :].strip()
-        if not path:
-            raise PatchParseError("Delete File header missing path")
-        return DeleteFileOperation(path=path), 1
-
     if first_line.startswith(UPDATE_MARKER):
         path = first_line[len(UPDATE_MARKER) :].strip()
         if not path:
             raise PatchParseError("Update File header missing path")
         remaining = lines[1:]
         consumed = 1
-        move_path: Optional[str] = None
-        if remaining:
-            move_candidate = remaining[0].strip()
-            if move_candidate.startswith(MOVE_MARKER):
-                move_path = move_candidate[len(MOVE_MARKER) :].strip()
-                consumed += 1
-                remaining = remaining[1:]
 
-        chunks: List[UpdateChunk] = []
+        chunks: List[Union[LineRangeChunk, UpdateChunk]] = []
+        has_line_range_chunk = False
+        has_legacy_chunk = False
         while remaining:
             if remaining[0].strip() == "":
                 consumed += 1
@@ -240,13 +167,13 @@ def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation,
                 continue
             if remaining[0].startswith("***"):
                 break
-            chunk, chunk_lines = _parse_update_chunk(
-                remaining,
-                line_number + consumed,
-                allow_missing_context=not chunks,
-            )
+            chunk, chunk_lines = _parse_update_chunk(remaining, line_number + consumed, allow_missing_context=not chunks)
             if chunk_lines == 0:
                 break
+            if isinstance(chunk, LineRangeChunk):
+                has_line_range_chunk = True
+            else:
+                has_legacy_chunk = True
             chunks.append(chunk)
             consumed += chunk_lines
             remaining = remaining[chunk_lines:]
@@ -255,10 +182,19 @@ def _parse_hunk(lines: Sequence[str], line_number: int) -> Tuple[PatchOperation,
             raise PatchParseError(
                 f"Update file hunk for path '{path}' is empty at line {line_number}"
             )
+        if has_line_range_chunk and has_legacy_chunk:
+            raise PatchParseError(
+                f"Update file hunk for path '{path}' mixes line-range and legacy diff chunks."
+            )
 
         return (
-            UpdateFileOperation(path=path, move_path=move_path, chunks=chunks),
+            UpdateFileOperation(path=path, chunks=chunks),
             consumed,
+        )
+
+    if first_line.startswith("***"):
+        raise PatchParseError(
+            "Only '*** Update File:' operations are supported in this patch format."
         )
 
     raise PatchParseError(
@@ -271,9 +207,27 @@ def _parse_update_chunk(
     line_number: int,
     *,
     allow_missing_context: bool,
-) -> Tuple[UpdateChunk, int]:
+) -> Tuple[Union[LineRangeChunk, UpdateChunk], int]:
     if not lines:
         raise PatchParseError("Update hunk does not contain any lines")
+
+    header = lines[0].strip()
+    range_match = LINE_RANGE_HEADER_RE.match(header)
+    if range_match:
+        start_line = int(range_match.group(1))
+        end_group = range_match.group(2)
+        end_line = int(end_group) if end_group is not None else None
+        if end_line is not None and end_line < start_line:
+            raise PatchParseError(
+                f"Invalid line range at line {line_number}: {start_line}-{end_line}"
+            )
+        new_lines, consumed = _parse_line_range_chunk_body(lines[1:])
+        chunk = LineRangeChunk(
+            start_line=start_line,
+            end_line=end_line,
+            new_lines=new_lines,
+        )
+        return chunk, consumed + 1
 
     header = lines[0]
     start_index = 0
@@ -336,6 +290,18 @@ def _parse_update_chunk(
     return chunk, parsed + start_index
 
 
+def _parse_line_range_chunk_body(lines: Sequence[str]) -> Tuple[List[str], int]:
+    body: List[str] = []
+    consumed = 0
+    for line in lines:
+        stripped = line.strip()
+        if stripped.startswith("***") or stripped.startswith("@@"):
+            break
+        body.append(line)
+        consumed += 1
+    return body, consumed
+
+
 def _resolve_workdir(workspace: Path, workdir_hint: Optional[str]) -> Path:
     if not workdir_hint:
         return workspace
@@ -368,17 +334,6 @@ def _ensure_within_workspace(path: Path, workspace: Path) -> None:
         ) from exc
 
 
-def _ensure_current_file_exists(path: Path, staged: Dict[Path, Optional[str]]) -> None:
-    if path in staged:
-        if staged[path] is None:
-            raise PatchApplyError(f"File {path} no longer exists after earlier operations")
-        return
-    if not path.exists():
-        raise PatchApplyError(f"Failed to delete missing file {path}")
-    if path.is_dir():
-        raise PatchApplyError(f"Cannot delete directory {path}")
-
-
 def _read_current_contents(path: Path, staged: Dict[Path, Optional[str]]) -> str:
     if path in staged:
         content = staged[path]
@@ -395,9 +350,18 @@ def _read_current_contents(path: Path, staged: Dict[Path, Optional[str]]) -> str
         raise PatchApplyError(f"Failed to read file to update {path}: {exc}") from exc
 
 
-def _apply_chunks_to_text(base_text: str, path: Path, chunks: Sequence[UpdateChunk]) -> str:
+def _apply_chunks_to_text(
+    base_text: str,
+    path: Path,
+    chunks: Sequence[Union[LineRangeChunk, UpdateChunk]],
+) -> str:
     lines, newline = _split_lines(base_text)
-    replacements = _compute_replacements(lines, path, chunks)
+    if chunks and isinstance(chunks[0], LineRangeChunk):
+        range_chunks = [chunk for chunk in chunks if isinstance(chunk, LineRangeChunk)]
+        replacements = _compute_line_range_replacements(lines, path, range_chunks)
+    else:
+        legacy_chunks = [chunk for chunk in chunks if isinstance(chunk, UpdateChunk)]
+        replacements = _compute_replacements(lines, path, legacy_chunks)
     updated_lines = _apply_replacements(lines, replacements)
     if not updated_lines or updated_lines[-1] != "":
         updated_lines.append("")
@@ -503,6 +467,74 @@ def _compute_replacements(
 
     replacements.sort(key=lambda item: item[0])
     return replacements
+
+
+def _compute_line_range_replacements(
+    original_lines: List[str],
+    path: Path,
+    chunks: Sequence[LineRangeChunk],
+) -> List[Tuple[int, int, List[str]]]:
+    replacements: List[Tuple[int, int, List[str]]] = []
+    for chunk_index, chunk in enumerate(chunks, start=1):
+        if chunk.start_line < 1:
+            raise PatchApplyError(
+                f"Invalid line number in {path}: line numbers must be >= 1 (got {chunk.start_line})."
+            )
+
+        if chunk.end_line is None:
+            if not chunk.new_lines:
+                raise PatchApplyError(
+                    f"Invalid insertion chunk #{chunk_index} in {path}: '@@{chunk.start_line}' requires inserted text."
+                )
+            if chunk.start_line > len(original_lines) + 1:
+                raise PatchApplyError(
+                    f"Insertion line {chunk.start_line} is out of range for {path} (max {len(original_lines) + 1})."
+                )
+            start_index = chunk.start_line - 1
+            replacements.append((start_index, 0, list(chunk.new_lines)))
+            continue
+
+        end_line = chunk.end_line
+        if end_line is None:
+            raise PatchApplyError("Unexpected empty end_line while computing replacements.")
+        if chunk.start_line > len(original_lines):
+            raise PatchApplyError(
+                f"Line range {chunk.start_line}-{end_line} is out of range for {path} (max {len(original_lines)})."
+            )
+        if end_line > len(original_lines):
+            raise PatchApplyError(
+                f"Line range {chunk.start_line}-{end_line} is out of range for {path} (max {len(original_lines)})."
+            )
+        start_index = chunk.start_line - 1
+        delete_len = end_line - chunk.start_line + 1
+        replacements.append((start_index, delete_len, list(chunk.new_lines)))
+
+    _validate_non_overlapping_replacements(path, replacements)
+    replacements.sort(key=lambda item: item[0])
+    return replacements
+
+
+def _validate_non_overlapping_replacements(
+    path: Path,
+    replacements: Sequence[Tuple[int, int, List[str]]],
+) -> None:
+    ordered = sorted(enumerate(replacements), key=lambda item: (item[1][0], item[0]))
+    occupied: List[Tuple[int, int]] = []
+    for _, (start, old_len, _) in ordered:
+        end = start + old_len
+        if old_len > 0:
+            for occ_start, occ_end in occupied:
+                if start < occ_end and occ_start < end:
+                    raise PatchApplyError(
+                        f"Overlapping line ranges detected in patch for {path}."
+                    )
+            occupied.append((start, end))
+            continue
+        for occ_start, occ_end in occupied:
+            if occ_start < start < occ_end:
+                raise PatchApplyError(
+                    f"Insertion line falls inside a replaced range in patch for {path}."
+                )
 
 
 def _trim_shared_context_edges(
@@ -620,20 +652,9 @@ def _log_patch_error(exc: Exception) -> None:
     traceback.print_exception(type(exc), exc, exc.__traceback__, file=sys.stderr)
 
 
-def _apply_planned_actions(actions: Iterable[Union[PlannedAdd, PlannedDelete, PlannedUpdate]]) -> None:
+def _apply_planned_actions(actions: Iterable[PlannedUpdate]) -> None:
     for action in actions:
-        if isinstance(action, PlannedAdd):
-            _write_text(action.path, action.content)
-            continue
-        if isinstance(action, PlannedDelete):
-            _safe_unlink(action.path)
-            continue
-        if isinstance(action, PlannedUpdate):
-            target = action.destination or action.source
-            _write_text(target, action.content)
-            if action.destination and action.destination != action.source:
-                _safe_unlink(action.source)
-            continue
+        _write_text(action.path, action.content)
 
 
 def _write_text(path: Path, content: str) -> None:
@@ -643,12 +664,3 @@ def _write_text(path: Path, content: str) -> None:
         path.write_text(content, encoding="utf-8")
     except OSError as exc:  # pragma: no cover - filesystem specific
         raise PatchApplyError(f"Failed to write file {path}: {exc}") from exc
-
-
-def _safe_unlink(path: Path) -> None:
-    try:
-        path.unlink(missing_ok=False)
-    except FileNotFoundError:
-        raise PatchApplyError(f"Failed to remove {path}: file does not exist")
-    except OSError as exc:  # pragma: no cover
-        raise PatchApplyError(f"Failed to remove {path}: {exc}") from exc

@@ -4756,17 +4756,69 @@ right now, code_act uses python code basically. but it should use `cat -n`, `rg`
 - [x] Debug 2 edit_file agent
     - higher accuracy of editing 
 
-- [ ] Debug 3 edit_file agent
+- [ ] Improve code_act prompt
     - modify code_act prompt to avoid "sed ... ; cat ..." stuff
+```
+Right now, code_act often generates command like
+`ls -la; cat -n README.md; rg -n --no-heading -w grammer README.md && sed -i 's/\<grammer\>/grammar/g' README.md; rg -n --no-heading -w grammar README.md; cat -n README.md`
+
+but this is bad for the following reasons
+1. `ls -la` takes a lot of output tokens so use `ls` instead
+2. don't use a lot of commands at the same time. For now, just use one is enough.
+3. rg is only used when you want to search variable or class name through codebase.
+
+modify code_act prompt to prevent the issues.
+```
+
+```
+Now I get command like 
+`sed -i '' 's/grammer/grammar/g' README.md`
+
+but the output is empty. even though it happens it keeps asking the same request again and again. improve so that
+1. 
+```
+
+- [x] Debug 3 edit_file agent
+    - no need to show llm prompt
+    - show error message more in detail and add knowledge to solve it.
+    -> probabably it's better to make a new patch format. The format now is too difficult for gpt-5-nano level LLM.
+```
+LLM has difficulty generating patch text in edit_file agent. Probabably the format is not good. Change the format into
+
+'''
+*** Begin Patch
+*** Update File: relative/path
+@@<line1-1>-<line1-2>
+<text to insert to the lines>
+@@<line2-1>-<line2-2>
+<text to insert to the lines>
+@@<line3>
+<text to insert to the line>
+...
+*** End Patch
+'''
+
+Here note that
+1. patch doesn't need to use `+` or `-` which often causes the bug.
+2. you only need to describe text to insert, which avoids `context not found` error due to spelling context incorrectly.
+3. following `@@`, you can specify the number of line to delete. If only one number is specified, just delete the line and insert the following text into the line. If there are several lines to delete, it becomes like `2-4`.
+4. be careful that after you modify the first @@, the line number can be shifted and the line2-1,2 and line 3 will become old. So please split the file content by all @@ line numbers first to make sure that file content is split correctly. So you should also modify seimei/editing/apply_patch.py carefully to implement it.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+```
+
 
 - [ ] Make default knowledge
     - it's important to stabilize success and fault mechanism. to do that, rmsearch should correctly deep search correct reasoning way. "find different files", "check other things to do like `find other relevant file`, `think from how the process is different from past reasoning`, `the thought now is a bit irrelevant`"
+    - `after modify file, check if that's the end of the modification like 'all the content of the file is checked already'`
 ```
-Please make seimei_knowledge/default.csv
+please make seimei_knowledge/default.csv
 ```
 
-- [ ] Make demo for meeting from 5th
+- [ ] Make demo for meeting
 - [ ] Debug cli app
+- [ ] Implement feedback agent
+- [ ] Add pdf viewer
 
 - [ ] Make README
 

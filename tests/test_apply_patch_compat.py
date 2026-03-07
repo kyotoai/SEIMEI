@@ -4,6 +4,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
+import pytest
+
 
 def _load_apply_patch_module():
     module_path = Path(__file__).resolve().parents[1] / "seimei" / "editing" / "apply_patch.py"
@@ -51,3 +53,109 @@ def test_apply_patch_falls_back_to_core_replacement_when_context_drifts(tmp_path
 
     patch_module.apply_patch_to_workspace(patch_text, tmp_path)
     assert target.read_text(encoding="utf-8") == "line one\nupdated value\nline three\n"
+
+
+def test_apply_patch_supports_line_range_hunks_with_original_line_numbers(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("alpha\nbeta\ngamma\ndelta\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2-3
+beta fixed
+gamma fixed
+@@4
+inserted before delta
+*** End Patch
+"""
+
+    patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+    assert target.read_text(encoding="utf-8") == (
+        "alpha\n"
+        "beta fixed\n"
+        "gamma fixed\n"
+        "inserted before delta\n"
+        "delta\n"
+    )
+
+
+def test_apply_patch_line_range_allows_delete_only_and_append(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2-2
+@@4
+four
+*** End Patch
+"""
+
+    patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+    assert target.read_text(encoding="utf-8") == "one\nthree\nfour\n"
+
+
+def test_apply_patch_rejects_non_update_operations(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    patch_text = """*** Begin Patch
+*** Add File: sample.txt
++hello
+*** End Patch
+"""
+
+    with pytest.raises(patch_module.PatchParseError):
+        patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+
+
+def test_apply_patch_rejects_overlapping_line_ranges(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("one\ntwo\nthree\nfour\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2-3
+X
+@@3-4
+Y
+*** End Patch
+"""
+
+    with pytest.raises(patch_module.PatchApplyError):
+        patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+
+
+def test_apply_patch_rejects_mixed_line_range_and_legacy_hunks(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2-2
+@@
+ one
+-two
++two fixed
+*** End Patch
+"""
+
+    with pytest.raises(patch_module.PatchParseError):
+        patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+
+
+def test_apply_patch_rejects_empty_insertion_chunk(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("one\ntwo\nthree\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+@@2
+*** End Patch
+"""
+
+    with pytest.raises(patch_module.PatchApplyError):
+        patch_module.apply_patch_to_workspace(patch_text, tmp_path)
