@@ -30,6 +30,7 @@ Rules:
 - Paths must be relative and stay inside the workspace.
 - Line numbers are 1-based.
 - All line numbers are interpreted against the original file before any edit block is applied.
+- If the same file appears in multiple `*** Update File:` blocks, all blocks still use the same original line numbering for that file.
 - `<EDIT insert=<line>>` inserts text before `<line>` and must include at least one inserted line.
 - `<EDIT replace=<start>-<end>>` replaces the inclusive range `<start>...<end>`.
 - For delete-only, use `<EDIT replace=<start>-<end>>` with an empty body.

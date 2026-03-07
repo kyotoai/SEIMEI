@@ -98,6 +98,28 @@ inserted before delta
     )
 
 
+def test_apply_patch_uses_original_line_numbers_across_repeated_update_blocks(tmp_path: Path) -> None:
+    patch_module = _load_apply_patch_module()
+    target = tmp_path / "sample.txt"
+    target.write_text("a\nb\nc\nd\ne\nf\ng\nh\n", encoding="utf-8")
+
+    patch_text = """*** Begin Patch
+*** Update File: sample.txt
+<EDIT replace=2-2>
+B1
+B2
+</EDIT>
+*** Update File: sample.txt
+<EDIT replace=6-6>
+X
+</EDIT>
+*** End Patch
+"""
+
+    patch_module.apply_patch_to_workspace(patch_text, tmp_path)
+    assert target.read_text(encoding="utf-8") == "a\nB1\nB2\nc\nd\ne\nX\ng\nh\n"
+
+
 def test_apply_patch_edit_blocks_allow_delete_only_and_append(tmp_path: Path) -> None:
     patch_module = _load_apply_patch_module()
     target = tmp_path / "sample.txt"

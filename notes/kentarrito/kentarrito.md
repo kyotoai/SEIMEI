@@ -4756,27 +4756,6 @@ right now, code_act uses python code basically. but it should use `cat -n`, `rg`
 - [x] Debug 2 edit_file agent
     - higher accuracy of editing 
 
-- [ ] Improve code_act prompt
-    - modify code_act prompt to avoid "sed ... ; cat ..." stuff
-```
-Right now, code_act often generates command like
-`ls -la; cat -n README.md; rg -n --no-heading -w grammer README.md && sed -i 's/\<grammer\>/grammar/g' README.md; rg -n --no-heading -w grammar README.md; cat -n README.md`
-
-but this is bad for the following reasons
-1. `ls -la` takes a lot of output tokens so use `ls` instead
-2. don't use a lot of commands at the same time. For now, just use one is enough.
-3. rg is only used when you want to search variable or class name through codebase.
-
-modify code_act prompt to prevent the issues.
-```
-
-```
-Now I get command like 
-`sed -i '' 's/grammer/grammar/g' README.md`
-
-but the output is empty. even though it happens it keeps asking the same request again and again. improve so that
-1. 
-```
 
 - [x] Debug 3 edit_file agent
     - no need to show llm prompt
@@ -4854,6 +4833,74 @@ Here I explicitly mentioned `insert` and `replace`. Also put </EDIT> at the end 
 
 Modify all the relevant files.
 ```
+
+
+- [x] Debug 5 edit_file agent
+    - modify a bit of edit_file prompt
+```
+Right now, when llm outputs something like this
+
+'''
+*** Begin Patch
+*** Update File: README.md
+<EDIT replace=35-36>
+Unlike conventional RL that only optimizes knowledge inside the LLM, SEIMEI jointly optimizes external knowledge, enabling AI to truly absorb domain-specific and tacit expertise. It builds a much more personalized AI trained specifically for you, at dramatically lower cost and with higher adaptability!
+<br />
+</EDIT>
+*** Update File: README.md
+<EDIT replace=103-106>
+Here's an example of how SEIMEI works. Each agent interacts with the LLM and a document to make inferences. These inferences are automatically integrated by the search engine and provide an answer to a question.
+</EDIT>
+*** Update File: README.md
+<EDIT replace=127-127>
+We achieved an improvement of bigcodebench/deepseek-r1 by our search engine!!
+</EDIT>
+*** Update File: README.md
+<EDIT replace=173-175>
+export OPENAI_API_KEY="(your_openai_api_key)"
+export KYOTOAI_API_KEY="(your_kyotoai_api_key)"
+</EDIT>
+*** Update File: README.md
+<EDIT replace=181-188>
+Open seimei terminal app inside your project directory by
+
+```bash
+seimei
+```
+
+and start asking questions.
+</EDIT>
+*** End Patch
+'''
+
+The line number is bugged because patch application is done at every `*** Update File: README.md` and the later line number can get invalid after that. 
+
+Fix this issue.
+```
+
+
+- [ ] Improve code_act prompt
+    - modify code_act prompt to avoid "sed ... ; cat ..." stuff
+```
+Right now, code_act often generates command like
+`ls -la; cat -n README.md; rg -n --no-heading -w grammer README.md && sed -i 's/\<grammer\>/grammar/g' README.md; rg -n --no-heading -w grammar README.md; cat -n README.md`
+
+but this is bad for the following reasons
+1. `ls -la` takes a lot of output tokens so use `ls` instead
+2. don't use a lot of commands at the same time. For now, just use one is enough.
+3. rg is only used when you want to search variable or class name through codebase.
+
+modify code_act prompt to prevent the issues.
+```
+
+```
+Now I get command like 
+`sed -i '' 's/grammer/grammar/g' README.md`
+
+but the output is empty. even though it happens it keeps asking the same request again and again. improve so that
+1. 
+```
+
 
 - [ ] Make default knowledge
     - it's important to stabilize success and fault mechanism. to do that, rmsearch should correctly deep search correct reasoning way. "find different files", "check other things to do like `find other relevant file`, `think from how the process is different from past reasoning`, `the thought now is a bit irrelevant`"

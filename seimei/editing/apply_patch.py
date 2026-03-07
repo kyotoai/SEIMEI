@@ -103,18 +103,24 @@ def _apply_patch_impl(
     base_dir = _resolve_workdir(workspace, workdir_hint)
 
     planned_actions: List[PlannedUpdate] = []
-    staged_contents: Dict[Path, Optional[str]] = {}
     modified_paths: List[Path] = []
+    chunks_by_path: Dict[Path, List[Union[LineRangeChunk, UpdateChunk]]] = {}
 
     for op in operations:
         source = _resolve_patch_path(op.path, base_dir, workspace)
+        if source not in chunks_by_path:
+            chunks_by_path[source] = []
+            modified_paths.append(source)
+        chunks_by_path[source].extend(op.chunks)
+
+    staged_contents: Dict[Path, Optional[str]] = {}
+    for source in modified_paths:
         base_content = _read_current_contents(source, staged_contents)
-        new_content = _apply_chunks_to_text(base_content, source, op.chunks)
+        new_content = _apply_chunks_to_text(base_content, source, chunks_by_path[source])
         staged_contents[source] = new_content
         planned_actions.append(
             PlannedUpdate(path=source, content=new_content)
         )
-        modified_paths.append(source)
 
     _apply_planned_actions(planned_actions)
     return ApplyResult(added=[], modified=modified_paths, deleted=[])
@@ -404,8 +410,15 @@ def _apply_chunks_to_text(
     path: Path,
     chunks: Sequence[Union[LineRangeChunk, UpdateChunk]],
 ) -> str:
+    has_line_range = any(isinstance(chunk, LineRangeChunk) for chunk in chunks)
+    has_legacy = any(isinstance(chunk, UpdateChunk) for chunk in chunks)
+    if has_line_range and has_legacy:
+        raise PatchParseError(
+            f"Patch for {path} mixes line-number/edit chunks and legacy diff chunks."
+        )
+
     lines, newline = _split_lines(base_text)
-    if chunks and isinstance(chunks[0], LineRangeChunk):
+    if has_line_range:
         range_chunks = [chunk for chunk in chunks if isinstance(chunk, LineRangeChunk)]
         replacements = _compute_line_range_replacements(lines, path, range_chunks)
     else:
