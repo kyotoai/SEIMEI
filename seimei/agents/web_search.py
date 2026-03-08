@@ -13,6 +13,7 @@ from io import BytesIO
 import requests
 
 from seimei.agent import Agent, register
+from seimei.agents.utils import pdf_bytes_to_text
 
 _MAX_SEARCH_RESULTS = 8
 _MAX_FETCHED_PAGES = 4
@@ -419,23 +420,6 @@ def _looks_like_pdf(url: str, content_type: str, content_disposition: str) -> bo
     )
 
 
-def _pdf_bytes_to_text(data: bytes) -> str:
-    try:
-        import pymupdf  # package: PyMuPDF
-    except Exception:
-        return ""
-    try:
-        doc = pymupdf.open(stream=data, filetype="pdf")
-        parts: List[str] = []
-        for page in doc:
-            parts.append(page.get_text() or "")
-        doc.close()
-        return "\n".join(parts).strip()
-    except Exception:
-        return ""
-
-
-
 async def _fetch_page_text(url: str) -> Tuple[str, str]:
     loop = asyncio.get_event_loop()
 
@@ -454,8 +438,7 @@ async def _fetch_page_text(url: str) -> Tuple[str, str]:
             content_disposition = resp.headers.get("Content-Disposition", "")
 
             if _looks_like_pdf(final_url, content_type, content_disposition):
-                print(_pdf_bytes_to_text(resp.content))
-                return _pdf_bytes_to_text(resp.content), final_url
+                return pdf_bytes_to_text(resp.content), final_url
 
             return _html_to_text(resp.text, final_url), final_url
         except requests.RequestException:

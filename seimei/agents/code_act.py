@@ -280,6 +280,8 @@ async def _generate_command(
         "For directory listing, use `ls` (not `ls -la` or other verbose flags) unless the user explicitly asks for details.",
         "For code/file analysis, strongly prefer shell-native inspection commands: `ls`, `cat -n`, or `sed`.",
         "Use Python only as a last resort when the task cannot be solved with shell commands.",
+        "When the target is a PDF file, do not use `cat`; use Python and call `seimei.agents.utils.view_pdf_text`.",
+        "Preferred PDF command pattern: `python3 - <<'PY'` then `from seimei.agents.utils import view_pdf_text` and `print(view_pdf_text('path/to/file.pdf'))`, ending with `PY`.",
         "Before editing or reasoning about specific code lines, see meta info by `ls` and capture context with `cat -n` (or equivalent line-numbered output).",
         "Use `rg` only when searching variable names, class names, function names, or other identifiers across the codebase.",
         "Do not use `rg` for simple single-file viewing or generic text inspection where `cat -n`/`sed` is sufficient.",

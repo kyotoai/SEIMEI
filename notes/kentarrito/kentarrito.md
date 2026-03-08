@@ -4864,9 +4864,7 @@ export KYOTOAI_API_KEY="(your_kyotoai_api_key)"
 <EDIT replace=181-188>
 Open seimei terminal app inside your project directory by
 
-```bash
 seimei
-```
 
 and start asking questions.
 </EDIT>
@@ -4893,6 +4891,26 @@ but this is bad for the following reasons
 modify code_act prompt to prevent the issues.
 ```
 
+- Demo Candidate by modifying file automatically
+    - [ ] Application for subsidy filling
+    - [ ] Cost Estimation by reading past pdfs
+    - [ ] Billing/invoice handling
+    - [ ] Contracts handling -> Needs higher accuracy
+    - [ ] Search past blueprints
+    - [ ] Search market (target AI)
+
+- [ ] Subsidy application fill
+    - [x] add pdf viewer in code_act
+```
+Right now, code_act agent cannot read pdf because cat command cannot process pdf properly.
+Make seimei/agents/utils.py and add pdf viewer function refering to the one in web_search agent. Also modify code_act agent prompt and let LLM use the pdf viewer function from python command. 
+```
+
+- [ ] Make target_ai.py
+    - [ ] google search bug fix
+    - [ ] remove warning `[seimei] warning: KYOTOAI_API_KEY variable is not set`
+    - [ ] add shortcuts in cli app
+    - [ ] take demo video
 
 - [ ] Debug 6 edit_file agent
     - modify output format
@@ -4916,6 +4934,12 @@ please make seimei_knowledge/default.csv
 - [ ] Implement Stream 
 
 - [ ] Make README
+
+
+- [ ] Errors
+When API key is not set, the below request should be canceled
+[seimei] warning: KYOTOAI_API_KEY variable is not set
+[seimei] rmsearch request failed: HTTPSConnectionPool(host='hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com', port=443): Read timed out. (read timeout=10)
 
 
 
