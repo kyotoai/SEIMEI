@@ -4879,7 +4879,7 @@ Fix this issue.
 ```
 
 
-- [ ] Improve code_act prompt
+- [x] Improve code_act prompt
     - modify code_act prompt to avoid "sed ... ; cat ..." stuff
 ```
 Right now, code_act often generates command like
@@ -4893,14 +4893,14 @@ but this is bad for the following reasons
 modify code_act prompt to prevent the issues.
 ```
 
-```
-Now I get command like 
-`sed -i '' 's/grammer/grammar/g' README.md`
 
-but the output is empty. even though it happens it keeps asking the same request again and again. improve so that
-1. 
-```
+- [ ] Debug 6 edit_file agent
+    - modify output format
+    - 
 
+- [ ] Improve routing prompt
+    - edit_file shouldn't be done consecutively because line numbers are changed
+    - do code_act before you modify the file.
 
 - [ ] Make default knowledge
     - it's important to stabilize success and fault mechanism. to do that, rmsearch should correctly deep search correct reasoning way. "find different files", "check other things to do like `find other relevant file`, `think from how the process is different from past reasoning`, `the thought now is a bit irrelevant`"
@@ -4913,6 +4913,7 @@ please make seimei_knowledge/default.csv
 - [ ] Debug cli app
 - [ ] Implement feedback agent
 - [ ] Add pdf viewer
+- [ ] Implement Stream 
 
 - [ ] Make README
 
