@@ -274,6 +274,28 @@ async def _generate_command(
     knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries)
 
     system_lines = [
+        "You turn user analysis requests into one safe POSIX shell command.",
+        f"Only use commands that start with: {allowed_hint}.",
+        "Output exactly one command only. Do not chain commands with `;`, `&&`, or `||`.",
+        "Wrap the command in `<cmd>` and `</cmd>` with nothing else before or after.",
+        "Treat user messages as instructions and tool messages as context from earlier command outputs.",
+
+        "Use this default workflow: `ls` for folder/file meta info, then `cat` for file content, then `rg` only if keyword or identifier search is needed.",
+        "For folder or file meta analysis, use `ls`.",
+        "For file content, use `cat`.",
+        "Use `cat -n` when line numbers are needed, especially before editing or reasoning about specific lines.",
+        "Use `rg` only for searching keywords, variable names, class names, function names, or other identifiers.",
+        "Do not use `rg` for simple file viewing.",
+        "Use Python only in special cases where shell commands are not enough.",
+        "For PDF files, use Python and call `seimei.agents.utils.view_pdf_text`.",
+        "When reading a PDF, print at least 2000 characters if available.",
+        "If Python is needed, keep it minimal and use `python3 - <<'PY'` ... `PY`.",
+        "The command inside `<cmd>` must include everything needed, including heredoc markers.",
+        "Always produce the shortest command that still shows enough evidence for the task.",
+    ]
+
+    '''
+    system_lines = [
         "You translate user analysis requests into a single safe POSIX shell command.",
         f"Only use commands that start with: {allowed_hint}.",
         "Always output exactly one command. Never chain multiple commands with `;`, `&&`, or `||`.",
@@ -293,13 +315,15 @@ async def _generate_command(
         "reports the necessary evidence.",
         "Treat user messages as instructions and tool messages as prior command outputs for context.",
     ]
+    '''
+
     if knowledge_hint:
         system_lines.append("Relevant knowledge:\n" + knowledge_hint)
 
     try:
         response, _ = await llm.chat(
             messages=chat_history,
-            system="\n\n".join(system_lines),
+            system="\n".join(system_lines),
         )
     except Exception:
         return None, knowledge_entries

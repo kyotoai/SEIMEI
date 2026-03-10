@@ -4905,6 +4905,16 @@ modify code_act prompt to prevent the issues.
 Right now, code_act agent cannot read pdf because cat command cannot process pdf properly.
 Make seimei/agents/utils.py and add pdf viewer function refering to the one in web_search agent. Also modify code_act agent prompt and let LLM use the pdf viewer function from python command. 
 ```
+    - [ ] improve code_act agent prompt.
+```
+I wanna make the prommpt above much plainer. Please modify it following
+
+1. important thing is 'meta folder analysis -> ls', 'see file content cat or cat -n (-n when editting the file)', 'rg is for keyword search', 'python for a few cases like reading pdf'
+2. normally workflow is like `ls` (meta) -> `cat` (file analysis) -> `rg` (class search)
+3. combine overlapping content.
+4. you don't need to mention sed here.
+5. for pdf viewer, try to see at least 2000 chars.
+```
 
 - [ ] Make target_ai.py
     - [ ] google search bug fix
