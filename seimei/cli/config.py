@@ -12,18 +12,18 @@ CLI_VERSION = "0.2.0"
 CLI_NAME = "SEIMEI CLI"
 ASCII_ART = r"""
   _____  ______ _____ __  __ ______ _____
- / ____|/ ____|_   _|  \/  |  ____|_   _|
+ / ____|/ ____|_   _|  \/  |/ ____|_   _|
 | (___ | |____  | | | \  / | |____  | |
  \___ \|  ____| | | | |\/| |  ____| | |
  ____) | |____ _| |_| |  | | |____ _| |_ 
-|_____/ \_____|_____|_|  |_|______|_____|
+|_____/ \_____|_____|_|  |_|\_____|_____|
 """
 
 DEFAULT_SYSTEM_PROMPT = (
     "You are an execution assistant that never runs unasked commands."
 )
 DEFAULT_AGENT_CONFIG: List[Dict[str, Any]] = [
-    {"file_path": "seimei/agents/code_act.py"},
+    {"name": "code_act"}, {"name": "edit_file"}, {"name": "web_search"},
 ]
 DEFAULT_LLM_KWARGS: Dict[str, Any] = {
     "model": "gpt-5-mini",
@@ -38,11 +38,13 @@ DEFAULT_MAX_STEPS = 12
 DEFAULT_AGENT_LOG_HEAD_LINES = 1
 DEFAULT_ALLOW_CODE_EXEC = True
 DEFAULT_ALLOWED_COMMANDS: Optional[Sequence[str]] = None
-DEFAULT_MAX_TOKENS_PER_QUESTION = 40_000
-DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge4.csv"
-DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/yc_demo_knowledge4_output.csv"
+DEFAULT_MAX_TOKENS_PER_QUESTION = 80_000
+DEFAULT_AGENT_SEARCH_MODE = "klg"
+DEFAULT_KNOWLEDGE_SEARCH_MODE = "llm"
+DEFAULT_LOAD_KNOWLEDGE_PATH = "seimei_knowledge/workspace.csv"
+DEFAULT_SAVE_KNOWLEDGE_PATH = "seimei_knowledge/workspace.csv"
 DEFAULT_KNOWLEDGE_PROMPT_PATH = "seimei/knowledge/prompts/user_intent_alignment3.md"
-DEFAULT_GENERATE_KNOWLEDGE = True
+DEFAULT_GENERATE_KNOWLEDGE = False
 DEFAULT_LOG_DIR = "./seimei_runs"
 
 AVAILABLE_MODELS = ("gpt-5-nano", "gpt-5-mini", "gpt-5")
@@ -89,6 +91,8 @@ class CLIArgs:
     knowledge_prompt: Optional[str]
     load_knowledge_path: Optional[str]
     max_tokens: Optional[int]
+    agent_search_mode: str
+    knowledge_search_mode: str
 
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> CLIArgs:
@@ -157,6 +161,18 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> CLIArgs:
         default=DEFAULT_MAX_TOKENS_PER_QUESTION,
         help=f"Approximate max tokens per question (default: {DEFAULT_MAX_TOKENS_PER_QUESTION}).",
     )
+    parser.add_argument(
+        "--agent-search-mode",
+        choices=("llm", "rm", "klg"),
+        default=DEFAULT_AGENT_SEARCH_MODE,
+        help=f"Agent routing mode (default: {DEFAULT_AGENT_SEARCH_MODE}).",
+    )
+    parser.add_argument(
+        "--knowledge-search-mode",
+        choices=("llm", "rm"),
+        default=DEFAULT_KNOWLEDGE_SEARCH_MODE,
+        help=f"Knowledge retrieval mode (default: {DEFAULT_KNOWLEDGE_SEARCH_MODE}).",
+    )
 
     parsed = parser.parse_args(argv)
     load_path = None if parsed.no_load_knowledge else parsed.load_knowledge_path
@@ -174,6 +190,8 @@ def parse_args(argv: Optional[Sequence[str]] = None) -> CLIArgs:
         knowledge_prompt=None if parsed.no_knowledge else parsed.knowledge_prompt,
         load_knowledge_path=load_path,
         max_tokens=parsed.max_tokens if parsed.max_tokens > 0 else None,
+        agent_search_mode=parsed.agent_search_mode,
+        knowledge_search_mode=parsed.knowledge_search_mode,
     )
 
 

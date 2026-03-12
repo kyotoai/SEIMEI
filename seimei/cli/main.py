@@ -206,12 +206,17 @@ async def run_cli(args: CLIArgs) -> None:
     knowledge_prompt = Path(args.knowledge_prompt).expanduser() if args.knowledge_prompt else None
     ensure_parent_dir(knowledge_file)
 
-    base_knowledge_config = {
-        "generate_knowledge": args.generate_knowledge,
-        "save_knowledge_path": str(knowledge_file) if knowledge_file else None,
-        "knowledge_prompt_path": str(knowledge_prompt) if knowledge_prompt else None,
-        "load_knowledge_path": args.load_knowledge_path,
-    }
+    load_knowledge_path = str(Path(args.load_knowledge_path).expanduser()) if args.load_knowledge_path else None
+    base_knowledge_load_config = (
+        [{"load_knowledge_path": load_knowledge_path}] if load_knowledge_path else None
+    )
+    base_knowledge_generate_config: Optional[Dict[str, Any]] = None
+    if args.generate_knowledge:
+        base_knowledge_generate_config = {}
+        if knowledge_file:
+            base_knowledge_generate_config["save_knowledge_path"] = str(knowledge_file)
+        if knowledge_prompt:
+            base_knowledge_generate_config["knowledge_generation_prompt_path"] = str(knowledge_prompt)
 
     system_prompt = args.system_prompt or DEFAULT_SYSTEM_PROMPT
     message_history: List[Dict[str, Any]] = _reset_conversation(system_prompt)
@@ -273,6 +278,8 @@ async def run_cli(args: CLIArgs) -> None:
                 )
                 print(f"- chat: #{chat_number}")
                 print(f"- model: {current_model}")
+                print(f"- agent_search_mode: {args.agent_search_mode}")
+                print(f"- knowledge_search_mode: {args.knowledge_search_mode}")
                 print(f"- user turns: {user_turns}")
                 print(f"- assistant turns: {assistant_turns}")
                 print(
@@ -412,7 +419,10 @@ async def run_cli(args: CLIArgs) -> None:
             result = await orchestrator(
                 messages=list(message_history),
                 run_name=f"cli-{session_id}-chat-{chat_number}-turn-{turn}",
-                knowledge_config=base_knowledge_config,
+                knowledge_load_config=base_knowledge_load_config,
+                knowledge_generate_config=base_knowledge_generate_config,
+                agent_search_mode=args.agent_search_mode,
+                knowledge_search_mode=args.knowledge_search_mode,
             )
         except Exception as exc:  # pragma: no cover - interactive best effort
             err_text = f"[error] {type(exc).__name__}: {exc}"

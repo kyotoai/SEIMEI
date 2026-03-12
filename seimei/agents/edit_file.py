@@ -221,12 +221,14 @@ class edit_file(Agent):
         if raw_llm_output is None:
             raw_llm_output = _latest_assistant_message(messages)
 
+        '''
         if not patch_text:
             request = _extract_patch_request(messages)
             if request:
                 patch_text = request.patch
                 workdir_hint = workdir_hint or request.workdir_hint
                 raw_llm_output = raw_llm_output or request.raw_message
+        '''
 
         if not patch_text:
             llm = shared_ctx.get("llm")
@@ -247,7 +249,7 @@ class edit_file(Agent):
                     patch_text = generated_patch
                 if generated_workdir_hint:
                     workdir_hint = workdir_hint or generated_workdir_hint
-
+                
         if not patch_text:
             message = (
                 "No apply_patch payload detected. Provide a patch enclosed in '*** Begin Patch'"
@@ -314,12 +316,12 @@ class edit_file(Agent):
             "added": _relativize(result.added, workspace),
             "modified": _relativize(result.modified, workspace),
             "deleted": _relativize(result.deleted, workspace),
-            "llm_output": raw_llm_output or patch_text,
-            "patch": patch_text,
+            #"llm_output": raw_llm_output or patch_text,
+            #"patch": patch_text,
             "patch_preview": _trim_text(patch_text, 2000),
         }
-        if llm_prompt:
-            log_data["llm_prompt"] = _trim_text(llm_prompt, 2000)
+        #if llm_prompt:
+        #    log_data["llm_prompt"] = _trim_text(llm_prompt, 2000)
         if llm_error:
             log_data["llm_error"] = llm_error
 
