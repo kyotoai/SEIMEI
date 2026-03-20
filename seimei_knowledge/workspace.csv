@@ -1,0 +1,11 @@
+run_id,agent,knowledge,tags
+,code_act,,"[""ls"", ""meta analysis""]"
+,code_act,,"[""cat -n"", ""see content""]"
+,edit_file,,"[""edit""]"
+,answer,,"[""answer""]"
+run-20260312-111056-83f484ee,think,"[IMPORTANT FACT] The user sent only 'Hello' with no task, constraints, or context; always ask clarifying questions before proposing solutions or starting work.","[""constraints"", ""process""]"
+run-20260312-111056-83f484ee,think,"The user did not pick an action; present a short, explicit menu (answer topic, draft/edit, troubleshoot code, summarize, plan) and request brief details to proceed.","[""process"", ""UX""]"
+run-20260312-111056-83f484ee,think,"No technical, deadline, resource, or compliance info was provided; require explicit specs (stack, compute limits, data access, deadlines) before any technical planning.","[""constraints"", ""risks""]"
+run-20260312-111542-2ca67d0f,think,"[IMPORTANT FACT] The user's only input was ""Hello"" and they provided no task, context, goals, or constraints; the next think agent must ask clarifying questions before proposing or executing any plan.","[""process"", ""constraints""]"
+run-20260312-111542-2ca67d0f,think,"The run includes no deadline, format, audience, resources, or technology choices; treat all of these as unknowns and request them before making concrete recommendations.","[""process""]"
+run-20260312-111542-2ca67d0f,think,"The assistant offered a menu of services (answer questions, draft/edit text, help with code, brainstorm, translate, create checklists); prompt the user to pick one rather than assuming a default.","[""process""]"

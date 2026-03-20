@@ -5024,29 +5024,32 @@ from seimei.train import KlgOptimizer # KlgOptimizer is a function in optim.py
 
 new_knowledge = KlgOptimizer(
     dataset=dataset,
+    optimizer_type="seimei_v1",
     n_sample=1,
     n_epoch=1,
-    n_new_klg=3,
-    type="seimei_v1",
+    n_new_klg_per_epoch=3,
+    update_klg_threshold=0.1,
     metric="answer_exact_match",
     load_knowledge_path="seimei_knowledge/default.csv",
     save_knowledge_path="seimei_knowledge/improved.csv",
-    **kwargs # other kwargs about 
+    cache_path="cache.json",
+    **kwargs # kwargs of seimei argument and other stuff
 )
 ```
 
-A. When KlgOptimizer is run, check all the format of inputs and if there is any error, raise exception. If you pass that part, run main() function in a 
+A. When KlgOptimizer is run, check all the format of inputs and if there is any error, raise exception. If you pass that part, run main() function in a seimei/train/klg_optim/{optimizer_type}.py
 
 B. In seimei_v1.py, there is main() function and this returns new knowledge dictionary which has the same format as default.csv. This is how new knowledge is created
     1. Run seimei.__call__ for every row in dataset for n_sample times. Also run metric, and get score and evaluation feedback (Ref: Sampling class, build_scoring_prompt function in sampling.py)
     2. After running it, make a list of all inferences which use a specific knowledge. You should make this list for all the knowledge. 
     3. Make LLM assess how knowledge affects the answer given the score and eval feedback, and generate better knowledge.
-    4. From the assessments for all the knowledge, make LLM generate n_new_klg knowledge texts and add it to knowledge
-    5. Try rerunning all the inference again and 
+    4. From the assessments for all the knowledge, make LLM generate n_new_klg_per_epoch knowledge texts and add it to knowledge pool.
+    5. Try rerunning all the inference again for n_sample times with the updated knowledge pool and calculate all the mean score improvements which each knowledge is related, and update all the knowledge which enhanced the mean score more than update_klg_threshold.
+    6. If epoch is more than 1, repeat this procedure again. Since you already rerun with the new knowoledge, you can start run metric and score the rerunning done in step 5. 
 
-C. 
+C. You can refer to exp11_plasma_gkv_v5/train_v6.py for usage of necessary functions. Also try to make cache file in cache_path refering to train_v6.py.
 
-
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
 
 Ref: resources/dspy/dspy/teleprompt/gepa
