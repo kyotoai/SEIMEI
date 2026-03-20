@@ -4952,6 +4952,107 @@ When API key is not set, the below request should be canceled
 [seimei] rmsearch request failed: HTTPSConnectionPool(host='hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com', port=443): Read timed out. (read timeout=10)
 
 
+## Mar 13
+
+- [ ] Nuclear Fusion
+```
+python exp11_plasma_gkv_v6/generate_dataset_code.py \
+    --model gpt-5-mini
+```
+-> there is a huge error in patch processing. Need to debug it
+
+
+
+## Mar 14
+
+- [ ] Make knowledge of actual costs
+- [ ] Make PoC where it evolves from user feedback
+    - add knowledge from user feedback
+    - modify knowledge to adjust dataset (probably later)
+
+-> No on my second thought, Chatbot Interface + 質問票 service is just a chatgpt. They will notice soon. I need data to do it.
+
+- I will create a demo where people can give feedback and enhance the data.
+
+
+
+## Mar 15
+
+Right now I'm thinking DSPy's prompt optimization * SEIMEI. This can create new feature DSPy doesn't have. In prompt, feedback information cannot be included infinitely. For example, if prompt includes "when A happens, you should do B", "when C happens, you should do D" ..., 
+1. the LLM accuracy drops as the prompt gets longer.
+2. evaluation score cannot tell which feedback exactly affects to the answer. But SEIMEI selects which knowledge to use and evaluation score is assigned to each inference (<- knowledge group). This makes it easier to figure out which knowledge should be modified or not.
+3. Potential RMSearch improvement.
+
+Feedback <-> Optimizer : should be same?
+
+Design structure of the code about this.
+
+
+- [ ] Make feedback agent to update knowledge
+```
+
+```
+
+
+
+
+Ref DSPy:
+```
+import dspy
+from dspy.datasets import HotPotQA
+
+dspy.configure(lm=dspy.LM("openai/gpt-4o-mini"))
+
+def search_wikipedia(query: str) -> list[str]:
+    results = dspy.ColBERTv2(url="http://20.102.90.50:2017/wiki17_abstracts")(query, k=3)
+    return [x["text"] for x in results]
+
+trainset = [x.with_inputs('question') for x in HotPotQA(train_seed=2024, train_size=500).train]
+react = dspy.ReAct("question -> answer", tools=[search_wikipedia])
+
+tp = dspy.MIPROv2(metric=dspy.evaluate.answer_exact_match, auto="light", num_threads=24)
+optimized_react = tp.compile(react, trainset=trainset)
+```
+
+- [ ] Make optimizer (seimei.optimize(dataset))
+'''
+I wanna make KlgOptimizer function in seimei/train/optim.py. Here's how it works
+
+Example:
+```
+from seimei.train import KlgOptimizer # KlgOptimizer is a function in optim.py
+
+new_knowledge = KlgOptimizer(
+    dataset=dataset,
+    n_sample=1,
+    n_epoch=1,
+    n_new_klg=3,
+    type="seimei_v1",
+    metric="answer_exact_match",
+    load_knowledge_path="seimei_knowledge/default.csv",
+    save_knowledge_path="seimei_knowledge/improved.csv",
+    **kwargs # other kwargs about 
+)
+```
+
+A. When KlgOptimizer is run, check all the format of inputs and if there is any error, raise exception. If you pass that part, run main() function in a 
+
+B. In seimei_v1.py, there is main() function and this returns new knowledge dictionary which has the same format as default.csv. This is how new knowledge is created
+    1. Run seimei.__call__ for every row in dataset for n_sample times. Also run metric, and get score and evaluation feedback (Ref: Sampling class, build_scoring_prompt function in sampling.py)
+    2. After running it, make a list of all inferences which use a specific knowledge. You should make this list for all the knowledge. 
+    3. Make LLM assess how knowledge affects the answer given the score and eval feedback, and generate better knowledge.
+    4. From the assessments for all the knowledge, make LLM generate n_new_klg knowledge texts and add it to knowledge
+    5. Try rerunning all the inference again and 
+
+C. 
+
+
+'''
+
+Ref: resources/dspy/dspy/teleprompt/gepa
+
+- [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+
 
 
 

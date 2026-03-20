@@ -1,12 +1,28 @@
 from __future__ import annotations
 
+import codecs
 import os
 import sys
 import termios
 import tty
+import unicodedata
 from typing import List, Sequence
 
 from ..logging_utils import LogColors, colorize
+
+
+def _char_display_width(ch: str) -> int:
+    if not ch:
+        return 0
+    if unicodedata.combining(ch):
+        return 0
+    if unicodedata.category(ch)[0] == "C":
+        return 0
+    return 2 if unicodedata.east_asian_width(ch) in {"F", "W"} else 1
+
+
+def _text_display_width(text: str) -> int:
+    return sum(_char_display_width(ch) for ch in text)
 
 
 class TerminalUI:
@@ -24,6 +40,7 @@ class TerminalUI:
         chars: List[str] = []
         cursor = 0
         selected = 0
+        utf8_decoder = codecs.getincrementaldecoder("utf-8")()
 
         def current_text() -> str:
             return "".join(chars)
@@ -40,7 +57,7 @@ class TerminalUI:
             text = current_text()
             sys.stdout.write("\r\x1b[2K" + prompt + text)
 
-            right_span = max(len(text) - cursor, 0)
+            right_span = max(_text_display_width(text[cursor:]), 0)
             if right_span:
                 sys.stdout.write(f"\x1b[{right_span}D")
 
@@ -68,6 +85,7 @@ class TerminalUI:
                     raise EOFError
 
                 if ch in {b"\r", b"\n"}:
+                    utf8_decoder.reset()
                     matches = matching_commands()
                     entered = current_text().strip()
                     if matches and entered.startswith("/") and " " not in entered:
@@ -82,14 +100,17 @@ class TerminalUI:
                     return entered
 
                 if ch == b"\x03":
+                    utf8_decoder.reset()
                     raise KeyboardInterrupt
 
                 if ch == b"\x04":
+                    utf8_decoder.reset()
                     if not chars:
                         raise EOFError
                     continue
 
                 if ch in {b"\x7f", b"\x08"}:  # backspace
+                    utf8_decoder.reset()
                     if cursor > 0:
                         del chars[cursor - 1]
                         cursor -= 1
@@ -99,6 +120,7 @@ class TerminalUI:
                     continue
 
                 if ch == b"\x1b":
+                    utf8_decoder.reset()
                     nxt = os.read(fd, 1)
                     if nxt != b"[":
                         continue
@@ -125,6 +147,7 @@ class TerminalUI:
                     continue
 
                 if ch == b"\t":
+                    utf8_decoder.reset()
                     matches = matching_commands()
                     if matches:
                         chosen = matches[min(selected, len(matches) - 1)]
@@ -135,14 +158,19 @@ class TerminalUI:
                     continue
 
                 try:
-                    letter = ch.decode("utf-8")
+                    decoded = utf8_decoder.decode(ch, final=False)
                 except UnicodeDecodeError:
+                    utf8_decoder.reset()
                     continue
 
-                if letter.isprintable():
-                    chars.insert(cursor, letter)
-                    cursor += 1
-                    selected = 0
+                if not decoded:
+                    continue
+
+                for letter in decoded:
+                    if letter.isprintable():
+                        chars.insert(cursor, letter)
+                        cursor += 1
+                        selected = 0
 
                 matches = matching_commands()
                 render(matches, min(selected, max(len(matches) - 1, 0)) if matches else 0)

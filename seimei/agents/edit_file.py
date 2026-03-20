@@ -280,10 +280,10 @@ class edit_file(Agent):
             log_data = {
                 "error": "patch_parse_error",
                 "exception": str(exc),
-                "patch_preview": _trim_text(patch_text, 2000),
+                "patch_preview": _trim_text(patch_text),
             }
             if raw_llm_output:
-                log_data["llm_output"] = _trim_text(raw_llm_output, 2000)
+                log_data["llm_output"] = _trim_text(raw_llm_output)
             if llm_prompt:
                 log_data["llm_prompt"] = _trim_text(llm_prompt, 2000)
             if llm_error:
@@ -296,12 +296,12 @@ class edit_file(Agent):
             log_data = {
                 "error": "patch_apply_error",
                 "exception": str(exc),
-                "patch_preview": _trim_text(patch_text, 2000),
+                "patch_preview": _trim_text(patch_text),
             }
             if raw_llm_output:
-                log_data["llm_output"] = _trim_text(raw_llm_output, 2000)
+                log_data["llm_output"] = _trim_text(raw_llm_output)
             if llm_prompt:
-                log_data["llm_prompt"] = _trim_text(llm_prompt, 2000)
+                log_data["llm_prompt"] = _trim_text(llm_prompt)
             if llm_error:
                 log_data["llm_error"] = llm_error
             return {
@@ -318,7 +318,7 @@ class edit_file(Agent):
             "deleted": _relativize(result.deleted, workspace),
             #"llm_output": raw_llm_output or patch_text,
             #"patch": patch_text,
-            "patch_preview": _trim_text(patch_text, 2000),
+            "patch_preview": _trim_text(patch_text),
         }
         #if llm_prompt:
         #    log_data["llm_prompt"] = _trim_text(llm_prompt, 2000)
