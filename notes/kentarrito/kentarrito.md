@@ -5014,7 +5014,7 @@ tp = dspy.MIPROv2(metric=dspy.evaluate.answer_exact_match, auto="light", num_thr
 optimized_react = tp.compile(react, trainset=trainset)
 ```
 
-- [ ] Make optimizer (seimei.optimize(dataset))
+- [x] Make KlgOptimizer
 '''
 I wanna make KlgOptimizer function in seimei/train/optim.py. Here's how it works
 
@@ -5050,6 +5050,17 @@ B. In seimei_v1.py, there is main() function and this returns new knowledge dict
 C. You can refer to exp11_plasma_gkv_v5/train_v6.py for usage of necessary functions. Also try to make cache file in cache_path refering to train_v6.py.
 
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
+
+'''
+1. b
+2. Question and CorrectAnswer
+3. yeah
+4. let's create both part. If add other args in KlgOptimizer to handle both cases.
+5. create new
+6. LLM decide which agent knowledge is used.
+7. both yes
+8. yeah
 '''
 
 Ref: resources/dspy/dspy/teleprompt/gepa
