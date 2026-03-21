@@ -5065,6 +5065,31 @@ Read all the content of relevant files very carefully first. Even if you find an
 
 Ref: resources/dspy/dspy/teleprompt/gepa
 
+
+
+
+## Mar 21
+
+- [x] Make seimei/train/klg_optim/README.md
+'''
+Make seimei/train/klg_optim/README.md including
+
+* Summary
+* Quick start of optim.py
+* Detailed usage of optim.py
+* Detailed algorithm
+* all arguments and outputs
+* example input and output
+'''
+
+- [ ] Make example dataset
+'''
+
+'''
+
+- [ ] Debug 1 klg_optim
+
+
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 
 
