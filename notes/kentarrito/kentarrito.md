@@ -5082,9 +5082,13 @@ Make seimei/train/klg_optim/README.md including
 * example input and output
 '''
 
-- [ ] Make example dataset
+- [x] Make example dataset
 '''
+Make seimei_dataset/default.json following
 
+1. include 15 rows
+2. modify quickstart of seimei/train/klg_optim/README.md into one using seimei_dataset/default.json.
+3. all questions and answers pair should be related to investigating SEIMEI library. Make questions ranged from easy to difficult.
 '''
 
 - [ ] Debug 1 klg_optim

@@ -15,12 +15,12 @@ New optimizer variants can be added by creating a new `<name>.py` file here with
 ## Quick Start
 
 ```python
+import json
 from seimei.train import KlgOptimizer
 
-dataset = [
-    {"Question": "What is 2 + 2?",    "CorrectAnswer": "4"},
-    {"Question": "Capital of France?", "CorrectAnswer": "Paris"},
-]
+# Load the bundled SEIMEI-library Q&A dataset (15 rows, easy → hard)
+with open("seimei_dataset/default.json", encoding="utf-8") as f:
+    dataset = json.load(f)
 
 new_knowledge = KlgOptimizer(
     dataset=dataset,
@@ -40,6 +40,12 @@ new_knowledge = KlgOptimizer(
 )
 # new_knowledge is a list of dicts in the same format as default.csv
 ```
+
+The dataset at `seimei_dataset/default.json` contains 15 question-answer pairs about
+the SEIMEI library itself, ranging from easy (default parameter values, class names)
+to hard (internal algorithm details such as cache key formats and epoch reuse logic).
+It is a convenient starting point for verifying that KlgOptimizer improves a
+knowledge pool on a concrete, self-contained domain.
 
 ---
 

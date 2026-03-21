@@ -1,0 +1,62 @@
+[
+  {
+    "Question": "What is the name of the main orchestrator class in the seimei library?",
+    "CorrectAnswer": "seimei"
+  },
+  {
+    "Question": "What is the default value of the log_dir parameter in seimei.__init__?",
+    "CorrectAnswer": "./seimei_runs"
+  },
+  {
+    "Question": "What is the default value of max_steps in seimei.__init__?",
+    "CorrectAnswer": "8"
+  },
+  {
+    "Question": "Is allow_code_exec enabled by default when constructing a seimei instance?",
+    "CorrectAnswer": "No"
+  },
+  {
+    "Question": "What are the three keys always present in the dict returned by seimei.__call__?",
+    "CorrectAnswer": "run_id, output, msg_history"
+  },
+  {
+    "Question": "What are the three allowed values for the agent_search_mode parameter in seimei.__call__?",
+    "CorrectAnswer": "llm, rm, klg"
+  },
+  {
+    "Question": "What is the default knowledge_search_mode in seimei.__call__?",
+    "CorrectAnswer": "rm"
+  },
+  {
+    "Question": "Which two keys are required in every row of the dataset passed to KlgOptimizer?",
+    "CorrectAnswer": "Question and CorrectAnswer"
+  },
+  {
+    "Question": "What is the only scoring metric currently supported by KlgOptimizer?",
+    "CorrectAnswer": "answer_exact_match"
+  },
+  {
+    "Question": "How do you import KlgOptimizer from the seimei package?",
+    "CorrectAnswer": "from seimei.train import KlgOptimizer"
+  },
+  {
+    "Question": "In seimei_v1, what is the cache key format used for the baseline run of dataset row 2, epoch 0, sample 1?",
+    "CorrectAnswer": "2::0::1"
+  },
+  {
+    "Question": "In seimei_v1, what is the cache key format used for the rerun of dataset row 0, epoch 1, sample 0?",
+    "CorrectAnswer": "0::1::0::rerun"
+  },
+  {
+    "Question": "In seimei_v1, what happens to a newly generated knowledge entry whose mean score improvement in the rerun is below update_klg_threshold?",
+    "CorrectAnswer": "It is silently discarded from the pool."
+  },
+  {
+    "Question": "In seimei_v1, what happens to an original knowledge entry whose mean score improvement is at or below update_klg_threshold?",
+    "CorrectAnswer": "It is reverted to its original text from load_knowledge_path."
+  },
+  {
+    "Question": "In seimei_v1 with n_epoch greater than 1, where does the baseline for step 1 of epoch 2 come from, and why?",
+    "CorrectAnswer": "The rerun results from step 5 of epoch 1 are reused directly as the baseline for epoch 2 step 1, because the rerun already reflects the updated knowledge pool — running seimei again with the same pool would be redundant."
+  }
+]
