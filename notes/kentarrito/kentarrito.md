@@ -5086,14 +5086,54 @@ Make seimei_dataset/default.json following
 '''
 
 - [ ] Debug 1 klg_optim
-    - Set kyotoai API key.
-    - 
+    - [x] Fix API key usage
+'''
+Modify the API key algorithm in llm.py into follows;
+
+1. Check if KYOTOAI_API_KEY is set. If it's set, use the following format for llm request
+```
+curl -X POST https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer (API key)" \
+  -d '{
+        "message": ["How to tune a reward model?"],
+        "model": "gpt-5-nano",
+        "type": "llm"
+      }'
+```
+
+2. If KYOTOAI_API_KEY is not set, check if OPENAI_API_KEY is set. If it is, use openai format used now.
+
+3. If either KYOTOAI_API_KEY or OPENAI_API_KEY is not set, use url set in llm_config.
+
+4. If none of 1-3 is set, raise Exception.
+
+Also write how the api key algorithm works at the beginning of llm.py. You should also write the usage of llm.chat in it too.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
+
+'''
+1. Use all the format openai api call supports. The data field directly goes to openai api call.
+2. the output is completely same as openai api output.
+3. if api_key is passed directly, use it instead of env var
+4. the request format should remain OpenAI-compatible
+
+I will change the instruction a bit!
+If llm_config is explicitly set by user, follow that first. If base_url in llm_config is set, use the url instead of https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch or openai's url. Also as I mentioned in 3, use api_key in llm_config if it's set. So in conclusion, the priority: llm_config -> KYOTOAI_API_KEY -> OPENAI_API_KEY -> raise Exception.
+
+Any other question? If not, modify it.
+'''
+
+    - [ ] Test quick_start_klg_optimizer.py
 '''
 
 '''
 
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+
+- [ ] Make 
 
 
 

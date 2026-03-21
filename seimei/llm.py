@@ -1,3 +1,67 @@
+"""LLM client module for SEIMEI.
+
+API Key / Endpoint Priority
+---------------------------
+When constructing ``LLMClient`` (usually via ``llm_config`` passed to ``Seimei(...)``),
+the following priority order determines the API key and endpoint URL:
+
+1. **llm_config** (explicit constructor arguments) — highest priority
+   - If ``api_key`` is given directly, it is used as the Bearer token.
+   - If ``api_key_env`` is given, the named environment variable is read for the key.
+   - If ``base_url`` is given, it overrides the default endpoint URL.
+   - Any combination of the above takes full priority over all environment variables.
+
+2. **KYOTOAI_API_KEY** environment variable
+   - If set (and no explicit ``api_key`` / ``api_key_env`` / ``base_url`` was passed),
+     the KyotoAI endpoint is used with this key::
+
+         https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch
+
+   - Requests are sent in OpenAI-compatible chat-completions format.
+
+3. **OPENAI_API_KEY** environment variable
+   - If set (and neither of the above applies), the standard OpenAI endpoint is used::
+
+         https://api.openai.com/v1/chat/completions
+
+4. **RuntimeError** — if none of the above is satisfied, a ``RuntimeError`` is raised
+   at construction time.
+
+
+
+Usage of ``LLMClient.chat``
+---------------------------
+``chat`` is an ``async`` method that sends a conversation to the LLM and returns
+``(reply_text, usage_dict)``.
+
+Example::
+
+    import asyncio
+    from seimei.llm import LLMClient
+
+    # Key and URL are resolved automatically from environment variables.
+    client = LLMClient(model="gpt-5-nano")
+
+    # Or supply them explicitly via llm_config:
+    # client = LLMClient(model="gpt-5-nano", api_key="sk-...", base_url="https://...")
+
+    messages = [
+        {"role": "system", "content": "You are a helpful assistant."},
+        {"role": "user",   "content": "Hello!"},
+    ]
+
+    reply, usage = asyncio.run(client.chat(messages))
+    print(reply)
+    # usage == {"prompt_tokens": ..., "completion_tokens": ..., "total_tokens": ...}
+
+Additional ``chat`` keyword arguments:
+
+- ``system`` (str): Optional system prompt prepended to the conversation.
+- ``token_limiter`` (TokenLimiter): Optional cumulative token-budget enforcer.
+- Any extra keyword arguments (e.g. ``temperature``, ``max_tokens``) are forwarded
+  directly to the underlying API call.
+"""
+
 from __future__ import annotations
 
 import asyncio
@@ -262,6 +326,10 @@ def prepare_messages(
     return prepared, normal_system_count
 
 
+KYOTOAI_CHAT_URL = (
+    "https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch"
+)
+
 _OPENAI_CHAT_FIELDS = {
     # Core chat completion parameters documented by OpenAI (2024-09)
     "messages",
@@ -374,18 +442,54 @@ class LLMClient:
         extra_headers = kwargs.pop("extra_headers", None) or {}
 
         self.model = model
-        env_key = os.getenv(api_key_env) if api_key_env else None
-        self.api_key = api_key or env_key or os.getenv("OPENAI_API_KEY")
 
-        raw_base = (base_url or "").strip()
-        trimmed = raw_base.rstrip("/") if raw_base else ""
-        if trimmed:
-            self.base_url = trimmed
+        # -----------------------------------------------------------------
+        # Resolve API key and endpoint URL according to priority order:
+        #   1. explicit llm_config (api_key / api_key_env / base_url)
+        #   2. KYOTOAI_API_KEY  → KyotoAI endpoint
+        #   3. OPENAI_API_KEY   → OpenAI endpoint
+        #   4. none found       → RuntimeError
+        # -----------------------------------------------------------------
+        explicit_key = api_key or (os.getenv(api_key_env) if api_key_env else None)
+        has_explicit_url = bool((base_url or "").strip())
+
+        if explicit_key is not None or has_explicit_url:
+            # Priority 1: values supplied directly via llm_config
+            self.api_key = explicit_key
+            url_source = (base_url or "").strip()
+        elif os.getenv("KYOTOAI_API_KEY"):
+            # Priority 2: KyotoAI API key from environment
+            self.api_key = os.getenv("KYOTOAI_API_KEY")
+            url_source = KYOTOAI_CHAT_URL
+        elif os.getenv("OPENAI_API_KEY"):
+            # Priority 3: OpenAI API key from environment
+            self.api_key = os.getenv("OPENAI_API_KEY")
+            url_source = ""  # resolved to OpenAI default below
         else:
+            raise RuntimeError(
+                "LLMClient: no API key or base_url configured. "
+                "Set KYOTOAI_API_KEY or OPENAI_API_KEY, "
+                "or pass api_key / base_url explicitly in llm_config."
+            )
+
+        # Normalise the URL (append /chat/completions when needed)
+        trimmed = url_source.rstrip("/") if url_source else ""
+        if not trimmed:
+            # No URL specified — fall back to the standard OpenAI endpoint
             self.base_url = "https://api.openai.com/v1/chat/completions"
-        self.using_generate = self.base_url.endswith("/generate")
-        if not self.using_generate and not self.base_url.endswith("/chat/completions"):
-            self.base_url = f"{self.base_url.rstrip('/')}/chat/completions"
+            self.using_generate = False
+        else:
+            self.using_generate = trimmed.endswith("/generate")
+            if (
+                self.using_generate
+                or trimmed.endswith("/chat/completions")
+                or trimmed == KYOTOAI_CHAT_URL
+            ):
+                self.base_url = trimmed
+            else:
+                self.base_url = f"{trimmed}/chat/completions"
+
+        self.using_kyotoai = self.base_url == KYOTOAI_CHAT_URL
         self.using_openai = "api.openai.com" in self.base_url
 
         self.timeout = timeout
@@ -398,9 +502,6 @@ class LLMClient:
         self._semaphore: Optional[asyncio.Semaphore] = None
         if max_concurrent_requests and int(max_concurrent_requests) > 0:
             self._semaphore = asyncio.Semaphore(int(max_concurrent_requests))
-
-        # If using official API and no key, leave requests to fail with a clear error
-        # If using local base_url, API key may not be required
 
     def _build_generate_payload(self, prompt: str, params: Dict[str, Any]) -> Dict[str, Any]:
         payload = {k: v for k, v in params.items() if v is not None}
@@ -498,9 +599,10 @@ class LLMClient:
             headers["Authorization"] = f"Bearer {self.api_key}"
 
         url = self.base_url
-        if self.using_openai and not self.api_key:
+        if (self.using_openai or self.using_kyotoai) and not self.api_key:
             raise RuntimeError(
-                "LLMClient: OPENAI_API_KEY not set. Provide an API key or set `base_url` to a local server."
+                "LLMClient: API key is required but not set. "
+                "Set KYOTOAI_API_KEY or OPENAI_API_KEY, or pass api_key in llm_config."
             )
 
         if token_limiter:
@@ -552,7 +654,7 @@ class LLMClient:
             return await _execute()
 
     def _filter_payload(self, params: Dict[str, Any]) -> Dict[str, Any]:
-        if not self.using_openai:
+        if not self.using_openai and not self.using_kyotoai:
             return params
         filtered = {k: v for k, v in params.items() if k in _OPENAI_CHAT_FIELDS}
         dropped = set(params.keys()) - set(filtered.keys())
