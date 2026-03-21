@@ -4988,12 +4988,6 @@ Feedback <-> Optimizer : should be same?
 Design structure of the code about this.
 
 
-- [ ] Make feedback agent to update knowledge
-```
-
-```
-
-
 
 
 Ref DSPy:
@@ -5092,6 +5086,11 @@ Make seimei_dataset/default.json following
 '''
 
 - [ ] Debug 1 klg_optim
+    - Set kyotoai API key.
+    - 
+'''
+
+'''
 
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)

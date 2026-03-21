@@ -18,9 +18,16 @@ New optimizer variants can be added by creating a new `<name>.py` file here with
 import json
 from seimei.train import KlgOptimizer
 
+# Example 1:
 # Load the bundled SEIMEI-library Q&A dataset (15 rows, easy → hard)
 with open("seimei_dataset/default.json", encoding="utf-8") as f:
     dataset = json.load(f)
+
+# Example 2:
+# dataset = [
+#     {"Question": "What is 2 + 2?",    "CorrectAnswer": "4"},
+#     {"Question": "Capital of France?", "CorrectAnswer": "Paris"},
+# ]
 
 new_knowledge = KlgOptimizer(
     dataset=dataset,
