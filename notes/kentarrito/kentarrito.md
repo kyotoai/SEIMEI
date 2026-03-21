@@ -5125,15 +5125,39 @@ If llm_config is explicitly set by user, follow that first. If base_url in llm_c
 Any other question? If not, modify it.
 '''
 
-    - [ ] Test quick_start_klg_optimizer.py
+    - [x] Substitute all `print` by `logger`
+'''
+Right now, log is made by `print`. I wanna substitute all the `print` by `logging` module in python. Also set some argument to determine the log level in seimei __init__ function. Set level to all the logging by judging which level each logging should be set properly.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
 
 '''
+1. judge which is more suitable in cli/main.py and use that one
+2. Add a custom colored logging.Formatter to logging_utils.py that wraps messages in ANSI codes, preserving the current look.
+3. knowledge FileNotFoundError should be logging.warning.
+4. per-step agent output blocks should be logging.info
+5. use its own module-level logger for model conversion in train/utils.py
+6. all modules should use a single logging.getLogger("seimei") 
+'''
 
+    - [ ] Debug quick_start_klg_optimizer.py
+        - [ ] `Expecting value: line 1 column 1 (char 0)`
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+- [ ] Make feedback agent abolishing save_knowledge_config
 
-- [ ] Make 
+- [ ] Add klg_optimizer in README
+- [ ] Make examples cleaner
+- [ ] Make the README much better
+    - [ ] API key usage
+- [ ] Recreate https://www.kyotoai.net/docs
+- [ ] Make demo video of learning
+
+- [ ] Publish seimei==0.1.0
+
+
+
 
 
 

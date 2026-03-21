@@ -36,7 +36,7 @@ class code_act(Agent):
         self,
         messages: List[Dict[str, Any]],
         shared_ctx: Dict[str, Any],
-        timeout: int = 60,
+        timeout: int = 120,
         **kwargs: Any,
     ) -> Dict[str, Any]:
         allow = bool(shared_ctx.get("allow_code_exec", False))

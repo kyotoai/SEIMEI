@@ -66,6 +66,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import math
 import os
 import sys
@@ -77,6 +78,8 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 import requests
 
 from .logging_utils import LogColors, colorize
+
+logger = logging.getLogger("seimei")
 
 
 def _format_tag_block(tag: str, value: Any) -> List[str]:
@@ -568,6 +571,8 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
+        logger.debug("\n----- [llm] payload_msgs -----\n %s", payload_msgs)
+
         #print("\n----------")
         #print("payload_msgs: ", payload_msgs)
 
@@ -626,7 +631,15 @@ class LLMClient:
             if resp.status_code != 200:
                 raise RuntimeError(f"LLM HTTP {resp.status_code}: {resp.text[:500]}")
 
-            data = resp.json()
+            logger.debug("\n----- [llm] resp -----\n %s", resp)
+
+            try:
+                data = resp.json()
+            except Exception as exc:
+                raise RuntimeError(
+                    f"LLMClient: failed to parse JSON response from {url}. "
+                    f"Status: {resp.status_code}, Body: {resp.text[:500]!r}"
+                ) from exc
             self.last_response = data
             content = self._extract_content(data)
 
@@ -659,13 +672,7 @@ class LLMClient:
         filtered = {k: v for k, v in params.items() if k in _OPENAI_CHAT_FIELDS}
         dropped = set(params.keys()) - set(filtered.keys())
         if dropped and not self._warned_filtered_kwargs:
-            print(
-                colorize(
-                    f"[LLMClient] Ignoring unsupported OpenAI parameters: {sorted(dropped)}",
-                    LogColors.RED,
-                ),
-                file=sys.stderr,
-            )
+            logger.warning("[LLMClient] Ignoring unsupported OpenAI parameters: %s", sorted(dropped))
             self._warned_filtered_kwargs = True
         return filtered
 

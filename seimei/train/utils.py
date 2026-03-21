@@ -1,9 +1,12 @@
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, AutoModelForCausalLM
 from peft import PeftModel, PeftConfig
 from pathlib import Path
+import logging
 import time, os
 import torch
 import argparse
+
+logger = logging.getLogger(__name__)
 
 '''
 
@@ -43,7 +46,7 @@ def convert_model(model_name, keep_original_model=False):
         save_dir = f"{model_name}-converted-model"
         score_save_path = f"{save_dir}/score.pt"
 
-    print(f"Save Converted Model in {save_dir}")
+    logger.info("Save Converted Model in %s", save_dir)
     tokenizer.save_pretrained(save_dir)
 
     reward_model = AutoModelForSequenceClassification.from_pretrained(model_name, num_labels=1)
@@ -78,8 +81,8 @@ def convert_checkpoint(base_model_path, checkpoint_path, model_path):
     tokenizer.save_pretrained(model_path)
     reward_model.save_pretrained(model_path)
 
-    print("reward_model: ", reward_model)
-    
+    logger.debug("reward_model: %s", reward_model)
+
     torch.save(reward_model.score.weight.data, score_save_path)
     del reward_model
 
@@ -108,8 +111,8 @@ def convert_checkpoint2(base_model_path, checkpoint_path, model_path):
     tokenizer.save_pretrained(model_path)
     reward_model.save_pretrained(model_path)
 
-    print("reward_model: ", reward_model)
-    
+    logger.debug("reward_model: %s", reward_model)
+
     torch.save(reward_model.score.weight.data, score_save_path)
     del reward_model
 

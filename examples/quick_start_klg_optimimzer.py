@@ -24,8 +24,8 @@ new_knowledge = KlgOptimizer(
     save_knowledge_path="seimei_knowledge/improved.csv",
     cache_path="cache.json",
     # seimei constructor args
-    llm_config={"model": "gpt-5-nano", "api_key": "..."},
-    agent_config={"agents": [...]},
-    log_dir="runs/",
+    llm_config={"model": "gpt-5-nano"},
+    agent_config={"agents": ["code_act", "think", "answer"]},
+    log_dir="seimei_runs/",
 )
 # new_knowledge is a list of dicts in the same format as default.csv

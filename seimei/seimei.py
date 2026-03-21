@@ -5,6 +5,7 @@ import importlib.util
 import inspect
 import io
 import json
+import logging
 import os
 import random
 import re
@@ -29,16 +30,14 @@ from .agent import Agent, get_agent_subclasses
 from . import agents as builtin_agents  # noqa: F401  # ensure built-in agents register
 from .llm import LLMClient, TokenLimiter, TokenLimitExceeded
 from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_knowledge
-from .logging_utils import LogColors, colorize, supports_color
+from .logging_utils import LogColors, colorize, supports_color, setup_seimei_logging
 from .utils import format_query_for_rmsearch, format_key_for_rmsearch
 
-STEP_TITLE_COLOR = LogColors.GREEN
 LOG_BLOCK_COLOR = LogColors.CYAN
 ANSWER_BLOCK_COLOR = LogColors.BOLD_MAGENTA
-ERROR_COLOR = LogColors.RED
-WARNING_COLOR = LogColors.YELLOW
-KNOWLEDGE_COLOR = LogColors.YELLOW
 DEFAULT_RMSEARCH_URL = "https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch"
+
+logger = logging.getLogger("seimei")
 
 class seimei:
     """Main orchestrator.
@@ -74,7 +73,9 @@ class seimei:
         agent_log_head_lines: int = 3,
         max_tokens_per_question: Optional[int] = None,
         llm_client_class: Type[LLMClient] = LLMClient,
+        log_level: int = logging.INFO,
     ) -> None:
+        setup_seimei_logging(log_level)
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
 
@@ -160,10 +161,7 @@ class seimei:
                 inst = cls()
                 self.agents[inst.name] = inst
             except Exception as e:
-                print(
-                    colorize(f"[seimei] Failed to instantiate agent {cls}: {e}", ERROR_COLOR),
-                    file=sys.stderr,
-                )
+                logger.error("[seimei] Failed to instantiate agent %s: %s", cls, e)
 
     def _resolve_agent_config_targets(
         self, configs: Sequence[Dict[str, Any]]
@@ -281,19 +279,19 @@ class seimei:
             return {}
         try:
             store = load_knowledge(path)
-            print(colorize(f"[seimei] Knowledge loaded from {path} ({sum(len(v) for v in store.values())} entries)", STEP_TITLE_COLOR))
+            logger.info("[seimei] Knowledge loaded from %s (%d entries)", path, sum(len(v) for v in store.values()))
             return store
         except FileNotFoundError as exc:
-            print(colorize(f"[seimei] Knowledge file not found: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.warning("[seimei] Knowledge file not found: %s", exc)
         except Exception as exc:  # pragma: no cover
-            print(colorize(f"[seimei] Failed to load knowledge from {path}: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] Failed to load knowledge from %s: %s", path, exc)
         return {}
 
     def _refresh_knowledge_store(self, path: Path) -> None:
         try:
             store = load_knowledge(path)
         except Exception as exc:  # pragma: no cover - best-effort reload
-            print(colorize(f"[seimei] Failed to reload knowledge from {path}: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] Failed to reload knowledge from %s: %s", path, exc)
             return
         self.load_knowledge_path = str(path)
         self.knowledge_store = store
@@ -862,24 +860,12 @@ class seimei:
     ) -> Dict[str, List[Dict[str, Any]]]:
         try:
             store = load_knowledge(path)
-            print(
-                colorize(
-                    f"[seimei] Manual knowledge loaded from {path}",
-                    KNOWLEDGE_COLOR,
-                    enable=supports_color(),
-                )
-            )
+            logger.info("[seimei] Manual knowledge loaded from %s", path)
             return store
         except FileNotFoundError as exc:
-            print(
-                colorize(f"[seimei] Manual knowledge file not found: {exc}", ERROR_COLOR, enable=supports_color()),
-                file=sys.stderr,
-            )
+            logger.warning("[seimei] Manual knowledge file not found: %s", exc)
         except Exception as exc:  # pragma: no cover - auxiliary loads best effort
-            print(
-                colorize(f"[seimei] Failed to load manual knowledge from {path}: {exc}", ERROR_COLOR, enable=supports_color()),
-                file=sys.stderr,
-            )
+            logger.error("[seimei] Failed to load manual knowledge from %s: %s", path, exc)
         return {}
 
     @staticmethod
@@ -955,7 +941,7 @@ class seimei:
         url = str(config.get("base_url") or config.get("url") or "").strip()
         if not url:
             if not self._rm_warned_missing_url:
-                print(colorize("[seimei] rmsearch skipped: rm_config['base_url'] not set.", ERROR_COLOR), file=sys.stderr)
+                logger.warning("[seimei] rmsearch skipped: rm_config['base_url'] not set.")
                 self._rm_warned_missing_url = True
             return []
 
@@ -981,7 +967,7 @@ class seimei:
                 timeout=final_timeout,
             )
         except Exception as exc:
-            print(colorize(f"[seimei] rmsearch request failed: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] rmsearch request failed: %s", exc)
             return []
 
     def _rmsearch_http(
@@ -1013,7 +999,7 @@ class seimei:
 
         api_key = os.getenv("KYOTOAI_API_KEY")
         if not api_key:
-            print(colorize(f"[seimei] warning: KYOTOAI_API_KEY variable is not set", WARNING_COLOR), file=sys.stderr)
+            logger.warning("[seimei] KYOTOAI_API_KEY variable is not set")
             #raise RuntimeError("KYOTOAI_API_KEY environment variable is not set")
 
         headers = {
@@ -1318,7 +1304,7 @@ class seimei:
                         distribution_weights=distribution_weights,
                     )
             except Exception as exc:
-                print(colorize(f"[seimei] rmsearch selection failed: {exc}", ERROR_COLOR), file=sys.stderr)
+                logger.error("[seimei] rmsearch selection failed: %s", exc)
         results = await self._llm_route_search(
             query=query,
             keys=candidates,
@@ -1423,7 +1409,7 @@ class seimei:
                 system=system_prompt,
             )
         except Exception as exc:
-            print(colorize(f"[seimei] LLM routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] LLM routing failed: %s", exc)
             return [
                 {"key": item["key"], "payload": item, "source": "llm-fallback", "score": None}
                 for item in candidates[:k]
@@ -1655,7 +1641,7 @@ class seimei:
                 if agent_name in candidate_name_set:
                     return self.agents[agent_name]
         except Exception as exc:
-            print(colorize(f"[seimei] search-based routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] search-based routing failed: %s", exc)
         return None
 
     async def _select_agent_by_knowledge(
@@ -1742,7 +1728,7 @@ class seimei:
                 search_settings=search_settings,
             )
         except Exception as exc:
-            print(colorize(f"[seimei] knowledge routing failed: {exc}", ERROR_COLOR), file=sys.stderr)
+            logger.error("[seimei] knowledge routing failed: %s", exc)
             ranked = []
 
         selected_entries: List[Dict[str, Any]] = []
@@ -2194,12 +2180,12 @@ class seimei:
                     continue
                 text = str(value).strip("\n")
                 lines = text.splitlines() if text else [""]
-                print(colorize(f"    <{label}>", block_color, enable=color_enabled))
+                logger.info(colorize(f"    <{label}>", block_color, enable=color_enabled))
                 for line in lines:
-                    print(colorize(f"        {line}", block_color, enable=color_enabled))
+                    logger.info(colorize(f"        {line}", block_color, enable=color_enabled))
                 printed_any = True
             if printed_any:
-                print()
+                logger.info("")
 
         usage_agg: Dict[str, int] = {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0}
         token_limiter: Optional[TokenLimiter] = None
@@ -2335,7 +2321,7 @@ class seimei:
                 break
 
             step_label = f"{log_prefix} Step {step_idx}"
-            print(colorize(f"{step_label}: Running {agent_obj.name} agent", STEP_TITLE_COLOR, enable=color_enabled))
+            logger.info("%s: Running %s agent", step_label, agent_obj.name)
 
             try:
                 step_res = await agent_obj(
@@ -2345,13 +2331,9 @@ class seimei:
             except TokenLimitExceeded as err:
                 token_limit_hit = True
                 token_limit_error = err
-                print(
-                    colorize(
-                        f"{log_prefix} !! Token limit exceeded by agent {agent_obj.name}: "
-                        f"limit={err.limit}, consumed={err.consumed}",
-                        ERROR_COLOR,
-                        enable=color_enabled,
-                    )
+                logger.error(
+                    "%s !! Token limit exceeded by agent %s: limit=%d, consumed=%d",
+                    log_prefix, agent_obj.name, err.limit, err.consumed,
                 )
                 step_res = {
                     "content": f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens.",
@@ -2409,7 +2391,7 @@ class seimei:
                 step_payload["knowledge_id"] = step_res["knowledge_id"]
             write_step(step_payload)
 
-            print(colorize(f"{step_label}: Done {agent_obj.name} agent", STEP_TITLE_COLOR, enable=color_enabled))
+            logger.info("%s: Done %s agent", step_label, agent_obj.name)
 
             content = step_res.get("content", "")
             log_data = step_res.get("log", None)
@@ -2467,13 +2449,7 @@ class seimei:
                 msg_history.append({"role": "assistant", "content": answer})
                 final_response_source = "agent"
                 if final_agent_name:
-                    print(
-                        colorize(
-                            f"{log_prefix} Final output provided by {final_agent_name} agent",
-                            STEP_TITLE_COLOR,
-                            enable=color_enabled,
-                        )
-                    )
+                    logger.info("%s Final output provided by %s agent", log_prefix, final_agent_name)
             else:
                 try:
                     answer, usage = await run_llm.chat(messages=msg_history, system=system)
@@ -2484,13 +2460,9 @@ class seimei:
                     final_response_source = "token_limit"
                     if stop_reason is None:
                         stop_reason = "token_limit_hit"
-                    print(
-                        colorize(
-                            f"{log_prefix} !! Token limit exceeded during final response: "
-                            f"limit={err.limit}, consumed={err.consumed}",
-                            ERROR_COLOR,
-                            enable=color_enabled,
-                        )
+                    logger.error(
+                        "%s !! Token limit exceeded during final response: limit=%d, consumed=%d",
+                        log_prefix, err.limit, err.consumed,
                     )
                     answer = f"[token_limit] Token limit {err.limit} exceeded with {err.consumed} tokens."
                     usage = {}
@@ -2586,13 +2558,7 @@ class seimei:
         if run_generate_knowledge:
             target_override = str(run_save_path) if run_save_path else None
             target_path = self._resolve_knowledge_output_path(target_override)
-            print(
-                colorize(
-                    f"{log_prefix} Knowledge generation: starting (target={target_path})",
-                    KNOWLEDGE_COLOR,
-                    enable=color_enabled,
-                )
-            )
+            logger.info("%s Knowledge generation: starting (target=%s)", log_prefix, target_path)
             knowledge_start = time.time()
             try:
                 knowledge_generation_result = await generate_knowledge_from_runs(
@@ -2610,13 +2576,9 @@ class seimei:
                 self._refresh_knowledge_store(target_path)
                 added = knowledge_generation_result.get("count")
                 added_display = added if added is not None else 0
-                print(
-                    colorize(
-                        f"{log_prefix} Knowledge generation: completed "
-                        f"(entries={added_display}, saved_to={target_path})",
-                        KNOWLEDGE_COLOR,
-                        enable=color_enabled,
-                    )
+                logger.info(
+                    "%s Knowledge generation: completed (entries=%s, saved_to=%s)",
+                    log_prefix, added_display, target_path,
                 )
             except Exception as exc:  # pragma: no cover - knowledge generation best effort
                 knowledge_generation_result = {
@@ -2626,14 +2588,7 @@ class seimei:
                     "duration_sec": time.time() - knowledge_start,
                     "status": "failed",
                 }
-                print(
-                    colorize(
-                        f"[seimei] Failed to auto-generate knowledge for run {run_id}: {exc}",
-                        ERROR_COLOR,
-                        enable=color_enabled,
-                    ),
-                    file=sys.stderr,
-                )
+                logger.error("[seimei] Failed to auto-generate knowledge for run %s: %s", run_id, exc)
 
         persist_meta()
 
