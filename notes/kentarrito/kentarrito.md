@@ -5164,12 +5164,62 @@ Make RM class in seimei/rm.py and migrate rmsearch function in seimei/seimei.py 
 
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
+        - [x] Fix llm&rm format (modified kyotoai's backend)
+'''
+Modify LLM and RM class following the format below
 
+llm request format:
+```
+curl -X POST https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <REDACTED_OPENAI_KEY>" \
+  -d '{
+        "messages": [{"role":"user", "content":"How to tune a reward model?"}],
+        "model": "gpt-5-nano",
+        "type": "llm"
+      }'
+```
+->
+output:
+```
+{"id":"resp_0ece9456d8d523e70069bf77541d508197a22192c6c5003747","object":"response","created_at":1774155604,"status":"completed","background":false,"billing":{"payer":"developer"},"completed_at":1774155620,"error":null,"frequency_penalty":0,"incomplete_details":null,"instructions":null,"max_output_tokens":null,"max_tool_calls":null,"model":"gpt-5-nano-2025-08-07","output":[{"id":"rs_0ece9456d8d523e70069bf7754858c819795031cfed4db5805","type":"reasoning","summary":[]},{"id":"msg_0ece9456d8d523e70069bf775d8bf08197b1ab59a1f6a809d1","type":"message","status":"completed","content":[{"type":"output_text","annotations":[],"logprobs":[],"text":"..."}],"role":"assistant"}],"parallel_tool_calls":true,"presence_penalty":0,"previous_response_id":null,"prompt_cache_key":null,"prompt_cache_retention":null,"reasoning":{"effort":"medium","summary":null},"safety_identifier":null,"service_tier":"default","store":true,"temperature":1,"text":{"format":{"type":"text"},"verbosity":"medium"},"tool_choice":"auto","tools":[],"top_logprobs":0,"top_p":1,"truncation":"disabled","usage":{"input_tokens":13,"input_tokens_details":{"cached_tokens":0},"output_tokens":3055,"output_tokens_details":{"reasoning_tokens":1792},"total_tokens":3068},"user":null,"metadata":{}}
+```
+
+rmsearch format:
+```
+curl -X POST https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <REDACTED_OPENAI_KEY>" \
+  -d '{
+        "queries": ["How to tune a reward model?", "What is LLM?"],
+        "keys": ["Reward models score sequences.", "LLM is large language model"],
+        "k": 2,
+        "model" : "rms1.0",
+        "type":"rm"
+      }'
+```
+->
+output:
+```
+{"output":[{"query":"How to tune a reward model?","query_id":0,"keys":[{"key_id":0,"key":"Reward models score sequences.","relevance":-0.04264575615525246},{"key_id":1,"key":"LLM is large language model","relevance":-0.043130964040756226}]},{"query":"What is LLM?","query_id":1,"keys":[{"key_id":1,"key":"LLM is large language model","relevance":0.01880309358239174},{"key_id":0,"key":"Reward models score sequences.","relevance":-0.08477219939231873}]}],"queries":[{"query":"How to tune a reward model?","query_id":0,"keys":[{"key_id":0,"key":"Reward models score sequences.","relevance":-0.04264575615525246},{"key_id":1,"key":"LLM is large language model","relevance":-0.043130964040756226}]},{"query":"What is LLM?","query_id":1,"keys":[{"key_id":1,"key":"LLM is large language model","relevance":0.01880309358239174},{"key_id":0,"key":"Reward models score sequences.","relevance":-0.08477219939231873}]}],"results":[{"query":"How to tune a reward model?","query_id":0,"keys":[{"key_id":0,"key":"Reward models score sequences.","relevance":-0.04264575615525246},{"key_id":1,"key":"LLM is large language model","relevance":-0.043130964040756226}]},{"query":"What is LLM?","query_id":1,"keys":[{"key_id":1,"key":"LLM is large language model","relevance":0.01880309358239174},{"key_id":0,"key":"Reward models score sequences.","relevance":-0.08477219939231873}]}],"usage":{"tokenCount":140,"requestCount":4,"pairCount":4,"queryCount":2,"keyCount":2}}
+```
+
+I think output processing is quite wrong now, so please carefully check that. Input format is also a bit different, so modify that as well.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
         - [ ] Add logger.debug in RM class
         - [ ] Fix issue that only answer agent is chosen in quick_start_klg_optimizer.py
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+'''
+
+'''
+
 - [ ] Make feedback agent abolishing save_knowledge_config
+'''
+
+'''
 
 - [ ] Add klg_optimizer in README
 - [ ] Make examples cleaner

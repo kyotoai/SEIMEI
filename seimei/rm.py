@@ -7,9 +7,6 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import requests
 
 from .utils import (
-    format_query_for_rmsearch,
-    format_key_for_rmsearch,
-    _coerce_tags,
     _coerce_messages,
     _prepare_query_input,
     _normalize_purpose,
@@ -88,6 +85,7 @@ class RM:
                 query=query,
                 keys=keys,
                 limit=limit,
+                model=config.get("model", "rms1.0"),
                 purpose=effective_purpose,
                 timeout=final_timeout,
             )
@@ -106,25 +104,22 @@ class RM:
         query: Union[str, Sequence[Dict[str, Any]]],
         keys: Sequence[Dict[str, Any]],
         limit: int,
+        model: str = "rms1.0",
         purpose: str,
         timeout: Optional[float],
     ) -> List[Dict[str, Any]]:
-        serialized_query = self._format_rmsearch_query(query)
+        raw_query = self._get_raw_query(query)
         key_payload, index_map, text_map = self._format_rmsearch_keys(keys)
         if not key_payload:
             return []
 
-        #print()
-        #print("--- rmsearch 2 ---")
-        #print("serialized_query: ", serialized_query)
-
         payload: Dict[str, Any] = {
-            "queries": [serialized_query],
+            "queries": [raw_query],
             "keys": key_payload,
             "k": limit,
+            "model": model,
+            "type": "rm",
         }
-        if purpose:
-            payload["purpose"] = purpose
 
         api_key = os.getenv("KYOTOAI_API_KEY")
         if not api_key:
@@ -151,16 +146,15 @@ class RM:
         )
 
     @staticmethod
-    def _format_rmsearch_query(query: Union[str, Sequence[Dict[str, Any]]]) -> str:
+    def _get_raw_query(query: Union[str, Sequence[Dict[str, Any]]]) -> str:
+        """Return the raw query string without any XML wrapping."""
         if isinstance(query, str):
-            stripped = query.strip()
-            return format_query_for_rmsearch(stripped or query)
+            return query.strip()
         if isinstance(query, Sequence):
             messages = _coerce_messages(query)
             _, conversation_text, focus_text = _prepare_query_input(messages)
-            body = focus_text or conversation_text or ""
-            return format_query_for_rmsearch(body)
-        return format_query_for_rmsearch(str(query))
+            return focus_text or conversation_text or ""
+        return str(query)
 
     @staticmethod
     def _format_rmsearch_keys(
@@ -175,11 +169,9 @@ class RM:
             key_text = str(item.get("key") or "").strip()
             if not key_text:
                 continue
-            tags = _coerce_tags(item.get("tags"))
-            formatted = format_key_for_rmsearch(key_text, tags=tags)
             index_map[len(payload)] = item
-            payload.append(formatted)
-            text_map.setdefault(formatted, item)
+            payload.append(key_text)
+            text_map.setdefault(key_text, item)
         return payload, index_map, text_map
 
     @staticmethod

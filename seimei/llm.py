@@ -587,6 +587,7 @@ class LLMClient:
         if self.using_generate:
             prompt_text = self._render_prompt(payload_msgs)
             payload = self._build_generate_payload(prompt_text, extra_params)
+            '''
         elif self.using_kyotoai:
             # ---- [KYOTOAI TEMPORARY FORMAT] --------------------------------
             # KyotoAI currently only accepts a flat list of strings in "message".
@@ -610,12 +611,15 @@ class LLMClient:
             # }
             # payload.update(self._filter_payload(extra_params))
             # -----------------------------------------------------------------------
+            '''
         else:
             payload = {
                 "model": self.model,
                 "messages": payload_msgs,
             }
             payload.update(self._filter_payload(extra_params))
+            if self.using_kyotoai:
+                payload["type"] = "llm"
 
 
         logger.debug("\n----- [llm] payload -----\n %s", payload)
@@ -665,13 +669,10 @@ class LLMClient:
                 ) from exc
             self.last_response = data
 
-            ## This part should be modified
-
-            # original (this is same as openai format)
-            # content = self._extract_content(data)
-
-            # Just for kyotoai format. this should be same as openai
-            content = data[1]["content"][0]["text"]
+            if self.using_kyotoai:
+                content = self._extract_content_kyotoai(data)
+            else:
+                content = self._extract_content(data)
 
             logger.debug("\n----- [llm] content -----\n %s", content)
 
@@ -685,6 +686,13 @@ class LLMClient:
                     usage[k] = int(v)
                 except (TypeError, ValueError):
                     continue
+            # Normalize KyotoAI field names to OpenAI convention
+            if "input_tokens" in usage and "prompt_tokens" not in usage:
+                usage["prompt_tokens"] = usage["input_tokens"]
+            if "output_tokens" in usage and "completion_tokens" not in usage:
+                usage["completion_tokens"] = usage["output_tokens"]
+            if "prompt_tokens" in usage and "completion_tokens" in usage and "total_tokens" not in usage:
+                usage["total_tokens"] = usage["prompt_tokens"] + usage["completion_tokens"]
             if token_limiter:
                 token_limiter.record(usage)
             self._log_usage(usage)
@@ -747,6 +755,35 @@ class LLMClient:
                 total_chars += len(str(role))
         estimated = math.ceil(total_chars / 4) if total_chars else 0
         return max(estimated, len(messages))
+
+    @staticmethod
+    def _extract_content_kyotoai(data: Any) -> str:
+        """Extract reply text from KyotoAI response format.
+
+        The response has an ``output`` list; find the item with
+        ``type == "message"`` and return the first ``output_text`` block.
+        """
+        if not isinstance(data, dict):
+            return ""
+        output = data.get("output")
+        if not isinstance(output, list):
+            return ""
+        for item in output:
+            if not isinstance(item, dict):
+                continue
+            if item.get("type") != "message":
+                continue
+            content = item.get("content")
+            if not isinstance(content, list):
+                continue
+            for block in content:
+                if not isinstance(block, dict):
+                    continue
+                if block.get("type") == "output_text":
+                    text = block.get("text", "")
+                    if isinstance(text, str) and text.strip():
+                        return text
+        return ""
 
     def _extract_content(self, data: Any) -> str:
         if isinstance(data, list):
