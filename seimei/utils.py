@@ -112,11 +112,14 @@ def _is_agent_message(message: Dict[str, Any]) -> bool:
 def format_query_for_rmsearch(body: str) -> str:
     """Wrap a query body with the standardized <query>...</query> block."""
     text = (body or "").strip()
+    return text
+    '''
     if text.startswith("<query>") and "</query>" in text:
         return text
     if not text:
         text = "[missing query context]"
     return f"<query>\n{text}\n</query>"
+    '''
 
 
 def format_key_for_rmsearch(

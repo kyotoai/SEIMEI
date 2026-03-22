@@ -2478,7 +2478,7 @@ class seimei:
         recent_entries = agent_entries[-max(int(max_agent_steps), 1):]
 
         sections: List[str] = []
-        sections.append(f"User query:\n{user_query or '[missing user query]'}")
+        sections.append(f"{user_query or '[missing user query]'}")
 
         findings_lines: List[str] = []
         for entry in recent_entries:

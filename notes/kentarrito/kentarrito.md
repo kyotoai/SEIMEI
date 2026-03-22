@@ -5208,8 +5208,16 @@ I think output processing is quite wrong now, so please carefully check that. In
 
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
-        - [ ] Add logger.debug in RM class
+
+        - [ ] Set default usage (kyotoai_api -> rm klg search, openai_api -> llm klg search)
+'''
+
+'''
+
+        - [x] Add logger.debug in RM class
         - [ ] Fix issue that only answer agent is chosen in quick_start_klg_optimizer.py
+        - [ ] Answer agent doesn't use knowledge
+        - [x] "<query>" and "User query:" are unnecessary
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 '''
