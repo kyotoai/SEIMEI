@@ -10,7 +10,7 @@ async def demo_code_act():
         #allowed_commands=["ls", "echo"],
         agent_log_head_lines=1,
         max_tokens_per_question=20000,
-        log_level=logging.INFO, #logging.DEBUG,
+        log_level=logging.DEBUG, #logging.INFO, #
     )
 
     result = await orchestrator(

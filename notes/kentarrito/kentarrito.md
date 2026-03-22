@@ -5158,7 +5158,15 @@ the element inside the list corresponds to the content of user role. Also KyotoA
     - [ ] Debug quick_start_klg_optimizer.py
         - [x] log_level=logging.DEBUG doesn't work in KlgOptimizer function
             -> fixed by adding "log_level" in _SEIMEI_INIT_KEYS
-        - [ ] 
+        - [x] Make RM class
+'''
+Make RM class in seimei/rm.py and migrate rmsearch function in seimei/seimei.py into it. You should refer seimei/llm. BE SURE NOT TO CHANGE ANY ALGORITHM OF RMSEARCH. Just migrate the function into RM class, which works exactly same as before.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
+
+        - [ ] Add logger.debug in RM class
+        - [ ] Fix issue that only answer agent is chosen in quick_start_klg_optimizer.py
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 - [ ] Make feedback agent abolishing save_knowledge_config

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Sequence, Union
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple, Union
 
 DEFAULT_RUNS_DIR = Path("seimei_runs")
 
@@ -148,3 +148,91 @@ def format_key_for_rmsearch(
     if "Query-Key Relevance Score:" not in formatted:
         formatted = f"{formatted}\n\n\nQuery-Key Relevance Score:"
     return formatted
+
+
+def _normalize_purpose(raw_purpose: Optional[str]) -> str:
+    if not raw_purpose:
+        return "knowledge_search"
+    value = str(raw_purpose).strip().lower()
+    if value == "agent_routing":
+        return "agent_routing"
+    return "knowledge_search"
+
+
+def _coerce_tags(value: Any) -> List[str]:
+    if value is None:
+        return []
+    if isinstance(value, str):
+        return [part.strip() for part in value.split(",") if part.strip()]
+    if isinstance(value, Iterable):
+        tags: List[str] = []
+        for item in value:
+            text = str(item).strip()
+            if text:
+                tags.append(text)
+        return tags
+    return []
+
+
+def _coerce_messages(
+    query: Union[str, Sequence[Dict[str, Any]]]
+) -> List[Dict[str, Any]]:
+    if isinstance(query, str):
+        try:
+            data = json.loads(query)
+            if isinstance(data, list):
+                return [item for item in data if isinstance(item, dict)]
+        except Exception:
+            pass
+        return [{"role": "user", "content": query}]
+    if isinstance(query, Sequence):
+        return [dict(m) for m in query if isinstance(m, dict)]
+    return [{"role": "user", "content": str(query)}]
+
+
+def _prepare_query_input(
+    query: Union[str, Sequence[Dict[str, Any]]],
+    *,
+    max_messages: int = 8,
+    max_chars_per_message: int = 400,
+) -> Tuple[List[Dict[str, Any]], str, str]:
+    messages = _coerce_messages(query)
+
+    def _stringify(value: Any) -> str:
+        if isinstance(value, (dict, list)):
+            try:
+                return json.dumps(value, ensure_ascii=False)
+            except TypeError:
+                return str(value)
+        return str(value)
+
+    focus = ""
+    for msg in reversed(messages):
+        if str(msg.get("role") or "").lower() == "user":
+            focus = _stringify(msg.get("content", ""))
+            if focus:
+                break
+
+    label_map = {
+        "user": "User",
+        "assistant": "Assistant",
+        "agent": "Agent",
+        "system": "System",
+        "function": "Function",
+        "developer": "Developer",
+    }
+    lines: List[str] = []
+    for msg in list(messages)[-max_messages:]:
+        role_raw = (msg.get("role") or "").lower()
+        if role_raw == "system":
+            continue
+        role = label_map.get(role_raw, "Message")
+        snippet = _stringify(msg.get("content", "")).strip()
+        if len(snippet) > max_chars_per_message:
+            snippet = snippet[:max_chars_per_message].rstrip() + "..."
+        lines.append(f"{role}: {snippet}")
+
+    conversation = "\n".join(lines) if lines else ""
+    if not focus:
+        focus = conversation
+    return messages, conversation, focus
