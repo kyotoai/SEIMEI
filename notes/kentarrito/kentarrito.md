@@ -5140,9 +5140,23 @@ Read all the content of relevant files very carefully first. Even if you find an
 5. use its own module-level logger for model conversion in train/utils.py
 6. all modules should use a single logging.getLogger("seimei") 
 '''
+    
+    - [x] Temporary: Adjust to kyotoai format
+        - `Expecting value: line 1 column 1 (char 0)` -> due to server side format error
+'''
+I realized that the format like
+"message": [{"role":"user", "content":"How to tune a reward model?"}]
+is not supported in KyotoAI's API service. So please only use the format like
+"message": ["How to tune a reward model?"]
+for requesting.
+
+the element inside the list corresponds to the content of user role. Also KyotoAI's service will support both of the formats above soon, so please just comment out the code now and mark where you insert new code so that I can easily restore the code now.
+'''
 
     - [ ] Debug quick_start_klg_optimizer.py
-        - [ ] `Expecting value: line 1 column 1 (char 0)`
+
+
+## Mar 22
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 - [ ] Make feedback agent abolishing save_knowledge_config

@@ -571,11 +571,6 @@ class LLMClient:
                 entry.pop(drop_key, None)
             payload_msgs.append(entry)
 
-        logger.debug("\n----- [llm] payload_msgs -----\n %s", payload_msgs)
-
-        #print("\n----------")
-        #print("payload_msgs: ", payload_msgs)
-
         estimated_prompt_tokens = self._estimate_prompt_tokens(payload_msgs)
         if token_limiter:
             token_limiter.ensure_available()
@@ -592,12 +587,38 @@ class LLMClient:
         if self.using_generate:
             prompt_text = self._render_prompt(payload_msgs)
             payload = self._build_generate_payload(prompt_text, extra_params)
+        elif self.using_kyotoai:
+            # ---- [KYOTOAI TEMPORARY FORMAT] --------------------------------
+            # KyotoAI currently only accepts a flat list of strings in "message".
+            # Each element is the content of a user-role message.
+            # TODO: remove this branch and uncomment the block below once
+            #       KyotoAI supports the full OpenAI messages format.
+            user_contents = [
+                _stringify_content(msg.get("content", ""))
+                for msg in payload_msgs
+                if str(msg.get("role") or "").lower() == "user"
+            ]
+            payload = {
+                "model": self.model,
+                "message": user_contents,
+                "type": "llm",
+            }
+            # ---- [COMMENTED OUT — restore when KyotoAI supports OpenAI format] ----
+            # payload = {
+            #     "model": self.model,
+            #     "messages": payload_msgs,
+            # }
+            # payload.update(self._filter_payload(extra_params))
+            # -----------------------------------------------------------------------
         else:
             payload = {
                 "model": self.model,
                 "messages": payload_msgs,
             }
             payload.update(self._filter_payload(extra_params))
+
+
+        logger.debug("\n----- [llm] payload -----\n %s", payload)
 
         headers = {"Content-Type": "application/json", **self.extra_headers}
         if self.api_key and "Authorization" not in headers:
@@ -635,16 +656,24 @@ class LLMClient:
 
             try:
                 data = resp.json()
+                logger.debug("\n----- [llm] data -----\n %s", data)
+
             except Exception as exc:
                 raise RuntimeError(
                     f"LLMClient: failed to parse JSON response from {url}. "
                     f"Status: {resp.status_code}, Body: {resp.text[:500]!r}"
                 ) from exc
             self.last_response = data
-            content = self._extract_content(data)
 
-            #print("\n----------")
-            #print("content: ", content)
+            ## This part should be modified
+
+            # original (this is same as openai format)
+            # content = self._extract_content(data)
+
+            # Just for kyotoai format. this should be same as openai
+            content = data[1]["content"][0]["text"]
+
+            logger.debug("\n----- [llm] content -----\n %s", content)
 
             if isinstance(data, dict):
                 usage_raw = data.get("usage") or {}
