@@ -36,7 +36,7 @@ from seimei.train.sampling_utils import (
 # ---------------------------------------------------------------------------
 
 _SEIMEI_INIT_KEYS: frozenset = frozenset({
-    "agent_config", "llm_config", "rm_config", "log_dir", "max_steps",
+    "agent_config", "llm_config", "rm_config", "log_dir", "log_level", "max_steps",
     "allow_code_exec", "allowed_commands", "approval_callback",
     "agent_log_head_lines", "max_tokens_per_question", "llm_client_class",
 })

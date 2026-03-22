@@ -5087,7 +5087,7 @@ Make seimei_dataset/default.json following
 
 - [ ] Debug 1 klg_optim
     - [x] Fix API key usage
-'''
+"""
 Modify the API key algorithm in llm.py into follows;
 
 1. Check if KYOTOAI_API_KEY is set. If it's set, use the following format for llm request
@@ -5111,9 +5111,9 @@ curl -X POST https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1
 Also write how the api key algorithm works at the beginning of llm.py. You should also write the usage of llm.chat in it too.
 
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
-'''
+"""
 
-'''
+"""
 1. Use all the format openai api call supports. The data field directly goes to openai api call.
 2. the output is completely same as openai api output.
 3. if api_key is passed directly, use it instead of env var
@@ -5123,7 +5123,7 @@ I will change the instruction a bit!
 If llm_config is explicitly set by user, follow that first. If base_url in llm_config is set, use the url instead of https://hm465ys5n3.execute-api.ap-southeast-2.amazonaws.com/prod/v1/rmsearch or openai's url. Also as I mentioned in 3, use api_key in llm_config if it's set. So in conclusion, the priority: llm_config -> KYOTOAI_API_KEY -> OPENAI_API_KEY -> raise Exception.
 
 Any other question? If not, modify it.
-'''
+"""
 
     - [x] Substitute all `print` by `logger`
 '''
@@ -5140,6 +5140,8 @@ Read all the content of relevant files very carefully first. Even if you find an
 5. use its own module-level logger for model conversion in train/utils.py
 6. all modules should use a single logging.getLogger("seimei") 
 '''
+
+## Mar 22
     
     - [x] Temporary: Adjust to kyotoai format
         - `Expecting value: line 1 column 1 (char 0)` -> due to server side format error
@@ -5154,9 +5156,9 @@ the element inside the list corresponds to the content of user role. Also KyotoA
 '''
 
     - [ ] Debug quick_start_klg_optimizer.py
-
-
-## Mar 22
+        - [x] log_level=logging.DEBUG doesn't work in KlgOptimizer function
+            -> fixed by adding "log_level" in _SEIMEI_INIT_KEYS
+        - [ ] 
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 - [ ] Make feedback agent abolishing save_knowledge_config

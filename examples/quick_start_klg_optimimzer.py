@@ -1,5 +1,6 @@
 import json
 from seimei.train import KlgOptimizer
+import logging
 
 # Example 1:
 # Load the bundled SEIMEI-library Q&A dataset (15 rows, easy → hard)
@@ -27,5 +28,6 @@ new_knowledge = KlgOptimizer(
     llm_config={"model": "gpt-5-nano"},
     agent_config={"agents": ["code_act", "think", "answer"]},
     log_dir="seimei_runs/",
+    log_level=logging.DEBUG,
 )
 # new_knowledge is a list of dicts in the same format as default.csv
