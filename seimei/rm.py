@@ -75,10 +75,6 @@ class RM:
 
         final_timeout = timeout if timeout is not None else config.get("timeout")
 
-        #print()
-        #print("--- rmsearch 1 ---")
-        #print("query: ", query)
-
         try:
             return self._rmsearch_http(
                 url=url,
@@ -121,6 +117,8 @@ class RM:
             "type": "rm",
         }
 
+        logger.debug("\n----- [rm] payload -----\n %s", payload)
+
         api_key = os.getenv("KYOTOAI_API_KEY")
         if not api_key:
             logger.warning("[seimei] KYOTOAI_API_KEY variable is not set")
@@ -137,6 +135,8 @@ class RM:
             data = response.json()
         except ValueError as exc:
             raise RuntimeError(f"Invalid JSON from RMSearch: {exc}") from exc
+        
+        logger.debug("\n----- [rm] data -----\n %s", data)
 
         return self._parse_rmsearch_response(
             data=data,
