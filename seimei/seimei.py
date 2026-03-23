@@ -390,6 +390,10 @@ class seimei:
             text = str(text_value).strip() if text_value is not None else ""
             entry_id = self._coerce_optional_int(raw.get("id"))
             load_path_value = raw.get("load_knowledge_path")
+            if not load_path_value:
+                load_knowledge_name = raw.get("load_knowledge_name")
+                if load_knowledge_name:
+                    load_path_value = f"seimei_knowledge/{load_knowledge_name}.csv"
             load_path = self._coerce_path_string(load_path_value)
             is_base_load = bool(load_path) and not step_spec_present
             if is_base_load:
@@ -1879,11 +1883,11 @@ class seimei:
         return_usage: bool = True,
         run_name: Optional[str] = None,
         workspace: Optional[Union[str, Path]] = None,
-        agent_search_mode: str = "llm",
+        agent_search_mode: str = "klg",
         agent_search_config: Optional[Sequence[Dict[str, Any]]] = None,
         knowledge_search_mode: str = "rm",
         knowledge_search_config: Optional[Sequence[Dict[str, Any]]] = None,
-        knowledge_load_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_load_config: Optional[Sequence[Dict[str, Any]]] = [{"load_knowledge_name": "default"}],
         knowledge_generate_config: Optional[Dict[str, Any]] = None,
     ) -> Dict[str, Any]:
         # Make a deep-ish copy so we can append steps
@@ -1916,6 +1920,20 @@ class seimei:
             default="rm",
             label="knowledge_search_mode",
         )
+
+        # Fall back rm modes to llm when KYOTOAI_API_KEY is not available
+        _kyotoai_key_set = bool(os.getenv("KYOTOAI_API_KEY"))
+        if normalized_knowledge_mode == "rm" and not _kyotoai_key_set:
+            logger.warning(
+                "[seimei] knowledge_search_mode='rm' requires KYOTOAI_API_KEY which is not set; falling back to 'llm'"
+            )
+            normalized_knowledge_mode = "llm"
+        if normalized_agent_mode == "rm" and not _kyotoai_key_set:
+            logger.warning(
+                "[seimei] agent_search_mode='rm' requires KYOTOAI_API_KEY which is not set; falling back to 'llm'"
+            )
+            normalized_agent_mode = "llm"
+
         normalized_agent_search_config = self._normalize_search_config(
             agent_search_config,
             allowed={"llm", "rm", "klg"},
@@ -1943,6 +1961,15 @@ class seimei:
             else:
                 self.knowledge_store = {}
             self.shared_ctx["knowledge"] = self.knowledge_store
+
+        # Fall back klg to rm (preferred) or llm when knowledge store is empty
+        if normalized_agent_mode == "klg" and not self.knowledge_store:
+            _klg_fallback = "rm" if _kyotoai_key_set else "llm"
+            logger.warning(
+                "[seimei] agent_search_mode='klg' but knowledge store is empty; falling back to '%s'",
+                _klg_fallback,
+            )
+            normalized_agent_mode = _klg_fallback
 
         run_id = str(uuid.uuid4())
         run_dir = self._make_run_dirs(run_id)
