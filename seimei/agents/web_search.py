@@ -115,10 +115,6 @@ class web_search(Agent):
         knowledge_payload = knowledge_entries[:6]
         knowledge_texts = [item.get("text") for item in knowledge_payload if item.get("text")]
         knowledge_ids = [item.get("id") for item in knowledge_payload if item.get("id") is not None]
-        if knowledge_payload:
-            lines.append("")
-            lines.append("Knowledge heuristics considered:")
-            lines.extend(f"- {item['text']}" for item in knowledge_payload if item.get("text"))
         if refinement_note:
             lines.append("")
             lines.append(refinement_note)
@@ -239,7 +235,7 @@ async def _refine_query(
         "If no improvement is needed, repeat the original query verbatim.",
     ]
     if knowledge_block:
-        system_lines.append("Relevant knowledge:\n" + knowledge_block)
+        system_lines.append("MANDATORY INSTRUCTIONS — you must follow these exactly when forming the search query:\n" + knowledge_block)
     try:
         refined_query_text, _ = await llm.chat(
             messages=messages,

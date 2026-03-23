@@ -5209,17 +5209,54 @@ I think output processing is quite wrong now, so please carefully check that. In
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
 
-        - [ ] Set default usage (kyotoai_api -> rm klg search, openai_api -> llm klg search)
-'''
-
-'''
-
         - [x] Add logger.debug in RM class
-        - [ ] Fix issue that only answer agent is chosen in quick_start_klg_optimizer.py
-        - [ ] Answer agent doesn't use knowledge
+        - [x] Fix issue that only answer agent is chosen in quick_start_klg_optimizer.py
+            -> probably algorithm should be changed a bit. It cannot make knowledge choice different (always pick the same and cannot escape from the hole)
         - [x] "<query>" and "User query:" are unnecessary
+        - [x] knowledge pool is bad now. Need to make it more general -> I want them to be fixed automatically. don't modify manually.
+
+-> As expected, seimei improved.csv explicitly writes answer and hack reward. Need to make the prompt better. 
+
+
+## Mar 23
+
+ 
+- [x] Klg prompt fix. Answer agent doesn't use knowledge now. Need to fix it. (knowledge is hard to detect. write it more concisely.)
+- [x] Set default usage (kyotoai_api -> rm klg search, openai_api -> llm klg search)
+- [x] allow load_knowledge_name in knowledge_load_config
+'''
+Please read all the relevant files and fix the following features
+
+1. Right now all the agents prompt just add knowledge as a extra hint, but knowledge is a type of instruction, so I want you to integrate it into prompt in each agent so that llm listens to the knowledge more than just a hint. Here's the example of knowledge;
+code_act: "cap results and summarize scans: report file count and first 3 matches per file; stream or chunk output to avoid token blowups; skip listing large blocks (like long README sections) unless asked."
+answer: "Improve final answers: summarize user goal up front, give a concise SEIMEI definition from docs, then offer concrete next steps (deep scan, extract definition, summarize sections)."
+
+2. Now knowledge_load_config doesn't support load_knowledge_name field but support only load_knowledge_path like [{"load_knowledge_path": "seimei_knowledge/default.csv"}]. Allow load_knowledge_name like [{"load_knowledge_name": "default"}] and take it as seimei_knowledge/{load_knowledge_name}.csv.
+
+3. I want you to set the fall backs of default values properly.
+        agent_search_mode: str = "klg",
+        agent_search_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_search_mode: str = "rm",
+        knowledge_search_config: Optional[Sequence[Dict[str, Any]]] = None,
+        knowledge_load_config: Optional[Sequence[Dict[str, Any]]] = [{"load_knowledge_name": "default"}],
+    If kyotoai api key is not set, it cannot use "rm", so please warn that thing and use "llm" mode in the case. If you cannot find knowledge csv file, warn that and use "rm" or "llm" in agent_search_mode. (prefer "rm"). 
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
+'''
+
+'''
+Q1. b
+Q2. b
+Q3. b
+Q4. yes
+'''
 
 - [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+'''
+4. Now, prompts are scattered over many files and hard to modify. please make seimei/prompts/default.py and migrate prompts in seimei/agent.csv
+'''
+
+- [ ] Need to add system prompt to rm system.
 '''
 
 '''

@@ -177,7 +177,7 @@ async def _generate_patch_with_llm(
     ]
     knowledge_block = _knowledge_hint_block(knowledge_entries)
     if knowledge_block:
-        system_lines.append("Relevant edit heuristics:\n" + knowledge_block)
+        system_lines.append("MANDATORY INSTRUCTIONS — follow these editing rules exactly:\n" + knowledge_block)
     system_prompt = "\n\n".join(system_lines)
 
     try:

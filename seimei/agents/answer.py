@@ -59,7 +59,7 @@ class answer(Agent):
         )
         if knowledge_entries:
             knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
-            system_prompt += "\n\nAdditional answer agent knowledge:\n" + knowledge_block
+            system_prompt += "\n\nMANDATORY INSTRUCTIONS — you must follow these exactly:\n" + knowledge_block
         segments: List[str] = []
         if user_question.strip():
             segments.append(f'The user asked: "{user_question.strip()}".')

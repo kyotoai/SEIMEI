@@ -318,7 +318,7 @@ async def _generate_command(
     '''
 
     if knowledge_hint:
-        system_lines.append("Relevant knowledge:\n" + knowledge_hint)
+        system_lines.append("MANDATORY INSTRUCTIONS — you must follow these exactly:\n" + knowledge_hint)
 
     try:
         response, _ = await llm.chat(

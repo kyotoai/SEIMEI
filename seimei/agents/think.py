@@ -142,7 +142,7 @@ class think(Agent):
             question_section = user_request or "[missing user request]"
             analysis_input = (
                 f"User question:\n{question_section}\n\n"
-                f"Relevant knowledge cues:\n{knowledge_section}\n\n"
+                f"MANDATORY GUIDELINES — you must follow these exactly:\n{knowledge_section}\n\n"
                 f"Recent agent findings:\n{findings_section}\n\n"
                 "Provide 2 sentences (3 max). "
                 "Sentence 1: summarize the most important facts or evidence above. "
