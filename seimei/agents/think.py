@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 from seimei.agent import Agent, register
 from seimei.knowledge.utils import prepare_knowledge_payload
 from seimei.llm import format_agent_history
+from seimei.prompts.default import THINK_SYSTEM_PROMPT, THINK_USER_PROMPT
 
 
 def _extract_last_user_message(messages: List[Dict[str, Any]]) -> str:
@@ -140,20 +141,12 @@ class think(Agent):
             knowledge_section = "\n".join(f"- {text}" for text in chosen_texts) or "- None."
             findings_section = findings_block or "- None yet."
             question_section = user_request or "[missing user request]"
-            analysis_input = (
-                f"User question:\n{question_section}\n\n"
-                f"MANDATORY GUIDELINES — you must follow these exactly:\n{knowledge_section}\n\n"
-                f"Recent agent findings:\n{findings_section}\n\n"
-                "Provide 2 sentences (3 max). "
-                "Sentence 1: summarize the most important facts or evidence above. "
-                "Sentence 2 (and 3 if absolutely needed): outline the single next action or question the agents should pursue."
-                "Be concrete, avoid bullet points, and do not mention this is a summary."
+            analysis_input = THINK_USER_PROMPT.format(
+                question_section=question_section,
+                knowledge_section=knowledge_section,
+                findings_section=findings_section,
             )
-            analysis_system_prompt = (
-                "You are the think agent coordinating the next action in a multi-agent system. "
-                "Analyze the supplied context and respond succinctly with 2 sentences (3 max): "
-                "what you now believe plus the immediate next step."
-            )
+            analysis_system_prompt = THINK_SYSTEM_PROMPT
             try:
                 llm_response, _ = await llm.chat(
                     messages=[{"role": "user", "content": analysis_input}],

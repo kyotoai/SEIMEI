@@ -9,6 +9,7 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 from seimei.agent import Agent, register
+from seimei.prompts.default import OVERPASS_SYSTEM_PROMPT
 
 OVERPASS_URL = "https://overpass-api.de/api/interpreter"
 _DEFAULT_RADIUS_M = 800
@@ -130,17 +131,11 @@ async def _llm_generate_query(
         hints.append(f"Coordinate hint: lat={fallback_lat}, lon={fallback_lon}")
     if fallback_radius:
         hints.append(f"Approximate radius hint: {fallback_radius} meters")
-    prompt = (
-        "Convert the request into an Overpass QL query that fetches OSM buildings near a specific point.\n"
-        "Always respond with JSON using keys: query (string), latitude, longitude, radius_m, filters (array of 'key=value'), reason.\n"
-        "The query must include [out:json], target building ways + relations, and use the provided or inferred coordinates.\n"
-        "If coordinates are unknown, set query=\"\" and explain why inside reason."
-    )
     content = "\n".join(hints)
     try:
         llm_output, _ = await llm.chat(
             messages=[{"role": "user", "content": content}],
-            system=prompt,
+            system=OVERPASS_SYSTEM_PROMPT,
         )
     except Exception as exc:
         return {}, f"LLM query generation failed: {exc}"

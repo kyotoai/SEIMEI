@@ -14,6 +14,7 @@ import requests
 
 from seimei.agent import Agent, register
 from seimei.agents.utils import pdf_bytes_to_text
+from seimei.prompts.default import WEB_SEARCH_REFINE_SYSTEM_PROMPT_BASE, WEB_SEARCH_REFINE_KNOWLEDGE_HINT
 
 _MAX_SEARCH_RESULTS = 8
 _MAX_FETCHED_PAGES = 4
@@ -228,18 +229,13 @@ async def _refine_query(
     knowledge_block = "\n".join(
         f"- {item['text']}" for item in knowledge_entries[:6] if item.get("text")
     )
-    system_lines = [
-        "You refine the user's latest request into a focused web search query.",
-        "Return a single-line search query and nothing else.",
-        "Preserve key entities, time ranges, and constraints from the request.",
-        "If no improvement is needed, repeat the original query verbatim.",
-    ]
+    system = WEB_SEARCH_REFINE_SYSTEM_PROMPT_BASE
     if knowledge_block:
-        system_lines.append("MANDATORY INSTRUCTIONS — you must follow these exactly when forming the search query:\n" + knowledge_block)
+        system += "\n\n" + WEB_SEARCH_REFINE_KNOWLEDGE_HINT.format(knowledge_block=knowledge_block)
     try:
         refined_query_text, _ = await llm.chat(
             messages=messages,
-            system="\n\n".join(system_lines),
+            system=system,
         )
         candidate = refined_query_text.strip()
         if candidate:

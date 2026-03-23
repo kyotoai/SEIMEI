@@ -7,54 +7,17 @@ from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
 from seimei.editing import ApplyResult, PatchApplyError, PatchParseError, apply_patch_to_workspace
+from seimei.prompts.default import (
+    APPLY_PATCH_FORMAT_HINT,
+    EDIT_FILE_SYSTEM_PROMPT_BASE,
+    EDIT_FILE_KNOWLEDGE_HINT_PREFIX,
+)
 
 
 _PATCH_BLOCK_RE = re.compile(r"(?s)\*\*\* Begin Patch.*?\*\*\* End Patch")
 _CD_PATTERN = re.compile(
     r"cd\s+(?P<target>(?:\"[^\"]+\"|'[^']+'|[^&\n]+?))\s*&&\s*apply_patch",
     re.IGNORECASE,
-)
-
-
-APPLY_PATCH_FORMAT_HINT = (
-    "Ensure your response is a valid apply_patch payload. The body must follow the grammar:\n"
-    "*** Begin Patch\n"
-    "*** Update File: relative/path\n"
-    "<EDIT insert=<line>>\n"
-    "<text to insert before <line>>\n"
-    "</EDIT>\n"
-    "<EDIT replace=<start>-<end>>\n"
-    "<replacement text for the deleted range>\n"
-    "</EDIT>\n"
-    "*** End Patch\n\n"
-    "Rules:\n"
-    "- Use only '*** Update File:' operations.\n"
-    "- Line numbers are 1-based and refer to the original file before any hunks are applied.\n"
-    "- If the same file appears in multiple '*** Update File:' blocks, line numbers still refer to the same original file state.\n"
-    "- '<EDIT insert=<line>>' inserts text before <line> and must include at least one inserted line.\n"
-    "- '<EDIT replace=<start>-<end>>' replaces that inclusive range. Use empty replacement text to delete only.\n"
-    "- Every edit block must end with '</EDIT>'.\n"
-    "- Do not use '+'/'-' line prefixes.\n"
-    "- In the new format, each <EDIT ...> body is plain replacement text only.\n"
-    "- If a line should stay unchanged but is included in the replaced range, write it normally (no prefix).\n\n"
-    #"INVALID example (do not do this):\n"
-    #"*** Begin Patch\n"
-    #"*** Update File: README.md\n"
-    #"<EDIT replace=35-36>\n"
-    #"-old line\n"
-    #"+new line\n"
-    #"</EDIT>\n"
-    #"*** End Patch\n\n"
-    "VALID example:\n"
-    "*** Begin Patch\n"
-    "*** Update File: README.md\n"
-    "<EDIT insert=35>\n"
-    "I'm from Tokyo"
-    "</EDIT>\n"
-    "<EDIT replace=35-36>\n"
-    "But I'm in Kyoto now"
-    "</EDIT>\n"
-    "*** End Patch"
 )
 
 
@@ -168,17 +131,10 @@ async def _generate_patch_with_llm(
     messages: Sequence[Dict[str, Any]],
     knowledge_entries: Sequence[Dict[str, Any]],
 ) -> Tuple[Optional[str], Optional[str], Optional[str], str, Optional[str]]:
-    system_lines = [
-        "You are the edit_file agent in a coding workflow.",
-        "Generate a single valid apply_patch payload that implements the requested edit.",
-        "Use only relative file paths in the workspace.",
-        "Output only the patch text and nothing else (no markdown fences, no commentary).",
-        APPLY_PATCH_FORMAT_HINT,
-    ]
+    system_prompt = EDIT_FILE_SYSTEM_PROMPT_BASE
     knowledge_block = _knowledge_hint_block(knowledge_entries)
     if knowledge_block:
-        system_lines.append("MANDATORY INSTRUCTIONS — follow these editing rules exactly:\n" + knowledge_block)
-    system_prompt = "\n\n".join(system_lines)
+        system_prompt += "\n\n" + EDIT_FILE_KNOWLEDGE_HINT_PREFIX.format(knowledge_block=knowledge_block)
 
     try:
         llm_output, _ = await llm.chat(

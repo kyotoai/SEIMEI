@@ -8,6 +8,7 @@ from typing import Any, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from seimei.agent import Agent, register
 from seimei.knowledge.utils import prepare_knowledge_payload
+from seimei.prompts.default import CODE_ACT_SYSTEM_PROMPT, CODE_ACT_KNOWLEDGE_HINT_LINE
 
 _SAFE_DEFAULTS = [
     "python3",
@@ -273,57 +274,14 @@ async def _generate_command(
 
     knowledge_hint = "\n".join(f"- {item['text']}" for item in knowledge_entries)
 
-    system_lines = [
-        "You turn user analysis requests into one safe POSIX shell command.",
-        f"Only use commands that start with: {allowed_hint}.",
-        "Output exactly one command only. Do not chain commands with `;`, `&&`, or `||`.",
-        "Wrap the command in `<cmd>` and `</cmd>` with nothing else before or after.",
-        "Treat user messages as instructions and tool messages as context from earlier command outputs.",
-
-        "Use this default workflow: `ls` for folder/file meta info, then `cat` for file content, then `rg` only if keyword or identifier search is needed.",
-        "For folder or file meta analysis, use `ls`.",
-        "For file content, use `cat`.",
-        "Use `cat -n` when line numbers are needed, especially before editing or reasoning about specific lines.",
-        "Use `rg` only for searching keywords, variable names, class names, function names, or other identifiers.",
-        "Do not use `rg` for simple file viewing.",
-        "Use Python only in special cases where shell commands are not enough.",
-        "For PDF files, use Python and call `seimei.agents.utils.view_pdf_text`.",
-        "When reading a PDF, print at least 2000 characters if available.",
-        "If Python is needed, keep it minimal and use `python3 - <<'PY'` ... `PY`.",
-        "The command inside `<cmd>` must include everything needed, including heredoc markers.",
-        "Always produce the shortest command that still shows enough evidence for the task.",
-    ]
-
-    '''
-    system_lines = [
-        "You translate user analysis requests into a single safe POSIX shell command.",
-        f"Only use commands that start with: {allowed_hint}.",
-        "Always output exactly one command. Never chain multiple commands with `;`, `&&`, or `||`.",
-        "For directory listing, use `ls` (not `ls -la` or other verbose flags) unless the user explicitly asks for details.",
-        "For code/file analysis, strongly prefer shell-native inspection commands: `ls`, `cat -n`, or `sed`.",
-        "Use Python only as a last resort when the task cannot be solved with shell commands.",
-        "When the target is a PDF file, do not use `cat`; use Python and call `seimei.agents.utils.view_pdf_text`.",
-        "Preferred PDF command pattern: `python3 - <<'PY'` then `from seimei.agents.utils import view_pdf_text` and `print(view_pdf_text('path/to/file.pdf'))`, ending with `PY`.",
-        "Before editing or reasoning about specific code lines, see meta info by `ls` and capture context with `cat -n` (or equivalent line-numbered output).",
-        "Use `rg` only when searching variable names, class names, function names, or other identifiers across the codebase.",
-        "Do not use `rg` for simple single-file viewing or generic text inspection where `cat -n`/`sed` is sufficient.",
-        "Use `sed` for focused line-range extraction whenever possible.",
-        "If Python is truly required, keep it minimal and emit multi-line Python via `python - <<'PY'` ... `PY`.",
-        "Wrap the command in `<cmd>` and `</cmd>`. Output nothing before or after the tags.",
-        "Ensure the command text inside `<cmd>` contains everything needed, including any heredoc markers.",
-        "Your entire goal is to produce the shortest viable command that inspects the mentioned file and "
-        "reports the necessary evidence.",
-        "Treat user messages as instructions and tool messages as prior command outputs for context.",
-    ]
-    '''
-
+    system = CODE_ACT_SYSTEM_PROMPT.format(allowed_hint=allowed_hint)
     if knowledge_hint:
-        system_lines.append("MANDATORY INSTRUCTIONS — you must follow these exactly:\n" + knowledge_hint)
+        system += "\n" + CODE_ACT_KNOWLEDGE_HINT_LINE.format(knowledge_hint=knowledge_hint)
 
     try:
         response, _ = await llm.chat(
             messages=chat_history,
-            system="\n".join(system_lines),
+            system=system,
         )
     except Exception:
         return None, knowledge_entries

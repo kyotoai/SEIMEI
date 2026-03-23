@@ -33,6 +33,7 @@ from .knowledge import DEFAULT_RUN_PROMPT, generate_knowledge_from_runs, load_kn
 from .logging_utils import LogColors, colorize, supports_color, setup_seimei_logging
 from .utils import format_query_for_rmsearch, format_key_for_rmsearch, _coerce_tags, _coerce_messages, _prepare_query_input, _normalize_purpose
 from .rm import RM
+from .prompts.default import ROUTING_SYSTEM_PROMPT, ROUTING_USER_PROMPT_DEFAULT
 
 LOG_BLOCK_COLOR = LogColors.CYAN
 ANSWER_BLOCK_COLOR = LogColors.BOLD_MAGENTA
@@ -1161,28 +1162,10 @@ class seimei:
                     f"\nCurrent agent step: {step_number}. "
                     #"Choose the agent whose skills progress this specific step."
                 )
-        ''' performs bad with gpt-oss
-        system_prompt = (
-            "You rank candidate keys for relevance according to the recent conversation among the user, assistants, and tools. "
-            "Return a JSON array, each element containing: "
-            '{"index": <1-based index of the candidate>, "score": optional float between 0 and 1, "reason": short string}. '
-            "Only return up to the requested number of entries. Respond with JSON only.\n\n"
-            f"Candidates:\n{numbered}\n"
-            f"Select up to {k} candidates most relevant to the conversation."
-        )
-        '''
-
-        system_prompt = (
-            "Select one of candidate agents to be acted according to user system and the recent conversation among the user, assistants, and agents. You should carefully read them and think what agent (next action) should be done in next step. "
-            "Return a JSON array, each element containing: "
-            '{"reason": short string, "index": <1-based index of the candidate>, "score": optional float between 0 and 1}. '
-            "Only return up to the requested number of entries. Respond with JSON only.\n"
-            f"Candidates:\n{numbered}\n"
-            f"Select up to {k} candidates most relevant to the conversation."
-        )
+        system_prompt = ROUTING_SYSTEM_PROMPT.format(numbered=numbered, k=k)
         if step_note:
             system_prompt = f"{system_prompt}{step_note}"
-        user_prompt = focus_text or "There is no explicit user question. Choose the candidate that best progresses the conversation."
+        user_prompt = focus_text or ROUTING_USER_PROMPT_DEFAULT
         if reason_hint:
             user_prompt += f"\nAdditional context: {reason_hint}"
         if step_number is not None and not focus_text:

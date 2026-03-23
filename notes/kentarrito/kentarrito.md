@@ -5251,15 +5251,21 @@ Q3. b
 Q4. yes
 '''
 
-- [ ] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
+- [x] Gather prompts into one file (to show not only knowledge.csv file is our outcome)
 '''
-4. Now, prompts are scattered over many files and hard to modify. please make seimei/prompts/default.py and migrate prompts in seimei/agent.csv
+Now, prompts are scattered over many files and hard to modify. Please make seimei/prompts/default.py and migrate all prompts in seimei/agents/ and seimei/seimei.py and import the prompts from each file.
+
+Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
 '''
 
-- [ ] Need to add system prompt to rm system.
+'''
+1. Move APPLY_PATCH_FORMAT_HINT to prompts/default.py as well
+2. (a) Export a format-string template with {placeholders}
+3. user prompts too
+4. discard it
 '''
 
-'''
+
 
 - [ ] Make feedback agent abolishing save_knowledge_config
 '''
@@ -5272,6 +5278,13 @@ Q4. yes
     - [ ] API key usage
 - [ ] Recreate https://www.kyotoai.net/docs
 - [ ] Make demo video of learning
+
+- [ ] Need to add system prompt to rm system.
+'''
+
+'''
+
+- [ ] reset endpoint in runpod
 
 - [ ] Publish seimei==0.1.0
 

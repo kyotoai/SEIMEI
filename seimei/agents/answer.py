@@ -5,6 +5,15 @@ from typing import Any, Dict, List, Optional
 from seimei.agent import Agent, register
 from seimei.llm import TokenLimitExceeded
 from seimei.knowledge.utils import prepare_knowledge_payload
+from seimei.prompts.default import (
+    ANSWER_SYSTEM_PROMPT,
+    ANSWER_KNOWLEDGE_HINT_PREFIX,
+    ANSWER_USER_PROMPT_WITH_QUESTION,
+    ANSWER_USER_PROMPT_NO_QUESTION,
+    ANSWER_USER_PROMPT_FINDINGS_HEADER,
+    ANSWER_USER_PROMPT_NO_FINDINGS,
+    ANSWER_USER_PROMPT_CLOSING,
+)
 
 
 def _latest_user_message(messages: List[Dict[str, Any]]) -> str:
@@ -52,28 +61,24 @@ class answer(Agent):
         knowledge_subset = knowledge_entries[:8]
         knowledge_payload, knowledge_log_texts, knowledge_ids = prepare_knowledge_payload(knowledge_subset)
 
-        system_prompt = (
-            "You are the final answer agent for SEIMEI. "
-            "Using the user question and the collected findings, produce a concise, helpful reply. "
-            "Reference key observations and highlight next steps if needed."
-        )
+        system_prompt = ANSWER_SYSTEM_PROMPT
         if knowledge_entries:
             knowledge_block = "\n".join(f"- {item['text']}" for item in knowledge_entries[:8])
-            system_prompt += "\n\nMANDATORY INSTRUCTIONS — you must follow these exactly:\n" + knowledge_block
+            system_prompt += ANSWER_KNOWLEDGE_HINT_PREFIX.format(knowledge_block=knowledge_block)
         segments: List[str] = []
         if user_question.strip():
-            segments.append(f'The user asked: "{user_question.strip()}".')
+            segments.append(ANSWER_USER_PROMPT_WITH_QUESTION.format(user_question=user_question.strip()))
         else:
-            segments.append("The user did not include an explicit question; infer their needs from the findings.")
+            segments.append(ANSWER_USER_PROMPT_NO_QUESTION)
 
         if findings:
-            segments.append("Here are the most relevant findings gathered so far:")
+            segments.append(ANSWER_USER_PROMPT_FINDINGS_HEADER)
             for item in findings:
                 segments.append(f"- {item['agent']}: {item['content']}")
         else:
-            segments.append("No intermediate findings were recorded.")
+            segments.append(ANSWER_USER_PROMPT_NO_FINDINGS)
 
-        segments.append("Compose a clear, helpful reply that addresses the user's needs and suggests next steps when appropriate.")
+        segments.append(ANSWER_USER_PROMPT_CLOSING)
         user_prompt = "\n".join(segments)
 
         try:
