@@ -1,7 +1,0 @@
-obstacle_density_per_km,pedestrian_present,scene_features,sensor_noise_level,traffic_light,weather
-5,false,"{""vehicle_speed_kmh"": 60}",0.05,red,clear
-3,false,"{""vehicle_speed_kmh"": 67}",0.05,green,clear
-2,false,"{""vehicle_speed_kmh"": 66}",0.05,green,clear
-2,false,"{""vehicle_speed_kmh"": 40}",0.05,green,clear
-0,false,"{""vehicle_speed_kmh"": 58}",0.05,green,clear
-2,false,"{""vehicle_speed_kmh"": 62}",0.05,red,clear
