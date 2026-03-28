@@ -5256,7 +5256,7 @@ Q4. yes
 Now, prompts are scattered over many files and hard to modify. Please make seimei/prompts/default.py and migrate all prompts in seimei/agents/ and seimei/seimei.py and import the prompts from each file.
 
 Read all the content of relevant files very carefully first. Even if you find any small ambiguous point in my instructions after investigating the files, ask me back before you do the modification.
-'''
+''' 
 
 '''
 1. Move APPLY_PATCH_FORMAT_HINT to prompts/default.py as well
@@ -5265,28 +5265,40 @@ Read all the content of relevant files very carefully first. Even if you find an
 4. discard it
 '''
 
+- [ ] Add more condition text to default.csv
+- [ ] Improve klg_optimizer prompt (add condition)
 
+- [ ] Need to add system prompt to rm system.
+    - [ ] reset kyotoai endpoint in runpod
+    -> better to add them into query? if so, dont need to modify endpoint
 
-- [ ] Make feedback agent abolishing save_knowledge_config
-'''
-
-'''
-
-- [ ] Add klg_optimizer in README
-- [ ] Make examples cleaner
 - [ ] Make the README much better
-    - [ ] API key usage
+    - [x] API key usage
+    - [ ] Add Usage overview
+    - [ ] Add klg_optimizer in README
+    - [ ] Add links to each README
+
+- [ ] Make examples cleaner
+- [ ] Delete overpass agent
+
+- [ ] Put workflow in seimei github
+- [ ] Publish seimei==0.1.0
+
 - [ ] Recreate https://www.kyotoai.net/docs
 - [ ] Make demo video of learning
 
-- [ ] Need to add system prompt to rm system.
+- [ ] Make feedback agent abolishing save_knowledge_config
+    - feedback, step:"==1", when user gives feedback, this agent will be the top priority in step 1
 '''
 
 '''
 
-- [ ] reset endpoint in runpod
 
-- [ ] Publish seimei==0.1.0
+
+
+
+
+
 
 
 

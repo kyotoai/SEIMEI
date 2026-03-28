@@ -170,8 +170,7 @@ pip install -e SEIMEI/
 
 2. Run
 ```bash
-export OPENAI_API_KEY = "(your_openai_api_key)"
-export KYOTOAI_API_KEY = "(your_kyotoai_api_key)"
+export KYOTOAI_API_KEY="(your_kyotoai_api_key)"
 ```
 
 ### Run SEIMEI
@@ -201,9 +200,6 @@ async def demo_code_act():
     result = await orchestrator(
         messages=[
             {"role": "user", "content": "Analyze the current directory and change."},
-        ],
-        knowledge_load_config=[
-            {"load_knowledge_path": "seimei_knowledge/knowledge.csv"},
         ],
     )
 
