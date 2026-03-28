@@ -279,9 +279,6 @@ Modify code files following the above instrutions. If there is something ambiguo
     * there are 3 answers in log
 
 
-## macOS/Linux (bash/zsh)
-echo 'export OPENAI_API_KEY=<YOUR_API_KEY>' >> ~/.zshrc   # or ~/.bashrc
-source ~/.zshrc
 
 
 ## Nov 3
