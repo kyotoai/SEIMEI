@@ -516,7 +516,7 @@ This repository is the result of your continuous engineering and research partne
 [huggingface.co]: https://img.shields.io/badge/huggingface-yellow
 [huggingface-url]: https://huggingface.co
 [paper-shield]: https://img.shields.io/badge/Paper-orange?style=for-the-badge
-[paper-url]: https://github.com/kyotoai/SEIMEI/demo/paper1.pdf
+[paper-url]: https://github.com/kyotoai/SEIMEI/blob/main/demo/paper1.pdf
 [document-shield]: https://img.shields.io/badge/Document-blue?style=for-the-badge
 [document-url]: https://www.kyotoai.net/docs/seimei.html
 [contributors-shield]: https://img.shields.io/github/contributors/kyotoai/SEIMEI.svg?style=for-the-badge
